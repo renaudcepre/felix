@@ -26,3 +26,9 @@ chroma_data/
 
 # ruff
 .ruff_cache/
+
+# Nuxt / Node
+web/node_modules/
+web/.nuxt/
+web/.output/
+web/dist/

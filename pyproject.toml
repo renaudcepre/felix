@@ -18,10 +18,13 @@ dependencies = [
     "chromadb>=1.0",
     "aiosqlite>=0.20",
     "rich>=14.3.3",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
 ]
 
 [project.scripts]
 felix = "felix.cli:main"
+felix-api = "felix.api.main:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -74,6 +77,10 @@ ignore = [
 ]
 "src/felix/agent/tools.py" = [
     "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
+]
+"src/felix/api/**" = [
+    "T201",     # print allowed in API entry point
+    "PLC0415",  # lazy import uvicorn in cli()
 ]
 
 [tool.mypy]

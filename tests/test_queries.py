@@ -110,3 +110,78 @@ async def test_get_timeline_includes_characters(db: aiosqlite.Connection) -> Non
     )
     assert "Benoit Laforge" in result
     assert "Pierre Renard" in result
+
+
+# --- list_all_characters ---
+
+
+async def test_list_all_characters(db: aiosqlite.Connection) -> None:
+    rows = await queries.list_all_characters(db)
+    assert len(rows) == 5
+    names = [r["name"] for r in rows]
+    assert "Marie Dupont" in names
+    assert "Julien Morel" in names
+
+
+async def test_list_all_characters_has_era(db: aiosqlite.Connection) -> None:
+    rows = await queries.list_all_characters(db)
+    eras = {r["era"] for r in rows}
+    assert "1940s" in eras
+    assert "1970s" in eras
+
+
+# --- get_character_profile ---
+
+
+async def test_get_character_profile(db: aiosqlite.Connection) -> None:
+    row = await queries.get_character_profile(db, "marie-dupont")
+    assert row is not None
+    assert row["name"] == "Marie Dupont"
+    assert row["era"] == "1940s"
+    assert row["background"] is not None
+
+
+async def test_get_character_profile_not_found(db: aiosqlite.Connection) -> None:
+    row = await queries.get_character_profile(db, "nonexistent")
+    assert row is None
+
+
+# --- get_character_relations ---
+
+
+async def test_get_character_relations(db: aiosqlite.Connection) -> None:
+    rels = await queries.get_character_relations(db, "marie-dupont")
+    assert len(rels) == 3
+    types = {r["relation_type"] for r in rels}
+    assert "spouse" in types
+    assert "comrades" in types
+
+
+async def test_get_character_relations_empty(db: aiosqlite.Connection) -> None:
+    rels = await queries.get_character_relations(db, "nonexistent")
+    assert rels == []
+
+
+# --- get_timeline_rows ---
+
+
+async def test_get_timeline_rows_all(db: aiosqlite.Connection) -> None:
+    rows = await queries.get_timeline_rows(db)
+    assert len(rows) == 10
+    assert all(isinstance(r, dict) for r in rows)
+    assert "date" in rows[0]
+    assert "characters" in rows[0]
+
+
+async def test_get_timeline_rows_filter_era(db: aiosqlite.Connection) -> None:
+    rows = await queries.get_timeline_rows(db, era="1970s")
+    assert len(rows) == 2
+    assert all(r["era"] == "1970s" for r in rows)
+
+
+async def test_get_timeline_rows_has_characters(db: aiosqlite.Connection) -> None:
+    rows = await queries.get_timeline_rows(
+        db, date_from="1942-06-01", date_to="1942-06-30"
+    )
+    assert len(rows) == 1
+    assert "Benoit Laforge" in rows[0]["characters"]

@@ -178,3 +178,53 @@ Objectif : trouver le meilleur compromis qualite/vitesse pour un PC modeste.
 - [x] **Impact context length** — 4k ne gagne rien, rester sur 8k.
 - [ ] **Qwen 2.5 7B Q4 vs Q8** — Comparer les quantisations.
 - [ ] **Benchmark RAM/VRAM** — Mesurer la conso memoire reelle par modele.
+
+---
+
+## Phase 1 — Interface Textual (TUI) [SUPPRIMEE]
+
+La TUI Textual a ete implementee puis supprimee au profit de l'interface web Nuxt UI (Phase 2). Les queries structurees ajoutees pour la TUI (`list_all_characters`, `get_character_profile`, `get_character_relations`, `get_timeline_rows`) sont conservees — elles servent maintenant au backend FastAPI.
+
+Raison de la suppression : la web UI offre une UX bien superieure (design system, navigation, responsive) et la TUI ajoutait une dep lourde (textual) pour un resultat moins ambitieux.
+
+---
+
+## Phase 2 — Interface Web (Nuxt UI)
+
+### 2026-03-14 — Backend FastAPI + Frontend Nuxt UI + suppression TUI
+
+**Objectif :** Interface web riche avec Nuxt UI v4, remplace la TUI Textual. SPA locale, design aged-paper/screenplay aesthetic.
+
+**TUI supprimee :**
+- `src/felix/tui/` supprime, entry point `felix-tui` retire, dep `textual` retiree
+- Les queries structurees de `queries.py` et leurs tests sont conserves (reutilises par l'API)
+
+**Backend FastAPI (`src/felix/api/`) :**
+- `main.py` — App FastAPI avec lifespan (init db/chroma/agent), CORS, health endpoint
+- `models.py` — Pydantic response models (CharacterSummary, CharacterDetail, Relation, TimelineEvent, ChatRequest/ChatResponse)
+- `routes/characters.py` — GET /api/characters, GET /api/characters/{id}
+- `routes/timeline.py` — GET /api/timeline?era=
+- `routes/chat.py` — POST /api/chat (multi-turn via message_history serialise avec ModelMessagesTypeAdapter)
+- Entry point `felix-api` avec flags --local/--model/--base-url/--port
+
+**Frontend Nuxt (`web/`) :**
+- Nuxt 4 + @nuxt/ui v4 + Tailwind v4, SPA (ssr: false)
+- Design system : palette Felix cyan (#0db9f2), aged-texture, tape-effect, handwritten-note
+- Dashboard (stats + grille personnages + derniers evenements)
+- Chat (bulles user/felix, loading dots animes, auto-scroll, clear)
+- Personnages (grille filtrable par epoque, fiche detaillee avec relations)
+- Timeline (UTable TanStack, filtre epoque, badges colores)
+- Composables : useFelix (chat API), useCharacters, useTimeline
+- Proxy dev /api → FastAPI localhost:8000
+
+**Deps modifiees :**
+- Ajout : fastapi>=0.115, uvicorn[standard]>=0.30
+- Suppression : textual
+- Node : nuxt@4, @nuxt/ui@4, @nuxt/eslint, @nuxt/fonts, tailwindcss@4, @iconify-json/lucide
+
+**Verification :**
+- `uv run pytest` — 27/27 tests passent (non-regression)
+- `uv run ruff check src/` — 0 erreur
+- `pnpm lint` — 0 erreur
+- `pnpm nuxi typecheck` — 0 erreur
+- `uv run felix` — CLI brut fonctionne toujours

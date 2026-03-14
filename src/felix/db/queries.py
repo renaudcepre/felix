@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -52,6 +52,101 @@ async def _format_character_profile(db: aiosqlite.Connection, row: aiosqlite.Row
             )
 
     return "\n".join(lines)
+
+
+async def list_all_characters(db: aiosqlite.Connection) -> list[aiosqlite.Row]:
+    cursor = await db.execute(
+        "SELECT id, name, era FROM characters ORDER BY era, name"
+    )
+    return list(await cursor.fetchall())
+
+
+async def get_character_profile(
+    db: aiosqlite.Connection, char_id: str
+) -> aiosqlite.Row | None:
+    cursor = await db.execute(
+        "SELECT * FROM characters WHERE id = ?", (char_id,)
+    )
+    return await cursor.fetchone()
+
+
+async def get_character_relations(
+    db: aiosqlite.Connection, char_id: str
+) -> list[aiosqlite.Row]:
+    cursor = await db.execute(
+        """
+        SELECT cr.relation_type, cr.description, cr.era,
+               CASE WHEN cr.character_id_a = ? THEN c2.name ELSE c1.name END AS other_name
+        FROM character_relations cr
+        JOIN characters c1 ON cr.character_id_a = c1.id
+        JOIN characters c2 ON cr.character_id_b = c2.id
+        WHERE cr.character_id_a = ? OR cr.character_id_b = ?
+        """,
+        (char_id, char_id, char_id),
+    )
+    return list(await cursor.fetchall())
+
+
+async def get_timeline_rows(
+    db: aiosqlite.Connection,
+    *,
+    era: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+) -> list[dict[str, Any]]:
+    conditions: list[str] = []
+    params: list[str] = []
+
+    if era:
+        conditions.append("te.era = ?")
+        params.append(era)
+    if date_from:
+        conditions.append("te.date >= ?")
+        params.append(date_from)
+    if date_to:
+        conditions.append("te.date <= ?")
+        params.append(date_to)
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    query = f"""
+        SELECT te.id, te.date, te.era, te.title, te.description,
+               l.name AS location_name
+        FROM timeline_events te
+        LEFT JOIN locations l ON te.location_id = l.id
+        {where}
+        ORDER BY te.date
+    """  # noqa: S608
+    cursor = await db.execute(query, params)
+    events = await cursor.fetchall()
+
+    rows: list[dict[str, Any]] = []
+    for evt in events:
+        char_cursor = await db.execute(
+            """
+            SELECT c.name, ce.role
+            FROM character_events ce
+            JOIN characters c ON ce.character_id = c.id
+            WHERE ce.event_id = ?
+            """,
+            (evt["id"],),
+        )
+        chars = await char_cursor.fetchall()
+        char_strs = [
+            f"{c['name']} ({c['role']})" if c["role"] else c["name"]
+            for c in chars
+        ]
+        rows.append({
+            "id": evt["id"],
+            "date": evt["date"],
+            "era": evt["era"],
+            "title": evt["title"],
+            "description": evt["description"] or "",
+            "location": evt["location_name"] or "",
+            "characters": ", ".join(char_strs),
+        })
+
+    return rows
 
 
 async def find_character(db: aiosqlite.Connection, name: str) -> str:

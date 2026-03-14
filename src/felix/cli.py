@@ -10,14 +10,11 @@ from rich.text import Text
 
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
-from felix.config import settings
+from felix.config import LMSTUDIO_DEFAULT_MODEL, LMSTUDIO_URL, settings
 from felix.db.schema import init_db
 from felix.vectorstore.store import get_collection
 
 console = Console()
-
-LMSTUDIO_URL = "http://localhost:1234/v1"
-LMSTUDIO_DEFAULT_MODEL = "qwen2.5-7b-instruct-1m"
 
 
 def _print_header(model: str, base_url: str | None) -> None:

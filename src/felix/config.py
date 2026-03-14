@@ -18,3 +18,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]
+
+LMSTUDIO_URL = "http://localhost:1234/v1"
+LMSTUDIO_DEFAULT_MODEL = "qwen2.5-7b-instruct-1m"
