@@ -47,8 +47,8 @@ EXAMPLE: "Est-ce coherent si Marie rencontre Sarah en mars 1942 ?"
 def _build_model(
     model_name: str | None = None, base_url: str | None = None
 ) -> Model:
-    name = model_name or settings.mistral_model
-    url = base_url or settings.model_base_url
+    name = model_name or settings.felix_model
+    url = base_url or settings.felix_base_url
 
     if url:
         return OpenAIModel(
@@ -57,7 +57,7 @@ def _build_model(
         )
     return MistralModel(
         name,
-        provider=MistralProvider(api_key=settings.mistral_api_key),
+        provider=MistralProvider(api_key=settings.felix_api_key),
     )
 
 

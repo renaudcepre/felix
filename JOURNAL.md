@@ -117,3 +117,64 @@ FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:123
 | negatifs | hallucine | refuse | refuse | **refuse** |
 | cross-era | 0.5 | 0.0 | 0.5 | **0.75** |
 | semantic_id | 0.667 | 0.667 | 1.00 | **1.00** |
+
+**Evals Qwen3 4B (2507) local (LMStudio, qwen/qwen3-4b-2507, thinking OFF, 8k ctx) :**
+- facts_score : 0.821, assertions : 94.4%, duree : **49.4s/case**
+- Quasi 2x plus rapide que Qwen 2.5 7B avec qualite quasi identique
+- Refuse proprement de fabriquer, cite les scenes, raisonne bien
+- Faiblesses : rate "archives" (n'appelle pas search_scenes), manque "carbone" sur cross-era
+- Candidat ideal pour PC modeste (moitie moins de RAM, 2x plus rapide)
+
+| Metrique | Nemo 12B API | Llama 8B | Gemma 2 9B | Qwen 2.5 7B | **Qwen3 4B** |
+|----------|-------------|----------|------------|-------------|-------------|
+| facts_score | 0.619 | 0.595 | 0.810 | **0.857** | 0.821 |
+| assertions | 72.2% | 83.3% | 94.4% | **100%** | 94.4% |
+| duree/case | 2.7s | 77s | 118s | 89.8s | **49.4s** |
+| negatifs | hallucine | refuse | refuse | refuse | refuse |
+
+**Profils de deploiement envisages :**
+- **PC correct** → Qwen 2.5 7B (100% assertions, ~90s/case)
+- **PC modeste** → Qwen3 4B (94.4% assertions, ~50s/case)
+
+---
+
+### 2026-03-14 (5) — Qwen3 8B evals + prototype multi-agent
+
+**Evals Qwen3 8B (thinking ON) :**
+- facts_score : 0.738, assertions : 83.3%, duree : 276s/case
+- Thinking active = 3x plus lent et moins bon que Qwen 2.5 7B
+- Le modele raisonne trop et agit moins (n'appelle pas search_scenes sur "archives")
+
+**Evals Qwen3 8B (thinking OFF, temp 0.1) :**
+- facts_score : 0.774, assertions : 88.9%, duree : 83.3s/case
+- Plus rapide mais toujours moins precis que Qwen 2.5 7B
+- Rate le test "archives" (n'appelle pas search_scenes), fail voiture Marie
+
+**Ajout temperature 0.1** dans `chat_agent.py` via `ModelSettings` — controle cote API, independant des settings LMStudio.
+
+**Prototype multi-agent (retriever → reasoner) :**
+- `chat_agent.py` : `create_retriever()` (tools, no reasoning) + `create_reasoner()` (no tools, raisonnement)
+- `evals/task.py` : `felix_task_multi()` pipeline retriever → reasoner
+- `run_evals.py` : flag `--multi`
+- `cli.py` : flag `--multi`
+- Constat : 2x plus de calls = trop lent en local. Architecture viable avec API rapide mais pas pour le use-case local.
+
+**Decision :** Le client refuse les API cloud (confidentialite des donnees). Le MVP doit tourner 100% local. Le multi-agent est **abandonne** — 2x plus de calls par question = trop lent en local, et le gain en qualite n'est pas demontre. Code multi-agent retire du projet.
+
+**Contrainte client :** Pas d'API cloud, le PC cible est potentiellement moins puissant que la machine de dev.
+
+**Refactoring config :** Renommage des variables d'environnement (`MISTRAL_MODEL` → `FELIX_MODEL`, `MODEL_BASE_URL` → `FELIX_BASE_URL`, `MISTRAL_API_KEY` → `FELIX_API_KEY`). Ajout flags CLI (`--local`, `--model`, `--base-url`) pour eviter de jongler avec les env vars. README ajoute.
+
+---
+
+### Backlog — Tests modeles locaux a faire
+
+Objectif : trouver le meilleur compromis qualite/vitesse pour un PC modeste.
+
+- [x] ~~**Gemma 3 12B**~~ — Trop lent, coupe apres 30min. Non viable.
+- [x] ~~**Gemma 3 4B**~~ — Pas de support tool-use, skip.
+- [x] **Qwen3 8B sans thinking** — 0.774/88.9%, 83s/case. Moins bon que Qwen 2.5 7B.
+- [x] **Qwen3 4B (2507)** — 0.821/94.4%, **49.4s/case**. Candidat PC modeste.
+- [x] **Impact context length** — 4k ne gagne rien, rester sur 8k.
+- [ ] **Qwen 2.5 7B Q4 vs Q8** — Comparer les quantisations.
+- [ ] **Benchmark RAM/VRAM** — Mesurer la conso memoire reelle par modele.

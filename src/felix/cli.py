@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 
 from rich.console import Console
@@ -15,16 +16,16 @@ from felix.vectorstore.store import get_collection
 
 console = Console()
 
+LMSTUDIO_URL = "http://localhost:1234/v1"
+LMSTUDIO_DEFAULT_MODEL = "qwen2.5-7b-instruct-1m"
 
-def _print_header() -> None:
+
+def _print_header(model: str, base_url: str | None) -> None:
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column(style="dim")
     table.add_column(style="bold")
-    table.add_row("Model", settings.mistral_model)
-    if settings.model_base_url:
-        table.add_row("Provider", settings.model_base_url)
-    else:
-        table.add_row("Provider", "Mistral API")
+    table.add_row("Model", model)
+    table.add_row("Provider", base_url or "Mistral API")
     table.add_row("DB", str(settings.db_path))
     table.add_row("ChromaDB", settings.chroma_path)
 
@@ -36,14 +37,14 @@ def _print_header() -> None:
     console.print("[dim]Tapez [bold]quit[/bold] ou [bold]exit[/bold] pour quitter.[/dim]\n")
 
 
-async def chat_loop() -> None:
+async def chat_loop(model: str, base_url: str | None) -> None:
     db = await init_db(str(settings.db_path))
     collection = get_collection()
     deps = FelixDeps(db=db, chroma_collection=collection)
 
-    agent = create_agent()
+    agent = create_agent(model, base_url)
 
-    _print_header()
+    _print_header(model=model, base_url=base_url)
 
     message_history: list[object] = []
 
@@ -72,14 +73,26 @@ async def chat_loop() -> None:
                 )
 
             console.print(f"\n[bold magenta]Felix:[/bold magenta] {result.output}\n")
-
             message_history = result.all_messages()
     finally:
         await db.close()
 
 
 def main() -> None:
-    asyncio.run(chat_loop())
+    parser = argparse.ArgumentParser(description="Felix — Screenplay Continuity Assistant")
+    parser.add_argument("--model", type=str, default=None, help="Model name (e.g. qwen/qwen3-4b-2507)")
+    parser.add_argument("--base-url", type=str, default=None, help="OpenAI-compatible API base URL")
+    parser.add_argument("--local", action="store_true", help="Use LMStudio (localhost:1234)")
+    args = parser.parse_args()
+
+    if args.local:
+        base_url = args.base_url or LMSTUDIO_URL
+        model = args.model or LMSTUDIO_DEFAULT_MODEL
+    else:
+        base_url = args.base_url or settings.felix_base_url
+        model = args.model or settings.felix_model
+
+    asyncio.run(chat_loop(model=model, base_url=base_url))
 
 
 if __name__ == "__main__":

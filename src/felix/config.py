@@ -9,10 +9,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
     )
 
-    mistral_api_key: str = ""
-    mistral_model: str = "open-mistral-nemo"
-
-    model_base_url: str | None = None
+    felix_model: str = "open-mistral-nemo"
+    felix_base_url: str | None = None
+    felix_api_key: str = ""
 
     db_path: Path = Path("data/felix.db")
     chroma_path: str = "chroma_data"

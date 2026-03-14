@@ -1,9 +1,10 @@
 """Run the Felix evaluation pipeline.
 
 Usage:
-    uv run python -m evals.run_evals                    # Mistral API (default)
-    uv run python -m evals.run_evals --local             # LMStudio default (meta-llama-3.1-8b-instruct)
-    uv run python -m evals.run_evals --local --model qwen2.5-7b-instruct-1m
+    uv run python -m evals.run_evals                              # Mistral API (default)
+    uv run python -m evals.run_evals --local                       # LMStudio default
+    uv run python -m evals.run_evals --local --model qwen/qwen3-4b-2507
+    uv run python -m evals.run_evals --local --model qwen2.5-7b-instruct-1m --multi
 """
 
 from __future__ import annotations
@@ -21,11 +22,11 @@ from evals.task import felix_task
 from felix.config import settings
 
 LMSTUDIO_URL = "http://localhost:1234/v1"
-LMSTUDIO_DEFAULT_MODEL = "meta-llama-3.1-8b-instruct"
+LMSTUDIO_DEFAULT_MODEL = "qwen2.5-7b-instruct-1m"
 
 _judge_model = MistralModel(
     "mistral-small-latest",
-    provider=MistralProvider(api_key=settings.mistral_api_key),
+    provider=MistralProvider(api_key=settings.felix_api_key),
 )
 
 dataset = Dataset[str, str](
@@ -132,7 +133,7 @@ def main() -> None:
     elif args.base_url:
         os.environ["FELIX_EVAL_BASE_URL"] = args.base_url
 
-    model_name = os.environ.get("FELIX_EVAL_MODEL", settings.mistral_model)
+    model_name = os.environ.get("FELIX_EVAL_MODEL", settings.felix_model)
     base_url = os.environ.get("FELIX_EVAL_BASE_URL", "Mistral API")
     print(f"Model: {model_name}")
     print(f"Provider: {base_url}\n")
