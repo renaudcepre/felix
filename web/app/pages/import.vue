@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import type { ImportEvent } from '~/types'
 
-const { progress, loading, events, clarification, startImport, respondClarification, reset } = useImport()
+const { progress, loading, events, clarification, startImport, respondClarification, reset, checkStatus } = useImport()
+
+// Re-fetch status if navigating back to this page during an active import
+onMounted(() => {
+  if (loading.value && !progress.value) {
+    checkStatus()
+  }
+})
 const files = ref<File[]>([])
 const enrichProfiles = ref(true)
 const dragging = ref(false)
@@ -22,7 +29,8 @@ function onFileSelect(e: Event) {
 }
 
 function addFiles(newFiles: File[]) {
-  const txtFiles = newFiles.filter(f => f.name.endsWith('.txt'))
+  const textExts = ['.txt', '.md', '.markdown', '.rst', '.text', '.fountain']
+  const txtFiles = newFiles.filter(f => textExts.some(ext => f.name.toLowerCase().endsWith(ext)))
   const existingNames = new Set(files.value.map(f => f.name))
   for (const f of txtFiles) {
     if (!existingNames.has(f.name)) {
@@ -127,7 +135,7 @@ watch(events, () => {
         Import de scenes
       </h1>
       <p class="text-muted text-sm mt-1">
-        Glissez-deposez vos fichiers .txt ou utilisez le selecteur
+        Glissez-deposez vos fichiers texte ou utilisez le selecteur
       </p>
     </div>
 
@@ -145,14 +153,14 @@ watch(events, () => {
           <input
             ref="fileInput"
             type="file"
-            accept=".txt"
+            accept=".txt,.md,.markdown,.rst,.text,.fountain"
             multiple
             class="hidden"
             @change="onFileSelect"
           >
           <UIcon name="i-lucide-upload" class="text-3xl text-muted mb-2" />
           <p class="text-sm">
-            <span class="font-medium text-primary">Cliquez</span> ou glissez-deposez des fichiers .txt
+            <span class="font-medium text-primary">Cliquez</span> ou glissez-deposez des fichiers texte
           </p>
           <p class="text-xs text-muted mt-1">
             1 fichier = 1 scene

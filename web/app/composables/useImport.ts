@@ -1,13 +1,15 @@
 import type { ClarificationRequest, ImportEvent, ImportProgress } from '~/types'
 import { parseSSEStream } from '~/utils/parseSSE'
 
+// Global state that survives navigation
+const progress = useState<ImportProgress | null>('import-progress', () => null)
+const loading = useState<boolean>('import-loading', () => false)
+const events = useState<ImportEvent[]>('import-events', () => [])
+const clarification = useState<ClarificationRequest | null>('import-clarification', () => null)
+let abortController: AbortController | null = null
+
 export function useImport() {
   const { apiStreamBase } = useRuntimeConfig().public
-  const progress = ref<ImportProgress | null>(null)
-  const loading = ref(false)
-  const events = ref<ImportEvent[]>([])
-  const clarification = ref<ClarificationRequest | null>(null)
-  let abortController: AbortController | null = null
 
   async function startImport(files: File[], enrich: boolean = true) {
     loading.value = true
@@ -123,6 +125,21 @@ export function useImport() {
     }
   }
 
+  async function checkStatus() {
+    try {
+      const res = await fetch(`${apiStreamBase}/api/import/status`)
+      if (!res.ok) return
+      const data = await res.json() as ImportProgress
+      if (data.status !== 'pending' || progress.value) {
+        progress.value = data
+        loading.value = !['done', 'error', 'pending'].includes(data.status)
+      }
+    }
+    catch {
+      // ignore - server might be down
+    }
+  }
+
   async function respondClarification(id: string, answer: 'link' | 'new') {
     clarification.value = null
     await fetch(`${apiStreamBase}/api/import/clarify`, {
@@ -147,7 +164,5 @@ export function useImport() {
     clarification.value = null
   }
 
-  onUnmounted(cancelImport)
-
-  return { progress, loading, events, clarification, startImport, respondClarification, cancelImport, reset }
+  return { progress, loading, events, clarification, startImport, respondClarification, cancelImport, reset, checkStatus }
 }

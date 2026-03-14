@@ -16,6 +16,7 @@ from felix.api.models import (
     SceneSummary,
 )
 from felix.db.queries import list_issues, list_scenes, update_issue_resolved
+from felix.config import SCENE_FILE_EXTENSIONS
 from felix.ingest.pipeline import (
     ClarificationSlot,
     EventQueue,
@@ -52,9 +53,9 @@ async def start_import(
     ):
         raise HTTPException(status_code=409, detail="Import already in progress")
 
-    txt_files = [f for f in files if f.filename and f.filename.endswith(".txt")]
+    txt_files = [f for f in files if f.filename and f.filename.lower().endswith(SCENE_FILE_EXTENSIONS)]
     if not txt_files:
-        raise HTTPException(status_code=400, detail="Aucun fichier .txt recu")
+        raise HTTPException(status_code=400, detail="Aucun fichier texte recu")
 
     # Write uploaded files to a temp directory
     tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
@@ -97,9 +98,9 @@ async def import_stream(
     ):
         raise HTTPException(status_code=409, detail="Import already in progress")
 
-    txt_files = [f for f in files if f.filename and f.filename.endswith(".txt")]
+    txt_files = [f for f in files if f.filename and f.filename.lower().endswith(SCENE_FILE_EXTENSIONS)]
     if not txt_files:
-        raise HTTPException(status_code=400, detail="Aucun fichier .txt recu")
+        raise HTTPException(status_code=400, detail="Aucun fichier texte recu")
 
     # Write uploaded files to a temp directory
     tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
@@ -161,7 +162,7 @@ async def import_stream(
                 if event["event"] in ("done", "error"):
                     break
         except asyncio.CancelledError:
-            task.cancel()
+            pass  # Let the pipeline continue running independently
 
     return EventSourceResponse(
         event_generator(),
