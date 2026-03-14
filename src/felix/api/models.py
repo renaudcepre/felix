@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from datetime import datetime
+
 from pydantic import BaseModel, field_validator
 
 
@@ -111,3 +113,68 @@ class ChatResponse(BaseModel):
     output: str
     message_history: list[dict[str, object]]
     usage: UsageInfo | None = None
+
+
+# --- Export models ---
+
+
+class LocationExport(BaseModel):
+    id: str
+    name: str
+    era: str | None = None
+    description: str | None = None
+    address: str | None = None
+
+
+class SceneExport(BaseModel):
+    id: str
+    filename: str
+    title: str | None = None
+    summary: str | None = None
+    era: str | None = None
+    date: str | None = None
+    location_id: str | None = None
+    raw_text: str | None = None
+
+
+class TimelineEventExport(BaseModel):
+    id: str
+    date: str
+    era: str
+    title: str
+    description: str | None = None
+    location_id: str | None = None
+    scene_id: str | None = None
+
+
+class CharacterEventExport(BaseModel):
+    character_id: str
+    event_id: str
+    role: str | None = None
+
+
+class CharacterRelationExport(BaseModel):
+    character_id_a: str
+    character_id_b: str
+    relation_type: str
+    description: str | None = None
+    era: str | None = None
+
+
+class CharacterFragmentExport(BaseModel):
+    character_id: str
+    scene_id: str
+    role: str | None = None
+    description: str | None = None
+
+
+class FullExport(BaseModel):
+    exported_at: datetime
+    characters: list[CharacterDetail]
+    locations: list[LocationExport]
+    scenes: list[SceneExport]
+    timeline_events: list[TimelineEventExport]
+    character_events: list[CharacterEventExport]
+    character_relations: list[CharacterRelationExport]
+    character_fragments: list[CharacterFragmentExport]
+    issues: list[Issue]

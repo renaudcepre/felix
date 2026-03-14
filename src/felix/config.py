@@ -19,3 +19,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]
+
+SCENE_FILE_EXTENSIONS = (".txt", ".md", ".markdown", ".rst", ".text", ".fountain")

@@ -425,6 +425,41 @@ async def upsert_character_relation(  # noqa: PLR0913
     await db.commit()
 
 
+async def list_all_characters_full(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    cursor = await db.execute("SELECT * FROM characters ORDER BY era, name")
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def list_all_locations(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    cursor = await db.execute("SELECT * FROM locations ORDER BY era, name")
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def list_all_scenes_full(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    cursor = await db.execute("SELECT * FROM scenes ORDER BY filename")
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def list_all_timeline_events(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    cursor = await db.execute("SELECT * FROM timeline_events ORDER BY date")
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def list_all_character_events(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    cursor = await db.execute("SELECT * FROM character_events")
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def list_all_character_relations(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    cursor = await db.execute("SELECT * FROM character_relations")
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def list_all_character_fragments(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    cursor = await db.execute("SELECT * FROM character_fragments")
+    return [dict(row) for row in await cursor.fetchall()]
+
+
 async def get_timeline(
     db: aiosqlite.Connection,
     *,
