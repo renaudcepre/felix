@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.mistral import MistralProvider
@@ -70,6 +71,7 @@ def create_agent(
         instructions=SYSTEM_PROMPT,
         deps_type=FelixDeps,
         output_type=str,
+        model_settings=ModelSettings(temperature=0.1),
     )
 
     agent.tool(find_character)
