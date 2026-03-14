@@ -101,16 +101,19 @@ FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:123
 - Ajout flag `--local` dans run_evals.py pour simplifier le lancement
 
 **Evals Gemma 2 9B local (LMStudio, google/gemma-2-9b) :**
-- facts_score : **0.810**, assertions : **94.4%**, duree moyenne : 118s/case
-- Meilleur modele teste de loin : refuse proprement de fabriquer, cite les scenes par numero (042, 088), repond en francais, concis
-- semantic_identity : 1.00 (vs 0.667 Nemo), cross-era : 0.5 (mentionne agent double, Resistance)
-- Seule faiblesse : lent (118s/case en local)
+- facts_score : 0.810, assertions : 94.4%, duree moyenne : 118s/case
+- Refuse proprement de fabriquer, cite les scenes par numero (042, 088), repond en francais, concis
 
-| Metrique | Nemo 12B API | Llama 8B local | Gemma 2 9B local |
-|----------|-------------|----------------|------------------|
-| facts_score | 0.619 | 0.595 | **0.810** |
-| assertions | 72.2% | 83.3% | **94.4%** |
-| duree/case | 2.7s | 77s | 118s |
-| negatifs | hallucine | refuse | **refuse** |
-| cross-era | 0.5 | 0.0 | 0.5 |
-| semantic_id | 0.667 | 0.667 | **1.00** |
+**Evals Qwen 2.5 7B local (LMStudio, qwen2.5-7b-instruct-1m) :**
+- facts_score : **0.857**, assertions : **100%**, duree moyenne : 89.8s/case
+- Meilleur modele teste : 100% assertions, cross-era 0.75 (meilleur score), refuse proprement, plus rapide que Gemma 2 9B
+- Seul 7B a atteindre 100% assertions — excellent tool-calling et raisonnement cross-era
+
+| Metrique | Nemo 12B API | Llama 8B | Gemma 2 9B | **Qwen 2.5 7B** |
+|----------|-------------|----------|------------|-----------------|
+| facts_score | 0.619 | 0.595 | 0.810 | **0.857** |
+| assertions | 72.2% | 83.3% | 94.4% | **100%** |
+| duree/case | 2.7s | 77s | 118s | **89.8s** |
+| negatifs | hallucine | refuse | refuse | **refuse** |
+| cross-era | 0.5 | 0.0 | 0.5 | **0.75** |
+| semantic_id | 0.667 | 0.667 | 1.00 | **1.00** |
