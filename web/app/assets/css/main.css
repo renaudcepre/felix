@@ -1,8 +1,17 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+@font-face {
+  font-family: 'Neuropol';
+  src: url('../fonts/Neuropol.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme static {
   --font-sans: 'Space Grotesk', sans-serif;
+  --font-neuropol: 'Neuropol', sans-serif;
 
   /* Felix Cyan palette */
   --color-felix-50: #effbff;
