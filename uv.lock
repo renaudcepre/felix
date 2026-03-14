@@ -812,6 +812,7 @@ dependencies = [
     { name = "mistralai" },
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
+    { name = "rich" },
 ]
 
 [package.dev-dependencies]
@@ -829,6 +830,7 @@ requires-dist = [
     { name = "mistralai", specifier = ">=1.9.11,<2.0" },
     { name = "pydantic-ai", extras = ["mistral"] },
     { name = "pydantic-settings", specifier = ">=2.0" },
+    { name = "rich", specifier = ">=14.3.3" },
 ]
 
 [package.metadata.requires-dev]

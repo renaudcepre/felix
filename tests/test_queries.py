@@ -15,56 +15,61 @@ async def db(seeded_db: aiosqlite.Connection) -> aiosqlite.Connection:
     return seeded_db
 
 
-async def test_list_characters_returns_all(db: aiosqlite.Connection) -> None:
-    result = await queries.list_characters(db)
-    assert "Marie Dupont" in result
-    assert "Pierre Renard" in result
-    assert "Benoit Laforge" in result
-    assert "Sarah Cohen" in result
-    assert "Julien Morel" in result
+# --- find_character ---
 
 
-async def test_list_characters_includes_ids(db: aiosqlite.Connection) -> None:
-    result = await queries.list_characters(db)
-    assert "marie-dupont" in result
-    assert "julien-morel" in result
-
-
-async def test_get_character_found(db: aiosqlite.Connection) -> None:
-    result = await queries.get_character(db, "marie-dupont")
+async def test_find_character_by_name(db: aiosqlite.Connection) -> None:
+    result = await queries.find_character(db, "Marie Dupont")
     assert "Marie Dupont" in result
     assert "1940s" in result
     assert "Resistance" in result
-    assert "La Louve" in result
-
-
-async def test_get_character_includes_relations(db: aiosqlite.Connection) -> None:
-    result = await queries.get_character(db, "marie-dupont")
     assert "Pierre Renard" in result
     assert "spouse" in result
 
 
-async def test_get_character_not_found(db: aiosqlite.Connection) -> None:
-    result = await queries.get_character(db, "unknown-id")
-    assert "No character found" in result
+async def test_find_character_partial(db: aiosqlite.Connection) -> None:
+    result = await queries.find_character(db, "Marie")
+    assert "Marie Dupont" in result
 
 
-async def test_list_locations_returns_all(db: aiosqlite.Connection) -> None:
-    result = await queries.list_locations(db)
-    assert "Planque de Lyon" in result
-    assert "Prefecture de Lyon" in result
-    assert "Paris Tribune" in result
+async def test_find_character_by_alias(db: aiosqlite.Connection) -> None:
+    result = await queries.find_character(db, "La Louve")
+    assert "Marie Dupont" in result
 
 
-async def test_get_location_found(db: aiosqlite.Connection) -> None:
-    result = await queries.get_location(db, "lyon-safe-house")
+async def test_find_character_case_insensitive(db: aiosqlite.Connection) -> None:
+    result = await queries.find_character(db, "marie")
+    assert "Marie Dupont" in result
+
+
+async def test_find_character_no_match(db: aiosqlite.Connection) -> None:
+    result = await queries.find_character(db, "Napoleon")
+    assert "Aucun personnage" in result
+    assert "Marie Dupont" in result
+    assert "Pierre Renard" in result
+
+
+# --- find_location ---
+
+
+async def test_find_location_by_name(db: aiosqlite.Connection) -> None:
+    result = await queries.find_location(db, "Lyon")
     assert "Planque de Lyon" in result
     assert "rue Merciere" in result
 
 
-async def test_get_location_not_found(db: aiosqlite.Connection) -> None:
-    result = await queries.get_location(db, "unknown-loc")
-    assert "No location found" in result
+async def test_find_location_partial(db: aiosqlite.Connection) -> None:
+    result = await queries.find_location(db, "planque")
+    assert "Planque de Lyon" in result
+
+
+async def test_find_location_no_match(db: aiosqlite.Connection) -> None:
+    result = await queries.find_location(db, "Berlin")
+    assert "Aucun lieu" in result
+    assert "Planque de Lyon" in result
+
+
+# --- get_timeline (unchanged) ---
 
 
 async def test_get_timeline_filtered_by_date(db: aiosqlite.Connection) -> None:

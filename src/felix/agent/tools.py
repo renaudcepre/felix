@@ -7,45 +7,22 @@ from felix.db import queries
 from felix.vectorstore.store import search_scenes_in_chroma
 
 
-async def list_characters(ctx: RunContext[FelixDeps]) -> str:
-    """List all characters in the screenplay bible.
-
-    ALWAYS call this FIRST before calling get_character.
-    Returns a list of character names and their IDs.
-    Use the IDs from this list when calling get_character.
-    """
-    return await queries.list_characters(ctx.deps.db)
-
-
-async def get_character(ctx: RunContext[FelixDeps], character_id: str) -> str:
-    """Get the full profile of a specific character by their exact ID.
-
-    You MUST call list_characters first to get valid IDs.
+async def find_character(ctx: RunContext[FelixDeps], name: str) -> str:
+    """Find a character by name or alias and return their full profile.
 
     Args:
-        character_id: The exact character ID from list_characters (e.g. 'marie-dupont').
+        name: Full or partial character name (e.g. 'Marie', 'Renard', 'La Louve').
     """
-    return await queries.get_character(ctx.deps.db, character_id)
+    return await queries.find_character(ctx.deps.db, name)
 
 
-async def list_locations(ctx: RunContext[FelixDeps]) -> str:
-    """List all locations in the screenplay bible.
-
-    ALWAYS call this FIRST before calling get_location.
-    Returns a list of location names and their IDs.
-    """
-    return await queries.list_locations(ctx.deps.db)
-
-
-async def get_location(ctx: RunContext[FelixDeps], location_id: str) -> str:
-    """Get full details of a specific location by its exact ID.
-
-    You MUST call list_locations first to get valid IDs.
+async def find_location(ctx: RunContext[FelixDeps], name: str) -> str:
+    """Find a location by name and return its full details.
 
     Args:
-        location_id: The exact location ID from list_locations (e.g. 'lyon-safe-house').
+        name: Full or partial location name (e.g. 'Lyon', 'planque', 'Tribune').
     """
-    return await queries.get_location(ctx.deps.db, location_id)
+    return await queries.find_location(ctx.deps.db, name)
 
 
 async def get_timeline(

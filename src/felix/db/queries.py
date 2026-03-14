@@ -7,23 +7,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
 
-async def list_characters(db: aiosqlite.Connection) -> str:
-    cursor = await db.execute("SELECT id, name, era FROM characters ORDER BY era, name")
-    rows = await cursor.fetchall()
-    if not rows:
-        return "No characters found in the bible."
-    lines = ["Characters in the bible:"]
-    for row in rows:
-        lines.append(f"  - {row['name']} (id: {row['id']}, era: {row['era']})")
-    return "\n".join(lines)
-
-
-async def get_character(db: aiosqlite.Connection, character_id: str) -> str:
-    cursor = await db.execute("SELECT * FROM characters WHERE id = ?", (character_id,))
-    row = await cursor.fetchone()
-    if row is None:
-        return f"No character found with id '{character_id}'."
-
+async def _format_character_profile(db: aiosqlite.Connection, row: aiosqlite.Row) -> str:
     lines = [
         f"Name: {row['name']}",
         f"Era: {row['era']}",
@@ -45,6 +29,7 @@ async def get_character(db: aiosqlite.Connection, character_id: str) -> str:
         lines.append(f"Status: {row['status']}")
 
     # Fetch relations
+    char_id = row["id"]
     rel_cursor = await db.execute(
         """
         SELECT cr.relation_type, cr.description, cr.era,
@@ -54,7 +39,7 @@ async def get_character(db: aiosqlite.Connection, character_id: str) -> str:
         JOIN characters c2 ON cr.character_id_b = c2.id
         WHERE cr.character_id_a = ? OR cr.character_id_b = ?
         """,
-        (character_id, character_id, character_id),
+        (char_id, char_id, char_id),
     )
     relations = await rel_cursor.fetchall()
     if relations:
@@ -69,35 +54,64 @@ async def get_character(db: aiosqlite.Connection, character_id: str) -> str:
     return "\n".join(lines)
 
 
-async def list_locations(db: aiosqlite.Connection) -> str:
-    cursor = await db.execute("SELECT id, name, era FROM locations ORDER BY era, name")
+async def find_character(db: aiosqlite.Connection, name: str) -> str:
+    cursor = await db.execute(
+        """
+        SELECT * FROM characters
+        WHERE LOWER(name) LIKE '%' || LOWER(?) || '%'
+           OR LOWER(aliases) LIKE '%' || LOWER(?) || '%'
+        ORDER BY era, name
+        """,
+        (name, name),
+    )
     rows = await cursor.fetchall()
+
     if not rows:
-        return "No locations found in the bible."
-    lines = ["Locations in the bible:"]
+        all_cursor = await db.execute(
+            "SELECT name FROM characters ORDER BY era, name"
+        )
+        all_rows = await all_cursor.fetchall()
+        names = ", ".join(r["name"] for r in all_rows)
+        return f"Aucun personnage correspondant a '{name}'. Disponibles : {names}"
+
+    profiles = []
     for row in rows:
-        era = f", era: {row['era']}" if row["era"] else ""
-        lines.append(f"  - {row['name']} (id: {row['id']}{era})")
-    return "\n".join(lines)
+        profiles.append(await _format_character_profile(db, row))
+
+    return "\n---\n".join(profiles)
 
 
-async def get_location(db: aiosqlite.Connection, location_id: str) -> str:
-    cursor = await db.execute("SELECT * FROM locations WHERE id = ?", (location_id,))
-    row = await cursor.fetchone()
-    if row is None:
-        return f"No location found with id '{location_id}'."
+async def find_location(db: aiosqlite.Connection, name: str) -> str:
+    cursor = await db.execute(
+        """
+        SELECT * FROM locations
+        WHERE LOWER(name) LIKE '%' || LOWER(?) || '%'
+        ORDER BY era, name
+        """,
+        (name,),
+    )
+    rows = await cursor.fetchall()
 
-    lines = [
-        f"Name: {row['name']}",
-    ]
-    if row["era"]:
-        lines.append(f"Era: {row['era']}")
-    if row["description"]:
-        lines.append(f"Description: {row['description']}")
-    if row["address"]:
-        lines.append(f"Address: {row['address']}")
+    if not rows:
+        all_cursor = await db.execute(
+            "SELECT name FROM locations ORDER BY era, name"
+        )
+        all_rows = await all_cursor.fetchall()
+        names = ", ".join(r["name"] for r in all_rows)
+        return f"Aucun lieu correspondant a '{name}'. Disponibles : {names}"
 
-    return "\n".join(lines)
+    profiles = []
+    for row in rows:
+        lines = [f"Name: {row['name']}"]
+        if row["era"]:
+            lines.append(f"Era: {row['era']}")
+        if row["description"]:
+            lines.append(f"Description: {row['description']}")
+        if row["address"]:
+            lines.append(f"Address: {row['address']}")
+        profiles.append("\n".join(lines))
+
+    return "\n---\n".join(profiles)
 
 
 async def get_timeline(

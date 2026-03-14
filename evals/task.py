@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import chromadb
 
 from felix.agent.chat_agent import create_agent
@@ -11,7 +13,6 @@ from felix.db.seed import seed_db
 from felix.vectorstore.seed import seed_scenes
 
 _deps: FelixDeps | None = None
-_agent = create_agent()
 
 
 async def _get_deps() -> FelixDeps:
@@ -32,5 +33,7 @@ async def _get_deps() -> FelixDeps:
 
 async def felix_task(question: str) -> str:
     deps = await _get_deps()
-    result = await _agent.run(question, deps=deps)
+    model_name = os.environ.get("FELIX_EVAL_MODEL")
+    agent = create_agent(model_name)
+    result = await agent.run(question, deps=deps)
     return result.output
