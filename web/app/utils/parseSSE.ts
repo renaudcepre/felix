@@ -27,8 +27,9 @@ export async function* parseSSEStream(
           currentEvent = line.slice(6).trim()
         }
         else if (line.startsWith('data:')) {
-          // Keep the data as-is after "data: " (preserve spaces)
-          currentData = line.startsWith('data: ') ? line.slice(6) : line.slice(5)
+          const value = line.startsWith('data: ') ? line.slice(6) : line.slice(5)
+          // SSE spec: multiple data lines are concatenated with \n
+          currentData = currentData ? `${currentData}\n${value}` : value
         }
         else if (line === '') {
           if (currentEvent || currentData) {

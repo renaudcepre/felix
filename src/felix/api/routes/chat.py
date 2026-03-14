@@ -4,7 +4,7 @@ import json
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Request
-from pydantic_ai import Agent, FinalResultEvent, PartDeltaEvent, TextPartDelta
+from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
@@ -66,17 +66,6 @@ async def chat_stream(body: ChatRequest, request: Request) -> EventSourceRespons
                 async for node in run:
                     if Agent.is_model_request_node(node):
                         async with node.stream(run.ctx) as request_stream:
-                            async for event in request_stream:
-                                if isinstance(event, PartDeltaEvent) and isinstance(
-                                    event.delta, TextPartDelta
-                                ):
-                                    yield ServerSentEvent(
-                                        data=event.delta.content_delta,
-                                        event="content",
-                                    )
-                                elif isinstance(event, FinalResultEvent):
-                                    break
-                            # Stream remaining text after FinalResultEvent
                             async for text in request_stream.stream_text(delta=True):
                                 yield ServerSentEvent(data=text, event="content")
 
