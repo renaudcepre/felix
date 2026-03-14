@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { messages, loading, lastUsage, sendMessage, clearChat } = useFelix()
+const { messages, loading, streaming, lastUsage, sendMessage, clearChat } = useFelix()
 const input = ref('')
 const chatContainer = ref<HTMLElement>()
 
@@ -68,8 +68,8 @@ async function handleSend() {
         </div>
       </div>
 
-      <!-- Loading indicator -->
-      <div v-if="loading" class="flex gap-3 max-w-3xl">
+      <!-- Loading indicator: only before first token -->
+      <div v-if="loading && !streaming" class="flex gap-3 max-w-3xl">
         <UAvatar
           icon="i-lucide-bot"
           color="primary"
