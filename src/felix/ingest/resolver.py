@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 THRESHOLD_AUTO = 0.85
-THRESHOLD_FUZZY = 0.60
+THRESHOLD_FUZZY = 0.70
 
 
 @dataclass
