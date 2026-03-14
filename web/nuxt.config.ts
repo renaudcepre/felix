@@ -24,6 +24,12 @@ export default defineNuxtConfig({
     },
   },
 
+  runtimeConfig: {
+    public: {
+      apiStreamBase: 'http://localhost:8000',
+    },
+  },
+
   css: ['~/assets/css/main.css'],
   compatibilityDate: '2025-01-01',
 })

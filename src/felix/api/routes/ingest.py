@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
+from pydantic import BaseModel
+from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from felix.api.models import (
     ImportProgressResponse,
@@ -13,17 +16,39 @@ from felix.api.models import (
     SceneSummary,
 )
 from felix.db.queries import list_issues, list_scenes, update_issue_resolved
-from felix.ingest.pipeline import ImportProgress, ImportStatus, run_import_pipeline
+from felix.ingest.pipeline import (
+    ClarificationSlot,
+    EventQueue,
+    ImportProgress,
+    ImportStatus,
+    run_import_pipeline,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+    from pathlib import Path
 
 router = APIRouter(prefix="/api", tags=["ingest"])
 
 
+class ClarifyRequest(BaseModel):
+    id: str
+    answer: str  # "link" or "new"
+
+
 @router.post("/import", status_code=202)
 async def start_import(
-    request: Request, files: list[UploadFile] = [],  # noqa: B006
+    request: Request,
+    files: list[UploadFile] = [],  # noqa: B006
 ) -> ImportProgressResponse:
-    progress: ImportProgress | None = getattr(request.app.state, "import_progress", None)
-    if progress and progress.status not in (ImportStatus.DONE, ImportStatus.ERROR, ImportStatus.PENDING):
+    progress: ImportProgress | None = getattr(
+        request.app.state, "import_progress", None
+    )
+    if progress and progress.status not in (
+        ImportStatus.DONE,
+        ImportStatus.ERROR,
+        ImportStatus.PENDING,
+    ):
         raise HTTPException(status_code=409, detail="Import already in progress")
 
     txt_files = [f for f in files if f.filename and f.filename.endswith(".txt")]
@@ -34,7 +59,7 @@ async def start_import(
     tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
     for upload in txt_files:
         content = await upload.read()
-        dest = Path(tmp_dir) / upload.filename  # type: ignore[arg-type]
+        dest = _tmp_path(tmp_dir) / upload.filename  # type: ignore[arg-type]
         dest.write_bytes(content)
 
     new_progress = ImportProgress()
@@ -46,17 +71,119 @@ async def start_import(
     base_url = request.app.state.base_url
 
     request.app.state.import_task = asyncio.create_task(
-        run_import_pipeline(
-            tmp_dir, db, collection, model_name, base_url, new_progress
-        )
+        run_import_pipeline(tmp_dir, db, collection, model_name, base_url, new_progress)
     )
 
     return ImportProgressResponse(**new_progress.__dict__)
 
 
+@router.post("/import/stream")
+async def import_stream(
+    request: Request,
+    files: list[UploadFile] = [],  # noqa: B006
+) -> EventSourceResponse:
+    progress: ImportProgress | None = getattr(
+        request.app.state, "import_progress", None
+    )
+    if progress and progress.status not in (
+        ImportStatus.DONE,
+        ImportStatus.ERROR,
+        ImportStatus.PENDING,
+    ):
+        raise HTTPException(status_code=409, detail="Import already in progress")
+
+    txt_files = [f for f in files if f.filename and f.filename.endswith(".txt")]
+    if not txt_files:
+        raise HTTPException(status_code=400, detail="Aucun fichier .txt recu")
+
+    # Write uploaded files to a temp directory
+    tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
+    for upload in txt_files:
+        content = await upload.read()
+        dest = _tmp_path(tmp_dir) / upload.filename  # type: ignore[arg-type]
+        dest.write_bytes(content)
+
+    new_progress = ImportProgress()
+    request.app.state.import_progress = new_progress
+
+    queue: EventQueue = asyncio.Queue()
+    pending: dict[str, ClarificationSlot] = {}
+    request.app.state.pending_clarifications = pending
+
+    db = request.app.state.db
+    collection = request.app.state.deps.chroma_collection
+    model_name = request.app.state.model_name
+    base_url = request.app.state.base_url
+
+    task = asyncio.create_task(
+        run_import_pipeline(
+            tmp_dir,
+            db,
+            collection,
+            model_name,
+            base_url,
+            new_progress,
+            queue,
+            pending,
+        )
+    )
+    request.app.state.import_task = task
+
+    async def event_generator() -> AsyncGenerator[ServerSentEvent]:
+        try:
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=1.0)
+                except TimeoutError:
+                    # Check if pipeline task is done
+                    if task.done():
+                        # Drain remaining events
+                        while not queue.empty():
+                            event = queue.get_nowait()
+                            yield ServerSentEvent(
+                                data=json.dumps(event),
+                                event=event["event"],
+                            )
+                        break
+                    continue
+
+                yield ServerSentEvent(
+                    data=json.dumps(event),
+                    event=event["event"],
+                )
+
+                if event["event"] in ("done", "error"):
+                    break
+        except asyncio.CancelledError:
+            task.cancel()
+
+    return EventSourceResponse(
+        event_generator(),
+        headers={"X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/import/clarify")
+async def clarify(body: ClarifyRequest, request: Request) -> dict[str, str]:
+    pending: dict[str, ClarificationSlot] | None = getattr(
+        request.app.state, "pending_clarifications", None
+    )
+    if not pending or body.id not in pending:
+        raise HTTPException(
+            status_code=404, detail="Clarification not found or expired"
+        )
+
+    slot = pending[body.id]
+    slot.answer = body.answer
+    slot.event.set()
+    return {"status": "ok"}
+
+
 @router.get("/import/status")
 async def get_import_status(request: Request) -> ImportProgressResponse:
-    progress: ImportProgress | None = getattr(request.app.state, "import_progress", None)
+    progress: ImportProgress | None = getattr(
+        request.app.state, "import_progress", None
+    )
     if not progress:
         return ImportProgressResponse(status=ImportStatus.PENDING)
     return ImportProgressResponse(**progress.__dict__)
@@ -92,3 +219,9 @@ async def get_scenes(request: Request) -> list[SceneSummary]:
     db = request.app.state.db
     rows = await list_scenes(db)
     return [SceneSummary(**row) for row in rows]
+
+
+def _tmp_path(tmp_dir: str) -> Path:
+    from pathlib import Path
+
+    return Path(tmp_dir)

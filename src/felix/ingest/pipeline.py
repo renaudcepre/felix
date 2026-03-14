@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -25,7 +26,12 @@ from felix.ingest.resolver import (
     AmbiguousMatch,
     ResolvedEntity,
     fuzzy_match_entity,
+    slugify,
 )
+
+EventQueue = asyncio.Queue[dict[str, Any]]
+
+CLARIFICATION_TIMEOUT = 30.0
 
 
 class ImportStatus(StrEnum):
@@ -48,6 +54,16 @@ class ImportProgress:
     error: str = ""
     new_characters: list[str] = field(default_factory=list)
     new_locations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ClarificationSlot:
+    event: asyncio.Event = field(default_factory=asyncio.Event)
+    answer: str = ""
+
+
+async def _emit(queue: EventQueue, event: str, **data: Any) -> None:
+    await queue.put({"event": event, **data})
 
 
 def _build_registry(
@@ -82,62 +98,407 @@ async def _load_registries(
     return _build_registry(chars, locs)
 
 
-def _resolve_characters(
+async def _resolve_characters(  # noqa: PLR0913
     analysis: SceneAnalysis,
     char_registry: dict[str, str],
     char_aliases: dict[str, list[str]],
     scene_id: str,
     issues: list[dict],
+    queue: EventQueue | None = None,
+    pending_clarifications: dict[str, ClarificationSlot] | None = None,
 ) -> list[tuple[ResolvedEntity, str]]:
     resolved_chars: list[tuple[ResolvedEntity, str]] = []
     for ec in analysis.characters:
         match = fuzzy_match_entity(ec.name, char_registry, char_aliases)
         if isinstance(match, AmbiguousMatch):
-            issues.append({
+            resolved = await _handle_ambiguous_character(
+                ec.name,
+                ec.role,
+                match,
+                scene_id,
+                issues,
+                queue,
+                pending_clarifications,
+                char_registry,
+            )
+        else:
+            resolved = match
+            if resolved.is_new:
+                char_registry[resolved.id] = resolved.name
+            if queue:
+                action = "created" if resolved.is_new else "linked"
+                await _emit(
+                    queue,
+                    "entity_resolved",
+                    name=ec.name,
+                    action=action,
+                    linked_to=resolved.name if not resolved.is_new else None,
+                )
+        resolved_chars.append((resolved, ec.role))
+    return resolved_chars
+
+
+async def _handle_ambiguous_character(  # noqa: PLR0913
+    name: str,
+    role: str,
+    match: AmbiguousMatch,
+    scene_id: str,
+    issues: list[dict],
+    queue: EventQueue | None,
+    pending_clarifications: dict[str, ClarificationSlot] | None,
+    char_registry: dict[str, str],
+) -> ResolvedEntity:
+    # If we have a queue and clarification support, ask the user
+    if queue and pending_clarifications is not None:
+        clarification_id = str(uuid.uuid4())
+        slot = ClarificationSlot()
+        pending_clarifications[clarification_id] = slot
+
+        await _emit(
+            queue,
+            "clarification_needed",
+            id=clarification_id,
+            question=f"'{name}' = '{match.best_name}' ?",
+            entity_name=name,
+            candidate_name=match.best_name,
+            candidate_id=match.best_id,
+            score=round(match.score, 2),
+            options=["link", "new"],
+        )
+
+        try:
+            await asyncio.wait_for(slot.event.wait(), timeout=CLARIFICATION_TIMEOUT)
+        except TimeoutError:
+            slot.answer = "link"  # auto-resolve on timeout
+        finally:
+            pending_clarifications.pop(clarification_id, None)
+
+        if slot.answer == "new":
+            new_id = slugify(name)
+            resolved = ResolvedEntity(id=new_id, name=name, is_new=True)
+            char_registry[new_id] = name
+            issues.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "duplicate_suspect",
+                    "severity": "info",
+                    "scene_id": scene_id,
+                    "entity_id": new_id,
+                    "description": (
+                        f"Personnage '{name}' confirme comme distinct de '{match.best_name}' "
+                        f"(score {match.score:.2f}). Nouvelle entite creee."
+                    ),
+                    "suggestion": None,
+                }
+            )
+            await _emit(
+                queue,
+                "entity_resolved",
+                name=name,
+                action="created",
+            )
+            return resolved
+
+        # link (explicit or timeout)
+        was_timeout = slot.answer == "link" and not slot.event.is_set()
+        issues.append(
+            {
                 "id": str(uuid.uuid4()),
                 "type": "duplicate_suspect",
                 "severity": "warning",
                 "scene_id": scene_id,
                 "entity_id": match.best_id,
                 "description": (
-                    f"Personnage '{ec.name}' ressemble a '{match.best_name}' "
-                    f"(score {match.score:.2f}). Lien automatique effectue."
+                    f"Personnage '{name}' ressemble a '{match.best_name}' "
+                    f"(score {match.score:.2f}). Lien "
+                    + (
+                        "automatique (timeout)"
+                        if was_timeout
+                        else "confirme par l'utilisateur"
+                    )
+                    + "."
                 ),
-                "suggestion": f"Verifier si '{ec.name}' est bien '{match.best_name}'.",
-            })
-            resolved = ResolvedEntity(id=match.best_id, name=match.best_name)
-        else:
-            resolved = match
-            if resolved.is_new:
-                char_registry[resolved.id] = resolved.name
-        resolved_chars.append((resolved, ec.role))
-    return resolved_chars
+                "suggestion": f"Verifier si '{name}' est bien '{match.best_name}'."
+                if was_timeout
+                else None,
+            }
+        )
+        await _emit(
+            queue,
+            "entity_resolved",
+            name=name,
+            action="linked",
+            linked_to=match.best_name,
+            score=round(match.score, 2),
+        )
+        return ResolvedEntity(id=match.best_id, name=match.best_name)
 
-
-def _resolve_location(
-    analysis: SceneAnalysis,
-    loc_registry: dict[str, str],
-    scene_id: str,
-    issues: list[dict],
-) -> ResolvedEntity:
-    match = fuzzy_match_entity(analysis.location.name, loc_registry)
-    if isinstance(match, AmbiguousMatch):
-        issues.append({
+    # Fallback: no queue, auto-link like before
+    issues.append(
+        {
             "id": str(uuid.uuid4()),
             "type": "duplicate_suspect",
             "severity": "warning",
             "scene_id": scene_id,
             "entity_id": match.best_id,
             "description": (
-                f"Lieu '{analysis.location.name}' ressemble a '{match.best_name}' "
+                f"Personnage '{name}' ressemble a '{match.best_name}' "
                 f"(score {match.score:.2f}). Lien automatique effectue."
             ),
-            "suggestion": f"Verifier si '{analysis.location.name}' est bien '{match.best_name}'.",
-        })
+            "suggestion": f"Verifier si '{name}' est bien '{match.best_name}'.",
+        }
+    )
+    return ResolvedEntity(id=match.best_id, name=match.best_name)
+
+
+async def _resolve_location(  # noqa: PLR0913
+    analysis: SceneAnalysis,
+    loc_registry: dict[str, str],
+    scene_id: str,
+    issues: list[dict],
+    queue: EventQueue | None = None,
+    pending_clarifications: dict[str, ClarificationSlot] | None = None,
+) -> ResolvedEntity:
+    match = fuzzy_match_entity(analysis.location.name, loc_registry)
+    if isinstance(match, AmbiguousMatch):
+        # For locations, ask user if queue available
+        if queue and pending_clarifications is not None:
+            clarification_id = str(uuid.uuid4())
+            slot = ClarificationSlot()
+            pending_clarifications[clarification_id] = slot
+
+            await _emit(
+                queue,
+                "clarification_needed",
+                id=clarification_id,
+                question=f"Lieu '{analysis.location.name}' = '{match.best_name}' ?",
+                entity_name=analysis.location.name,
+                candidate_name=match.best_name,
+                candidate_id=match.best_id,
+                score=round(match.score, 2),
+                options=["link", "new"],
+            )
+
+            try:
+                await asyncio.wait_for(slot.event.wait(), timeout=CLARIFICATION_TIMEOUT)
+            except TimeoutError:
+                slot.answer = "link"
+            finally:
+                pending_clarifications.pop(clarification_id, None)
+
+            if slot.answer == "new":
+                new_id = slugify(analysis.location.name)
+                loc_registry[new_id] = analysis.location.name
+                await _emit(
+                    queue,
+                    "entity_resolved",
+                    name=analysis.location.name,
+                    action="created",
+                )
+                return ResolvedEntity(
+                    id=new_id, name=analysis.location.name, is_new=True
+                )
+
+            # link
+            issues.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "type": "duplicate_suspect",
+                    "severity": "warning",
+                    "scene_id": scene_id,
+                    "entity_id": match.best_id,
+                    "description": (
+                        f"Lieu '{analysis.location.name}' ressemble a '{match.best_name}' "
+                        f"(score {match.score:.2f}). Lien effectue."
+                    ),
+                    "suggestion": None,
+                }
+            )
+            await _emit(
+                queue,
+                "entity_resolved",
+                name=analysis.location.name,
+                action="linked",
+                linked_to=match.best_name,
+                score=round(match.score, 2),
+            )
+            return ResolvedEntity(id=match.best_id, name=match.best_name)
+
+        # Fallback: no queue
+        issues.append(
+            {
+                "id": str(uuid.uuid4()),
+                "type": "duplicate_suspect",
+                "severity": "warning",
+                "scene_id": scene_id,
+                "entity_id": match.best_id,
+                "description": (
+                    f"Lieu '{analysis.location.name}' ressemble a '{match.best_name}' "
+                    f"(score {match.score:.2f}). Lien automatique effectue."
+                ),
+                "suggestion": f"Verifier si '{analysis.location.name}' est bien '{match.best_name}'.",
+            }
+        )
         return ResolvedEntity(id=match.best_id, name=match.best_name)
+
     if match.is_new:
         loc_registry[match.id] = match.name
+    if queue:
+        action = "created" if match.is_new else "linked"
+        await _emit(
+            queue,
+            "entity_resolved",
+            name=analysis.location.name,
+            action=action,
+            linked_to=match.name if not match.is_new else None,
+        )
     return match
+
+
+@dataclass
+class _PipelineContext:
+    db: aiosqlite.Connection
+    collection: chromadb.Collection
+    progress: ImportProgress
+    queue: EventQueue | None
+    pending_clarifications: dict[str, ClarificationSlot] | None
+    char_registry: dict[str, str] = field(default_factory=dict)
+    char_aliases: dict[str, list[str]] = field(default_factory=dict)
+    loc_registry: dict[str, str] = field(default_factory=dict)
+
+
+async def _emit_status(ctx: _PipelineContext, status: ImportStatus) -> None:
+    if ctx.queue:
+        await _emit(
+            ctx.queue,
+            "status_change",
+            status=status,
+            current_scene=ctx.progress.current_scene,
+            processed_scenes=ctx.progress.processed_scenes,
+            total_scenes=ctx.progress.total_scenes,
+        )
+
+
+async def _process_scene(
+    ctx: _PipelineContext,
+    scene_file: Path,
+    analyzer: Any,
+) -> tuple[list[dict], dict]:
+    scene_id = f"scene-{scene_file.stem}"
+    ctx.progress.current_scene = scene_file.name
+    ctx.progress.status = ImportStatus.ANALYZING
+    await _emit_status(ctx, ImportStatus.ANALYZING)
+
+    scene_text = scene_file.read_text(encoding="utf-8")  # noqa: ASYNC240
+    analysis = await analyze_scene(analyzer, scene_text)
+
+    if ctx.queue:
+        await _emit(
+            ctx.queue,
+            "scene_analyzed",
+            scene_id=scene_id,
+            title=analysis.title,
+            characters=[{"name": c.name, "role": c.role} for c in analysis.characters],
+            location=analysis.location.name,
+            era=analysis.era,
+        )
+
+    # Resolve
+    ctx.progress.status = ImportStatus.RESOLVING
+    await _emit_status(ctx, ImportStatus.RESOLVING)
+    scene_issues: list[dict] = []
+
+    resolved_chars = await _resolve_characters(
+        analysis,
+        ctx.char_registry,
+        ctx.char_aliases,
+        scene_id,
+        scene_issues,
+        ctx.queue,
+        ctx.pending_clarifications,
+    )
+    resolved_location = await _resolve_location(
+        analysis,
+        ctx.loc_registry,
+        scene_id,
+        scene_issues,
+        ctx.queue,
+        ctx.pending_clarifications,
+    )
+
+    for rc, _ in resolved_chars:
+        if rc.is_new:
+            ctx.progress.new_characters.append(rc.name)
+    if resolved_location.is_new:
+        ctx.progress.new_locations.append(resolved_location.name)
+
+    # Load
+    ctx.progress.status = ImportStatus.LOADING
+    await _emit_status(ctx, ImportStatus.LOADING)
+    await load_scene(
+        ctx.db,
+        ctx.collection,
+        scene_id,
+        scene_file.name,
+        scene_text,
+        analysis,
+        resolved_chars,
+        resolved_location,
+    )
+
+    if ctx.queue:
+        await _emit(ctx.queue, "scene_loaded", scene_id=scene_id)
+
+    summary = {
+        "scene_id": scene_id,
+        "title": analysis.title,
+        "summary": analysis.summary,
+        "era": analysis.era,
+        "date": analysis.approximate_date,
+        "characters": [
+            {"name": rc.name, "id": rc.id, "role": role} for rc, role in resolved_chars
+        ],
+        "location": {"name": resolved_location.name, "id": resolved_location.id},
+    }
+
+    ctx.progress.processed_scenes += 1
+    return scene_issues, summary
+
+
+async def _run_consistency_check(
+    ctx: _PipelineContext,
+    scenes_summary: list[dict],
+    model_name: str | None,
+    base_url: str | None,
+) -> list[dict]:
+    ctx.progress.status = ImportStatus.CHECKING
+    ctx.progress.current_scene = ""
+    await _emit_status(ctx, ImportStatus.CHECKING)
+
+    checker = create_checker_agent(model_name, base_url)
+    report = await check_consistency(checker, scenes_summary)
+
+    issues: list[dict] = []
+    for ci in report.issues:
+        issue = {
+            "id": str(uuid.uuid4()),
+            "type": ci.type,
+            "severity": ci.severity,
+            "scene_id": ci.scene_id,
+            "entity_id": ci.entity_id,
+            "description": ci.description,
+            "suggestion": ci.suggestion,
+        }
+        issues.append(issue)
+        if ctx.queue:
+            await _emit(
+                ctx.queue,
+                "issue_found",
+                type=ci.type,
+                severity=ci.severity,
+                description=ci.description,
+            )
+    return issues
 
 
 async def run_import_pipeline(  # noqa: PLR0913
@@ -147,108 +508,71 @@ async def run_import_pipeline(  # noqa: PLR0913
     model_name: str | None,
     base_url: str | None,
     progress: ImportProgress,
+    queue: EventQueue | None = None,
+    pending_clarifications: dict[str, ClarificationSlot] | None = None,
 ) -> None:
+    ctx = _PipelineContext(
+        db=db,
+        collection=collection,
+        progress=progress,
+        queue=queue,
+        pending_clarifications=pending_clarifications,
+    )
     try:
-        # 1. List .txt files
         scene_files = sorted(Path(scenes_dir).glob("*.txt"))  # noqa: ASYNC240
         if not scene_files:
             progress.error = f"Aucun fichier .txt dans {scenes_dir}"
             progress.status = ImportStatus.ERROR
+            if queue:
+                await _emit(queue, "error", message=progress.error)
             return
 
         progress.total_scenes = len(scene_files)
+        if queue:
+            await _emit(
+                queue,
+                "status_change",
+                status=ImportStatus.PENDING,
+                total_scenes=progress.total_scenes,
+                processed_scenes=0,
+                current_scene="",
+            )
 
-        # 2. Load registries from DB
-        char_registry, char_aliases, loc_registry = await _load_registries(db)
+        ctx.char_registry, ctx.char_aliases, ctx.loc_registry = await _load_registries(
+            db
+        )
+        await delete_issues_for_scenes(db, [f"scene-{f.stem}" for f in scene_files])
 
-        # 3. Delete old issues for scenes being re-imported
-        scene_ids = [f"scene-{f.stem}" for f in scene_files]
-        await delete_issues_for_scenes(db, scene_ids)
-
-        # 4. Create analyzer agent
         analyzer = create_analyzer_agent(model_name, base_url)
-
         all_issues: list[dict] = []
         scenes_summary: list[dict] = []
 
-        # 5. Process each scene
         for scene_file in scene_files:
-            scene_id = f"scene-{scene_file.stem}"
-            progress.current_scene = scene_file.name
-            progress.status = ImportStatus.ANALYZING
-
-            scene_text = scene_file.read_text(encoding="utf-8")
-
-            # Analyze
-            analysis = await analyze_scene(analyzer, scene_text)
-
-            # Resolve
-            progress.status = ImportStatus.RESOLVING
-            scene_issues: list[dict] = []
-
-            resolved_chars = _resolve_characters(
-                analysis, char_registry, char_aliases, scene_id, scene_issues
-            )
-            resolved_location = _resolve_location(
-                analysis, loc_registry, scene_id, scene_issues
-            )
-
-            # Track new entities
-            for rc, _ in resolved_chars:
-                if rc.is_new:
-                    progress.new_characters.append(rc.name)
-            if resolved_location.is_new:
-                progress.new_locations.append(resolved_location.name)
-
-            # Load
-            progress.status = ImportStatus.LOADING
-            await load_scene(
-                db, collection, scene_id, scene_file.name, scene_text,
-                analysis, resolved_chars, resolved_location,
-            )
-
+            scene_issues, summary = await _process_scene(ctx, scene_file, analyzer)
             all_issues.extend(scene_issues)
-            scenes_summary.append({
-                "scene_id": scene_id,
-                "title": analysis.title,
-                "summary": analysis.summary,
-                "era": analysis.era,
-                "date": analysis.approximate_date,
-                "characters": [
-                    {"name": rc.name, "id": rc.id, "role": role}
-                    for rc, role in resolved_chars
-                ],
-                "location": {
-                    "name": resolved_location.name,
-                    "id": resolved_location.id,
-                },
-            })
+            scenes_summary.append(summary)
 
-            progress.processed_scenes += 1
+        check_issues = await _run_consistency_check(
+            ctx, scenes_summary, model_name, base_url
+        )
+        all_issues.extend(check_issues)
 
-        # 6. Cross-scene consistency check
-        progress.status = ImportStatus.CHECKING
-        progress.current_scene = ""
-        checker = create_checker_agent(model_name, base_url)
-        report = await check_consistency(checker, scenes_summary)
-        for ci in report.issues:
-            all_issues.append({
-                "id": str(uuid.uuid4()),
-                "type": ci.type,
-                "severity": ci.severity,
-                "scene_id": ci.scene_id,
-                "entity_id": ci.entity_id,
-                "description": ci.description,
-                "suggestion": ci.suggestion,
-            })
-
-        # 7. Insert all issues
         for issue in all_issues:
             await create_issue(db, issue)
 
         progress.issues_found = len(all_issues)
         progress.status = ImportStatus.DONE
+        if queue:
+            await _emit(
+                queue,
+                "done",
+                total_issues=len(all_issues),
+                new_characters=progress.new_characters,
+                new_locations=progress.new_locations,
+            )
 
     except Exception as e:
         progress.error = str(e)
         progress.status = ImportStatus.ERROR
+        if queue:
+            await _emit(queue, "error", message=str(e))

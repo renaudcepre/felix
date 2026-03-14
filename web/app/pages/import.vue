@@ -1,8 +1,11 @@
 <script setup lang="ts">
-const { progress, loading, startImport } = useImport()
+import type { ImportEvent } from '~/types'
+
+const { progress, loading, events, clarification, startImport, respondClarification } = useImport()
 const files = ref<File[]>([])
 const dragging = ref(false)
 const fileInput = ref<HTMLInputElement>()
+const eventLog = ref<HTMLElement>()
 
 function onDrop(e: DragEvent) {
   dragging.value = false
@@ -61,6 +64,53 @@ const statusColor: Record<string, string> = {
   done: 'success',
   error: 'error',
 }
+
+function formatEvent(ev: ImportEvent): { icon: string, text: string, color: string } {
+  switch (ev.event) {
+    case 'scene_analyzed':
+      return {
+        icon: 'i-lucide-search',
+        text: `Analyse : ${ev.title} (${ev.characters?.length ?? 0} personnages, lieu : ${ev.location})`,
+        color: 'text-blue-500',
+      }
+    case 'entity_resolved':
+      if (ev.action === 'created') {
+        return { icon: 'i-lucide-plus', text: `Nouveau : ${ev.name}`, color: 'text-green-500' }
+      }
+      if (ev.action === 'linked') {
+        return { icon: 'i-lucide-link', text: `Lie : ${ev.name} -> ${ev.linked_to}`, color: 'text-yellow-500' }
+      }
+      return { icon: 'i-lucide-help-circle', text: `Entite : ${ev.name}`, color: 'text-muted' }
+    case 'scene_loaded':
+      return { icon: 'i-lucide-check', text: `Charge : ${ev.scene_id}`, color: 'text-green-600' }
+    case 'issue_found':
+      return { icon: 'i-lucide-alert-triangle', text: `Issue : ${ev.description}`, color: 'text-orange-500' }
+    case 'done':
+      return {
+        icon: 'i-lucide-check-circle',
+        text: `Termine — ${ev.total_issues ?? 0} issues, ${ev.new_characters?.length ?? 0} nouveaux personnages`,
+        color: 'text-green-600',
+      }
+    case 'error':
+      return { icon: 'i-lucide-x-circle', text: `Erreur : ${ev.message}`, color: 'text-red-500' }
+    default:
+      return { icon: 'i-lucide-info', text: JSON.stringify(ev), color: 'text-muted' }
+  }
+}
+
+// Visible events (filter out status_change and clarification_needed)
+const visibleEvents = computed(() =>
+  events.value.filter(e => !['status_change', 'clarification_needed'].includes(e.event)),
+)
+
+// Auto-scroll event log
+watch(events, () => {
+  nextTick(() => {
+    if (eventLog.value) {
+      eventLog.value.scrollTop = eventLog.value.scrollHeight
+    }
+  })
+}, { deep: true })
 </script>
 
 <template>
@@ -175,6 +225,62 @@ const statusColor: Record<string, string> = {
 
         <div v-if="progress.error" class="text-sm text-red-500">
           {{ progress.error }}
+        </div>
+
+        <!-- Clarification card -->
+        <div
+          v-if="clarification"
+          class="border border-yellow-400 bg-yellow-50 dark:bg-yellow-950/30 dark:border-yellow-600 rounded-lg p-4 space-y-3"
+        >
+          <div class="flex items-start gap-2">
+            <UIcon name="i-lucide-help-circle" class="text-yellow-500 mt-0.5 shrink-0" />
+            <div>
+              <p class="font-medium text-sm">
+                {{ clarification.question }}
+              </p>
+              <p class="text-xs text-muted mt-1">
+                Score de similarite : {{ (clarification.score * 100).toFixed(0) }}% — Resolution automatique dans 30s
+              </p>
+            </div>
+          </div>
+          <div class="flex gap-2">
+            <UButton
+              size="sm"
+              color="success"
+              variant="soft"
+              @click="respondClarification(clarification!.id, 'link')"
+            >
+              Oui, meme entite
+            </UButton>
+            <UButton
+              size="sm"
+              color="error"
+              variant="soft"
+              @click="respondClarification(clarification!.id, 'new')"
+            >
+              Non, nouvelle entite
+            </UButton>
+          </div>
+        </div>
+
+        <!-- Event log -->
+        <div v-if="visibleEvents.length" class="border-t pt-4 space-y-2">
+          <p class="font-medium text-sm">
+            Journal d'import
+          </p>
+          <div
+            ref="eventLog"
+            class="max-h-64 overflow-y-auto space-y-1 text-sm font-mono"
+          >
+            <div
+              v-for="(ev, i) in visibleEvents"
+              :key="i"
+              class="flex items-start gap-2 py-0.5"
+            >
+              <UIcon :name="formatEvent(ev).icon" :class="formatEvent(ev).color" class="shrink-0 mt-0.5" />
+              <span>{{ formatEvent(ev).text }}</span>
+            </div>
+          </div>
         </div>
 
         <!-- Results -->

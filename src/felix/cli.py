@@ -10,7 +10,7 @@ from rich.text import Text
 
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
-from felix.config import LMSTUDIO_DEFAULT_MODEL, LMSTUDIO_URL, settings
+from felix.config import settings
 from felix.db.schema import init_db
 from felix.vectorstore.store import get_collection
 
@@ -79,15 +79,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Felix — Screenplay Continuity Assistant")
     parser.add_argument("--model", type=str, default=None, help="Model name (e.g. qwen2.5-7b-instruct-1m)")
     parser.add_argument("--base-url", type=str, default=None, help="OpenAI-compatible API base URL")
-    parser.add_argument("--local", action="store_true", help="Use LMStudio (localhost:1234)")
     args = parser.parse_args()
 
-    if args.local:
-        base_url = args.base_url or LMSTUDIO_URL
-        model = args.model or LMSTUDIO_DEFAULT_MODEL
-    else:
-        base_url = args.base_url or settings.felix_base_url
-        model = args.model or settings.felix_model
+    model = args.model or settings.llm_model
+    base_url = args.base_url or settings.llm_base_url
 
     asyncio.run(chat_loop(model=model, base_url=base_url))
 

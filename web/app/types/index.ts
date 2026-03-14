@@ -82,3 +82,50 @@ export interface ChatResponse {
   message_history: object[]
   usage: UsageInfo | null
 }
+
+export interface ImportEvent {
+  event: string
+  // status_change
+  status?: string
+  current_scene?: string
+  processed_scenes?: number
+  total_scenes?: number
+  // scene_analyzed
+  scene_id?: string
+  title?: string
+  characters?: { name: string, role: string }[]
+  location?: string
+  era?: string
+  // entity_resolved
+  name?: string
+  action?: 'created' | 'linked' | 'ambiguous'
+  linked_to?: string
+  score?: number
+  // issue_found
+  type?: string
+  severity?: string
+  description?: string
+  // clarification_needed
+  id?: string
+  question?: string
+  entity_name?: string
+  candidate_name?: string
+  candidate_id?: string
+  options?: string[]
+  // done
+  total_issues?: number
+  new_characters?: string[]
+  new_locations?: string[]
+  // error
+  message?: string
+}
+
+export interface ClarificationRequest {
+  id: string
+  question: string
+  entity_name: string
+  candidate_name: string
+  candidate_id: string
+  score: number
+  options: string[]
+}

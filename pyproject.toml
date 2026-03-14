@@ -18,8 +18,7 @@ dependencies = [
     "chromadb>=1.0",
     "aiosqlite>=0.20",
     "rich>=14.3.3",
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
+    "fastapi[standard]>=0.115",
 ]
 
 [project.scripts]

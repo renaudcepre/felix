@@ -3,17 +3,21 @@ const { messages, loading, lastUsage, sendMessage, clearChat } = useFelix()
 const input = ref('')
 const chatContainer = ref<HTMLElement>()
 
+// Auto-scroll during streaming
+watch(messages, () => {
+  nextTick(() => {
+    if (chatContainer.value) {
+      chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+    }
+  })
+}, { deep: true })
+
 async function handleSend() {
   const text = input.value.trim()
   if (!text || loading.value) return
 
   input.value = ''
   await sendMessage(text)
-
-  await nextTick()
-  if (chatContainer.value) {
-    chatContainer.value.scrollTop = chatContainer.value.scrollHeight
-  }
 }
 </script>
 

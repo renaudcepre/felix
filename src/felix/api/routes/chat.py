@@ -15,9 +15,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
 
     message_history = None
     if body.message_history:
-        message_history = ModelMessagesTypeAdapter.validate_python(
-            body.message_history
-        )
+        message_history = ModelMessagesTypeAdapter.validate_python(body.message_history)
 
     result = await agent.run(
         body.message,
