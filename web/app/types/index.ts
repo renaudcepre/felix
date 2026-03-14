@@ -112,8 +112,12 @@ export interface ImportEvent {
   candidate_name?: string
   candidate_id?: string
   options?: string[]
-  // profiling_character / character_profiled
-  profile?: Record<string, string | null>
+  // profiling_character
+  fragment_count?: number
+  scene_count?: number
+  // character_profiled
+  filled_fields?: string[]
+  relations?: { other_name: string, relation: string }[]
   // done
   total_issues?: number
   new_characters?: string[]

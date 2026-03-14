@@ -97,9 +97,21 @@ function formatEvent(ev: ImportEvent): { icon: string, text: string, color: stri
     case 'issue_found':
       return { icon: 'i-lucide-alert-triangle', text: `Issue : ${ev.description}`, color: 'text-orange-500' }
     case 'profiling_character':
-      return { icon: 'i-lucide-user', text: `Profiling : ${ev.name}...`, color: 'text-blue-400' }
-    case 'character_profiled':
-      return { icon: 'i-lucide-user-check', text: `Profil enrichi : ${ev.name}`, color: 'text-green-500' }
+      return {
+        icon: 'i-lucide-user',
+        text: `Profiling : ${ev.name} (${ev.fragment_count ?? 0} fragments, ${ev.scene_count ?? 0} scenes)...`,
+        color: 'text-blue-400',
+      }
+    case 'character_profiled': {
+      const fields = (ev.filled_fields as string[] | undefined)?.join(', ') || 'aucun'
+      const rels = (ev.relations as Array<{ other_name: string, relation: string }> | undefined) ?? []
+      const relText = rels.length ? ` | ${rels.map(r => `${r.other_name}: ${r.relation}`).join(', ')}` : ''
+      return {
+        icon: 'i-lucide-user-check',
+        text: `${ev.name} [${fields}]${relText}`,
+        color: 'text-green-500',
+      }
+    }
     case 'done':
       return {
         icon: 'i-lucide-check-circle',

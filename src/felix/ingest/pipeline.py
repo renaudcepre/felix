@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from felix.ingest.models import SceneAnalysis
 
+from felix.config import SCENE_FILE_EXTENSIONS
 from felix.db.queries import (
     create_issue,
     delete_issues_for_scenes,
@@ -535,11 +536,6 @@ async def _run_character_profiling(
         char_id = char["id"]
         char_name = char["name"]
 
-        if ctx.queue:
-            await _emit(
-                ctx.queue, "profiling_character", name=char_name, id=char_id
-            )
-
         # Fetch fragments
         fragments = await get_character_fragments(ctx.db, char_id)
 
@@ -550,6 +546,16 @@ async def _run_character_profiling(
             results = ctx.collection.get(ids=scene_ids)
             scene_texts = results.get("documents") or []
 
+        if ctx.queue:
+            await _emit(
+                ctx.queue,
+                "profiling_character",
+                name=char_name,
+                id=char_id,
+                fragment_count=len(fragments),
+                scene_count=len(scene_texts),
+            )
+
         known_names = [c["name"] for c in chars if c["id"] != char_id]
         profile = await profile_character(
             profiler, char_name, scene_texts, fragments, known_names
@@ -558,22 +564,34 @@ async def _run_character_profiling(
         await update_character_profile(ctx.db, char_id, profile.model_dump())
 
         # Resolve and store relations
+        stored_relations: list[dict[str, str]] = []
         for rel in profile.relations:
             other_match = fuzzy_match_entity(
                 rel.other_name, ctx.char_registry, ctx.char_aliases
             )
             if isinstance(other_match, AmbiguousMatch):
                 other_id = other_match.best_id
+                other_name = other_match.best_name
             else:
                 if other_match.is_new:
                     continue  # skip unknown characters
                 other_id = other_match.id
+                other_name = other_match.name
             if other_id != char_id:
-                # Normalize order to avoid duplicates (a,b) vs (b,a)
                 a, b = sorted([char_id, other_id])
                 await upsert_character_relation(
                     ctx.db, a, b, rel.relation, era=char.get("era")
                 )
+                stored_relations.append({
+                    "other_name": other_name,
+                    "relation": rel.relation,
+                })
+
+        # Summary of filled fields
+        filled = [
+            k for k in ("age", "physical", "background", "arc", "traits")
+            if getattr(profile, k)
+        ]
 
         if ctx.queue:
             await _emit(
@@ -581,7 +599,8 @@ async def _run_character_profiling(
                 "character_profiled",
                 name=char_name,
                 id=char_id,
-                profile=profile.model_dump(),
+                filled_fields=filled,
+                relations=stored_relations,
             )
 
 
@@ -604,9 +623,11 @@ async def run_import_pipeline(  # noqa: PLR0913
         pending_clarifications=pending_clarifications,
     )
     try:
-        scene_files = sorted(Path(scenes_dir).glob("*.txt"))  # noqa: ASYNC240
+        scene_files = sorted(  # noqa: ASYNC240
+            f for ext in SCENE_FILE_EXTENSIONS for f in Path(scenes_dir).glob(f"*{ext}")
+        )
         if not scene_files:
-            progress.error = f"Aucun fichier .txt dans {scenes_dir}"
+            progress.error = f"Aucun fichier texte dans {scenes_dir}"
             progress.status = ImportStatus.ERROR
             if queue:
                 await _emit(queue, "error", message=progress.error)
