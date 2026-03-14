@@ -18,10 +18,13 @@ if TYPE_CHECKING:
 from felix.db.queries import (
     create_issue,
     delete_issues_for_scenes,
+    get_character_fragments,
+    update_character_profile,
 )
 from felix.ingest.analyzer import analyze_scene, create_analyzer_agent
 from felix.ingest.checker import check_consistency, create_checker_agent
 from felix.ingest.loader import load_scene
+from felix.ingest.profiler import create_profiler_agent, profile_character
 from felix.ingest.resolver import (
     AmbiguousMatch,
     ResolvedEntity,
@@ -40,6 +43,7 @@ class ImportStatus(StrEnum):
     RESOLVING = "resolving"
     LOADING = "loading"
     CHECKING = "checking"
+    PROFILING = "profiling"
     DONE = "done"
     ERROR = "error"
 
@@ -106,8 +110,8 @@ async def _resolve_characters(  # noqa: PLR0913
     issues: list[dict],
     queue: EventQueue | None = None,
     pending_clarifications: dict[str, ClarificationSlot] | None = None,
-) -> list[tuple[ResolvedEntity, str]]:
-    resolved_chars: list[tuple[ResolvedEntity, str]] = []
+) -> list[tuple[ResolvedEntity, str, str | None]]:
+    resolved_chars: list[tuple[ResolvedEntity, str, str | None]] = []
     for ec in analysis.characters:
         match = fuzzy_match_entity(ec.name, char_registry, char_aliases)
         if isinstance(match, AmbiguousMatch):
@@ -134,7 +138,7 @@ async def _resolve_characters(  # noqa: PLR0913
                     action=action,
                     linked_to=resolved.name if not resolved.is_new else None,
                 )
-        resolved_chars.append((resolved, ec.role))
+        resolved_chars.append((resolved, ec.role, ec.description))
     return resolved_chars
 
 
@@ -426,7 +430,7 @@ async def _process_scene(
         ctx.pending_clarifications,
     )
 
-    for rc, _ in resolved_chars:
+    for rc, _, _ in resolved_chars:
         if rc.is_new:
             ctx.progress.new_characters.append(rc.name)
     if resolved_location.is_new:
@@ -456,7 +460,8 @@ async def _process_scene(
         "era": analysis.era,
         "date": analysis.approximate_date,
         "characters": [
-            {"name": rc.name, "id": rc.id, "role": role} for rc, role in resolved_chars
+            {"name": rc.name, "id": rc.id, "role": role}
+            for rc, role, _desc in resolved_chars
         ],
         "location": {"name": resolved_location.name, "id": resolved_location.id},
     }
@@ -501,6 +506,63 @@ async def _run_consistency_check(
     return issues
 
 
+async def _run_character_profiling(
+    ctx: _PipelineContext,
+    model_name: str | None,
+    base_url: str | None,
+) -> None:
+    ctx.progress.status = ImportStatus.PROFILING
+    ctx.progress.current_scene = ""
+    await _emit_status(ctx, ImportStatus.PROFILING)
+
+    # Find characters with at least 1 fragment
+    cursor = await ctx.db.execute(
+        """
+        SELECT DISTINCT c.id, c.name
+        FROM characters c
+        JOIN character_fragments cf ON c.id = cf.character_id
+        ORDER BY c.name
+        """
+    )
+    chars = [dict(row) for row in await cursor.fetchall()]
+    if not chars:
+        return
+
+    profiler = create_profiler_agent(model_name, base_url)
+
+    for char in chars:
+        char_id = char["id"]
+        char_name = char["name"]
+
+        if ctx.queue:
+            await _emit(
+                ctx.queue, "profiling_character", name=char_name, id=char_id
+            )
+
+        # Fetch fragments
+        fragments = await get_character_fragments(ctx.db, char_id)
+
+        # Fetch scene texts from ChromaDB
+        scene_ids = [f["scene_id"] for f in fragments]
+        scene_texts: list[str] = []
+        if scene_ids:
+            results = ctx.collection.get(ids=scene_ids)
+            scene_texts = results.get("documents") or []
+
+        profile = await profile_character(profiler, char_name, scene_texts, fragments)
+
+        await update_character_profile(ctx.db, char_id, profile.model_dump())
+
+        if ctx.queue:
+            await _emit(
+                ctx.queue,
+                "character_profiled",
+                name=char_name,
+                id=char_id,
+                profile=profile.model_dump(),
+            )
+
+
 async def run_import_pipeline(  # noqa: PLR0913
     scenes_dir: str,
     db: aiosqlite.Connection,
@@ -510,6 +572,7 @@ async def run_import_pipeline(  # noqa: PLR0913
     progress: ImportProgress,
     queue: EventQueue | None = None,
     pending_clarifications: dict[str, ClarificationSlot] | None = None,
+    enrich_profiles: bool = True,
 ) -> None:
     ctx = _PipelineContext(
         db=db,
@@ -561,6 +624,10 @@ async def run_import_pipeline(  # noqa: PLR0913
             await create_issue(db, issue)
 
         progress.issues_found = len(all_issues)
+
+        if enrich_profiles:
+            await _run_character_profiling(ctx, model_name, base_url)
+
         progress.status = ImportStatus.DONE
         if queue:
             await _emit(

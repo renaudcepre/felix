@@ -1,8 +1,8 @@
 <template>
-  <UDashboardGroup>
-    <AppSidebar />
-    <UDashboardPanel class="aged-texture min-h-screen">
+  <div class="min-h-screen">
+    <AppNavbar />
+    <main class="aged-texture">
       <slot />
-    </UDashboardPanel>
-  </UDashboardGroup>
+    </main>
+  </div>
 </template>

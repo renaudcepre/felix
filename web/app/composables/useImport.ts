@@ -9,7 +9,7 @@ export function useImport() {
   const clarification = ref<ClarificationRequest | null>(null)
   let abortController: AbortController | null = null
 
-  async function startImport(files: File[]) {
+  async function startImport(files: File[], enrich: boolean = true) {
     loading.value = true
     progress.value = null
     events.value = []
@@ -22,8 +22,12 @@ export function useImport() {
 
     abortController = new AbortController()
 
+    const params = new URLSearchParams()
+    if (!enrich) params.set('enrich', 'false')
+    const qs = params.toString() ? `?${params.toString()}` : ''
+
     try {
-      const response = await fetch(`${apiStreamBase}/api/import/stream`, {
+      const response = await fetch(`${apiStreamBase}/api/import/stream${qs}`, {
         method: 'POST',
         body: formData,
         signal: abortController.signal,
@@ -136,7 +140,14 @@ export function useImport() {
     loading.value = false
   }
 
+  function reset() {
+    cancelImport()
+    progress.value = null
+    events.value = []
+    clarification.value = null
+  }
+
   onUnmounted(cancelImport)
 
-  return { progress, loading, events, clarification, startImport, respondClarification, cancelImport }
+  return { progress, loading, events, clarification, startImport, respondClarification, cancelImport, reset }
 }

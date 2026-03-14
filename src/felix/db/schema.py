@@ -74,6 +74,14 @@ CREATE TABLE IF NOT EXISTS character_relations (
     era            TEXT,
     PRIMARY KEY (character_id_a, character_id_b, relation_type)
 );
+
+CREATE TABLE IF NOT EXISTS character_fragments (
+    character_id TEXT NOT NULL REFERENCES characters(id),
+    scene_id     TEXT NOT NULL REFERENCES scenes(id),
+    role         TEXT,
+    description  TEXT,
+    PRIMARY KEY (character_id, scene_id)
+);
 """
 
 

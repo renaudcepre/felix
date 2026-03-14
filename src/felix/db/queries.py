@@ -51,6 +51,16 @@ async def _format_character_profile(db: aiosqlite.Connection, row: aiosqlite.Row
                 f"  - {rel['relation_type']} with {rel['other_name']}{era}{desc}"
             )
 
+    # Fetch scene fragments
+    fragments = await get_character_fragments(db, char_id)
+    if fragments:
+        lines.append("Observations par scene:")
+        for frag in fragments:
+            title = frag["scene_title"] or frag["scene_id"]
+            role_str = f" [{frag['role']}]" if frag["role"] else ""
+            desc = f" — {frag['description']}" if frag["description"] else ""
+            lines.append(f"  - {title}{role_str}{desc}")
+
     return "\n".join(lines)
 
 
@@ -334,6 +344,64 @@ async def upsert_character_event(
         VALUES (?, ?, ?)
         """,
         (character_id, event_id, role),
+    )
+    await db.commit()
+
+
+async def upsert_character_fragment(
+    db: aiosqlite.Connection,
+    character_id: str,
+    scene_id: str,
+    role: str | None,
+    description: str | None,
+) -> None:
+    await db.execute(
+        """
+        INSERT OR REPLACE INTO character_fragments (character_id, scene_id, role, description)
+        VALUES (?, ?, ?, ?)
+        """,
+        (character_id, scene_id, role, description),
+    )
+    await db.commit()
+
+
+async def get_character_fragments(
+    db: aiosqlite.Connection, character_id: str
+) -> list[dict[str, Any]]:
+    cursor = await db.execute(
+        """
+        SELECT cf.scene_id, cf.role, cf.description, s.title AS scene_title
+        FROM character_fragments cf
+        LEFT JOIN scenes s ON cf.scene_id = s.id
+        WHERE cf.character_id = ?
+        ORDER BY s.filename
+        """,
+        (character_id,),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def update_character_profile(
+    db: aiosqlite.Connection, char_id: str, profile: dict[str, str | None]
+) -> None:
+    await db.execute(
+        """
+        UPDATE characters SET
+            age        = COALESCE(age, :age),
+            physical   = COALESCE(physical, :physical),
+            background = COALESCE(background, :background),
+            arc        = COALESCE(arc, :arc),
+            traits     = COALESCE(traits, :traits)
+        WHERE id = :id
+        """,
+        {
+            "id": char_id,
+            "age": profile.get("age"),
+            "physical": profile.get("physical"),
+            "background": profile.get("background"),
+            "arc": profile.get("arc"),
+            "traits": profile.get("traits"),
+        },
     )
     await db.commit()
 

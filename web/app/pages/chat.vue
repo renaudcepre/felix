@@ -22,7 +22,7 @@ async function handleSend() {
 </script>
 
 <template>
-  <div class="flex flex-col h-[calc(100vh-2rem)]">
+  <div class="flex flex-col h-[calc(100vh-3rem)] max-w-2xl mx-auto">
     <!-- Header -->
     <div class="flex items-center justify-between p-4 border-b border-default">
       <div>

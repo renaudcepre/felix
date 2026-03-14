@@ -40,6 +40,7 @@ class ClarifyRequest(BaseModel):
 async def start_import(
     request: Request,
     files: list[UploadFile] = [],  # noqa: B006
+    enrich: bool = True,
 ) -> ImportProgressResponse:
     progress: ImportProgress | None = getattr(
         request.app.state, "import_progress", None
@@ -71,7 +72,10 @@ async def start_import(
     base_url = request.app.state.base_url
 
     request.app.state.import_task = asyncio.create_task(
-        run_import_pipeline(tmp_dir, db, collection, model_name, base_url, new_progress)
+        run_import_pipeline(
+            tmp_dir, db, collection, model_name, base_url, new_progress,
+            enrich_profiles=enrich,
+        )
     )
 
     return ImportProgressResponse(**new_progress.__dict__)
@@ -81,6 +85,7 @@ async def start_import(
 async def import_stream(
     request: Request,
     files: list[UploadFile] = [],  # noqa: B006
+    enrich: bool = True,
 ) -> EventSourceResponse:
     progress: ImportProgress | None = getattr(
         request.app.state, "import_progress", None
@@ -125,6 +130,7 @@ async def import_stream(
             new_progress,
             queue,
             pending,
+            enrich_profiles=enrich,
         )
     )
     request.app.state.import_task = task

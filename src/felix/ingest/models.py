@@ -24,6 +24,14 @@ class SceneAnalysis(BaseModel):
     mood: str | None = None
 
 
+class CharacterProfile(BaseModel):
+    age: str | None = None
+    physical: str | None = None
+    background: str | None = None
+    arc: str | None = None
+    traits: str | None = None
+
+
 class ConsistencyIssue(BaseModel):
     type: str  # "timeline_inconsistency" | "character_contradiction" | "missing_info"
     severity: str  # "error" | "warning"

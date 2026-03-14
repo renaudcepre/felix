@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 from felix.db.queries import (
     upsert_character_event,
+    upsert_character_fragment,
     upsert_character_minimal,
     upsert_location_minimal,
     upsert_scene,
@@ -24,7 +25,7 @@ async def load_scene(  # noqa: PLR0913
     filename: str,
     scene_text: str,
     analysis: Any,
-    resolved_chars: list[tuple[ResolvedEntity, str]],
+    resolved_chars: list[tuple[ResolvedEntity, str, str | None]],
     resolved_location: ResolvedEntity,
 ) -> None:
     # 1. Upsert scene
@@ -46,13 +47,16 @@ async def load_scene(  # noqa: PLR0913
         "description": analysis.location.description,
     })
 
-    # 3. Upsert characters (INSERT OR IGNORE)
-    for resolved_char, _role in resolved_chars:
+    # 3. Upsert characters (INSERT OR IGNORE) + fragments
+    for resolved_char, role, description in resolved_chars:
         await upsert_character_minimal(db, {
             "id": resolved_char.id,
             "name": resolved_char.name,
             "era": analysis.era,
         })
+        await upsert_character_fragment(
+            db, resolved_char.id, scene_id, role, description
+        )
 
     # 4. Upsert timeline event
     await upsert_timeline_event(db, {
@@ -66,7 +70,7 @@ async def load_scene(  # noqa: PLR0913
     })
 
     # 5. Upsert character events
-    for resolved_char, role in resolved_chars:
+    for resolved_char, role, _desc in resolved_chars:
         await upsert_character_event(
             db, resolved_char.id, f"evt-{scene_id}", role
         )
@@ -77,7 +81,7 @@ async def load_scene(  # noqa: PLR0913
         "era": analysis.era,
         "location_id": resolved_location.id,
     }
-    for resolved_char, _role in resolved_chars:
+    for resolved_char, _role, _desc in resolved_chars:
         metadata[f"char_{resolved_char.id}"] = True
 
     collection.upsert(

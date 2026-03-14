@@ -10,10 +10,11 @@ if TYPE_CHECKING:
 
 import chromadb
 
-from felix.db.queries import list_issues, list_scenes
+from felix.db.queries import get_character_fragments, get_character_profile, list_issues, list_scenes
 from felix.db.schema import init_db
 from felix.db.seed import seed_db
 from felix.ingest.models import (
+    CharacterProfile,
     ConsistencyIssue,
     ConsistencyReport,
     ExtractedCharacter,
@@ -28,8 +29,14 @@ SCENE_1 = SceneAnalysis(
     era="1940s",
     approximate_date="1942-03-15",
     characters=[
-        ExtractedCharacter(name="Marie Dupont", role="participant"),
-        ExtractedCharacter(name="Sarah Cohen", role="participant"),
+        ExtractedCharacter(
+            name="Marie Dupont", role="participant",
+            description="Femme d'une quarantaine d'annees, cheveux bruns",
+        ),
+        ExtractedCharacter(
+            name="Sarah Cohen", role="participant",
+            description="Jeune femme apeuree, porte un manteau use",
+        ),
     ],
     location=ExtractedLocation(name="Planque de Lyon", description="Rue Merciere"),
     mood="tendu",
@@ -41,7 +48,10 @@ SCENE_2 = SceneAnalysis(
     era="1940s",
     approximate_date="1942-06-01",
     characters=[
-        ExtractedCharacter(name="Benoit Laforge", role="participant"),
+        ExtractedCharacter(
+            name="Benoit Laforge", role="participant",
+            description="Employe discret, lunettes rondes",
+        ),
     ],
     location=ExtractedLocation(name="Prefecture de Lyon", description="Bureau"),
     mood="oppressant",
@@ -53,7 +63,10 @@ SCENE_3 = SceneAnalysis(
     era="1940s",
     approximate_date="1942-07-01",
     characters=[
-        ExtractedCharacter(name="Jacques Martin", role="participant"),
+        ExtractedCharacter(
+            name="Jacques Martin", role="participant",
+            description="Homme grand, accent du sud",
+        ),
     ],
     location=ExtractedLocation(name="Gare de Lyon-Perrache", description="Hall principal"),
     mood="mystere",
@@ -114,24 +127,77 @@ def _mock_check_consistency(report: ConsistencyReport):
     return _check
 
 
+MOCK_PROFILE = CharacterProfile(
+    age="40 ans",
+    physical="Cheveux bruns, taille moyenne",
+    background="Resistante lyonnaise",
+    arc="De civile a cheffe de reseau",
+    traits="Courageuse, determinee",
+)
+
+
+def _mock_profile_character(profile: CharacterProfile):
+    async def _profile(_agent, _name, _texts, _fragments):
+        return profile
+
+    return _profile
+
+
+def _pipeline_patches(analyses, report, profile=None):
+    """Context manager with all standard pipeline mocks."""
+    patches = [
+        patch(
+            "felix.ingest.pipeline.analyze_scene",
+            side_effect=_mock_analyze_scene(analyses),
+        ),
+        patch(
+            "felix.ingest.pipeline.check_consistency",
+            side_effect=_mock_check_consistency(report),
+        ),
+        patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
+        patch("felix.ingest.pipeline.create_checker_agent", return_value=None),
+        patch("felix.ingest.pipeline.create_profiler_agent", return_value=None),
+    ]
+    if profile is not None:
+        patches.append(
+            patch(
+                "felix.ingest.pipeline.profile_character",
+                side_effect=_mock_profile_character(profile),
+            )
+        )
+    else:
+        # Default: skip profiling by passing enrich_profiles=False
+        pass
+    import contextlib
+    return contextlib.ExitStack(), patches
+
+
+async def _run_with_patches(analyses, report, scenes_dir, db, collection, progress, *, enrich_profiles=False, profile=None):
+    """Helper to run pipeline with all mocks applied."""
+    _, patches = _pipeline_patches(analyses, report, profile)
+    if profile is not None:
+        # profile mock already in patches
+        pass
+    with contextlib.ExitStack() as stack:
+        for p in patches:
+            stack.enter_context(p)
+        await run_import_pipeline(
+            scenes_dir, db, collection, None, None, progress,
+            enrich_profiles=enrich_profiles,
+        )
+
+
+import contextlib
+
+
 async def test_pipeline_full(
     db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
     progress = ImportProgress()
-
-    with (
-        patch(
-            "felix.ingest.pipeline.analyze_scene",
-            side_effect=_mock_analyze_scene([SCENE_1, SCENE_2, SCENE_3]),
-        ),
-        patch(
-            "felix.ingest.pipeline.check_consistency",
-            side_effect=_mock_check_consistency(CONSISTENCY_REPORT),
-        ),
-        patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
-        patch("felix.ingest.pipeline.create_checker_agent", return_value=None),
-    ):
-        await run_import_pipeline(scenes_dir, db, collection, None, None, progress)
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress,
+    )
 
     assert progress.status == ImportStatus.DONE
     assert progress.processed_scenes == 3
@@ -171,38 +237,133 @@ async def test_pipeline_idempotent(
     db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
     progress = ImportProgress()
-
-    with (
-        patch(
-            "felix.ingest.pipeline.analyze_scene",
-            side_effect=_mock_analyze_scene([SCENE_1, SCENE_2, SCENE_3]),
-        ),
-        patch(
-            "felix.ingest.pipeline.check_consistency",
-            side_effect=_mock_check_consistency(CONSISTENCY_REPORT),
-        ),
-        patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
-        patch("felix.ingest.pipeline.create_checker_agent", return_value=None),
-    ):
-        await run_import_pipeline(scenes_dir, db, collection, None, None, progress)
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress,
+    )
 
     # Run again
     progress2 = ImportProgress()
-    with (
-        patch(
-            "felix.ingest.pipeline.analyze_scene",
-            side_effect=_mock_analyze_scene([SCENE_1, SCENE_2, SCENE_3]),
-        ),
-        patch(
-            "felix.ingest.pipeline.check_consistency",
-            side_effect=_mock_check_consistency(CONSISTENCY_REPORT),
-        ),
-        patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
-        patch("felix.ingest.pipeline.create_checker_agent", return_value=None),
-    ):
-        await run_import_pipeline(scenes_dir, db, collection, None, None, progress2)
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress2,
+    )
 
     assert progress2.status == ImportStatus.DONE
     # Scenes should not duplicate
     scenes = await list_scenes(db)
     assert len(scenes) == 3
+
+
+async def test_fragments_stored(
+    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+) -> None:
+    """Phase A: character_fragments populated after import."""
+    progress = ImportProgress()
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress,
+    )
+
+    # Marie Dupont should have a fragment for scene-001
+    fragments = await get_character_fragments(db, "marie-dupont")
+    assert len(fragments) >= 1
+    frag = fragments[0]
+    assert frag["role"] == "participant"
+    assert "quarantaine" in (frag["description"] or "")
+
+    # Jacques Martin (new character) should also have fragments
+    fragments_jm = await get_character_fragments(db, "jacques-martin")
+    assert len(fragments_jm) == 1
+    assert "accent du sud" in (fragments_jm[0]["description"] or "")
+
+
+async def test_format_profile_includes_fragments(
+    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+) -> None:
+    """Phase A: _format_character_profile includes fragments section."""
+    from felix.db.queries import _format_character_profile
+
+    progress = ImportProgress()
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress,
+    )
+
+    row = await get_character_profile(db, "marie-dupont")
+    assert row is not None
+    profile_text = await _format_character_profile(db, row)
+    assert "Observations par scene" in profile_text
+    assert "quarantaine" in profile_text
+
+
+async def test_profiling_enriches_characters(
+    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+) -> None:
+    """Phase B: profiling fills character profile fields on new characters."""
+    progress = ImportProgress()
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress,
+        enrich_profiles=True, profile=MOCK_PROFILE,
+    )
+
+    # Jacques Martin is a new character (not in seed) — all fields should be filled
+    row = await get_character_profile(db, "jacques-martin")
+    assert row is not None
+    assert row["age"] == "40 ans"
+    assert row["physical"] == "Cheveux bruns, taille moyenne"
+    assert row["background"] == "Resistante lyonnaise"
+    assert row["arc"] == "De civile a cheffe de reseau"
+    assert row["traits"] == "Courageuse, determinee"
+
+
+async def test_no_profiling_when_disabled(
+    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+) -> None:
+    """Phase B: enrich_profiles=False keeps profile fields NULL."""
+    progress = ImportProgress()
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress,
+        enrich_profiles=False,
+    )
+
+    row = await get_character_profile(db, "jacques-martin")
+    assert row is not None
+    assert row["age"] is None
+    assert row["physical"] is None
+    assert row["background"] is None
+
+
+async def test_coalesce_preserves_existing_data(
+    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+) -> None:
+    """Phase B: COALESCE doesn't overwrite non-null fields."""
+    # First run without profiling to create Jacques Martin with NULL fields
+    progress = ImportProgress()
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress,
+    )
+
+    # Manually set age on Jacques Martin
+    await db.execute(
+        "UPDATE characters SET age = '35 ans' WHERE id = 'jacques-martin'"
+    )
+    await db.commit()
+
+    # Now run again with profiling
+    progress2 = ImportProgress()
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress2,
+        enrich_profiles=True, profile=MOCK_PROFILE,
+    )
+
+    row = await get_character_profile(db, "jacques-martin")
+    assert row is not None
+    # age should keep the manually set value, not be overwritten by profiler
+    assert row["age"] == "35 ans"
+    # background was NULL, so profiler fills it
+    assert row["background"] == "Resistante lyonnaise"

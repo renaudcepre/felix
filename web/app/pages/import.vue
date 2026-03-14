@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { ImportEvent } from '~/types'
 
-const { progress, loading, events, clarification, startImport, respondClarification } = useImport()
+const { progress, loading, events, clarification, startImport, respondClarification, reset } = useImport()
 const files = ref<File[]>([])
+const enrichProfiles = ref(true)
 const dragging = ref(false)
 const fileInput = ref<HTMLInputElement>()
 const eventLog = ref<HTMLElement>()
@@ -36,7 +37,7 @@ function removeFile(index: number) {
 
 function onSubmit() {
   if (files.value.length > 0) {
-    startImport(files.value)
+    startImport(files.value, enrichProfiles.value)
   }
 }
 
@@ -51,6 +52,7 @@ const statusLabel: Record<string, string> = {
   resolving: 'Resolution des entites',
   loading: 'Chargement en base',
   checking: 'Verification de coherence',
+  profiling: 'Enrichissement des profils',
   done: 'Termine',
   error: 'Erreur',
 }
@@ -61,6 +63,7 @@ const statusColor: Record<string, string> = {
   resolving: 'info',
   loading: 'info',
   checking: 'warning',
+  profiling: 'info',
   done: 'success',
   error: 'error',
 }
@@ -85,6 +88,10 @@ function formatEvent(ev: ImportEvent): { icon: string, text: string, color: stri
       return { icon: 'i-lucide-check', text: `Charge : ${ev.scene_id}`, color: 'text-green-600' }
     case 'issue_found':
       return { icon: 'i-lucide-alert-triangle', text: `Issue : ${ev.description}`, color: 'text-orange-500' }
+    case 'profiling_character':
+      return { icon: 'i-lucide-user', text: `Profiling : ${ev.name}...`, color: 'text-blue-400' }
+    case 'character_profiled':
+      return { icon: 'i-lucide-user-check', text: `Profil enrichi : ${ev.name}`, color: 'text-green-500' }
     case 'done':
       return {
         icon: 'i-lucide-check-circle',
@@ -125,7 +132,7 @@ watch(events, () => {
     </div>
 
     <!-- Drop zone -->
-    <UCard>
+    <UCard v-if="!progress">
       <div class="space-y-4">
         <div
           class="relative border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer"
@@ -183,6 +190,12 @@ watch(events, () => {
           </div>
         </div>
 
+        <!-- Options -->
+        <div class="flex items-center gap-2">
+          <UCheckbox v-model="enrichProfiles" :disabled="loading" />
+          <span class="text-sm">Enrichir les profils personnages (LLM)</span>
+        </div>
+
         <!-- Submit -->
         <UButton
           icon="i-lucide-play"
@@ -191,7 +204,7 @@ watch(events, () => {
           block
           @click="onSubmit"
         >
-          Lancer l'import ({{ files.length }} scene{{ files.length > 1 ? 's' : '' }})
+          Lancer l'import
         </UButton>
       </div>
     </UCard>
@@ -282,6 +295,17 @@ watch(events, () => {
             </div>
           </div>
         </div>
+
+        <!-- Reset -->
+        <UButton
+          v-if="progress.status === 'done' || progress.status === 'error'"
+          icon="i-lucide-rotate-ccw"
+          variant="soft"
+          block
+          @click="reset(); files = []"
+        >
+          Nouvel import
+        </UButton>
 
         <!-- Results -->
         <div v-if="progress.status === 'done'" class="space-y-3 border-t pt-4">
