@@ -5,11 +5,16 @@ import type { TimelineEvent } from '~/types'
 const eraFilter = ref<string | null>(null)
 const { events, status } = useTimeline(eraFilter)
 
-const eraOptions = [
+const eras = computed(() => {
+  if (!events.value) return []
+  const unique = [...new Set(events.value.map(e => e.era))]
+  return unique.sort()
+})
+
+const eraOptions = computed(() => [
   { label: 'Toutes les epoques', value: null },
-  { label: '1940s', value: '1940s' },
-  { label: '1970s', value: '1970s' },
-]
+  ...eras.value.map(e => ({ label: e, value: e })),
+])
 
 const columns: TableColumn<TimelineEvent>[] = [
   { accessorKey: 'date', header: 'Date' },
@@ -55,8 +60,30 @@ const columns: TableColumn<TimelineEvent>[] = [
             {{ row.original.era }}
           </UBadge>
         </template>
+        <template #location-cell="{ row }">
+          <NuxtLink
+            v-if="row.original.location_id"
+            :to="`/locations/${row.original.location_id}`"
+            class="text-primary hover:underline"
+          >
+            {{ row.original.location || '—' }}
+          </NuxtLink>
+          <span v-else class="text-sm text-muted">{{ row.original.location || '—' }}</span>
+        </template>
         <template #characters-cell="{ row }">
-          <span class="text-sm text-muted">{{ row.original.characters || '—' }}</span>
+          <div class="flex flex-wrap gap-1">
+            <template v-if="row.original.characters_detail.length">
+              <NuxtLink
+                v-for="c in row.original.characters_detail"
+                :key="c.id"
+                :to="`/characters/${c.id}`"
+                class="text-primary hover:underline text-sm"
+              >
+                {{ c.name }}
+              </NuxtLink>
+            </template>
+            <span v-else class="text-sm text-muted">—</span>
+          </div>
         </template>
       </UTable>
     </UCard>

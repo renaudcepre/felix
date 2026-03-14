@@ -59,9 +59,15 @@ async def load_scene(  # noqa: PLR0913
         )
 
     # 4. Upsert timeline event
+    date = analysis.approximate_date
+    if not date and analysis.era:
+        # Fallback: extract year from era like "1940s" → "1940-01-01"
+        era_digits = "".join(c for c in analysis.era if c.isdigit())
+        if era_digits:
+            date = f"{era_digits[:4]}-01-01"
     await upsert_timeline_event(db, {
         "id": f"evt-{scene_id}",
-        "date": analysis.approximate_date or "unknown",
+        "date": date or "unknown",
         "era": analysis.era,
         "title": analysis.title,
         "description": analysis.summary,

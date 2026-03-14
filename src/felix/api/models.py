@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
-
-from datetime import datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, field_validator
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 
 class CharacterSummary(BaseModel):
@@ -43,6 +45,26 @@ class CharacterDetail(BaseModel):
         return v
 
 
+class LocationSummary(BaseModel):
+    id: str
+    name: str
+    era: str | None = None
+
+
+class LocationDetail(BaseModel):
+    id: str
+    name: str
+    era: str | None = None
+    description: str | None = None
+    address: str | None = None
+    scenes: list[SceneSummary] = []
+
+
+class TimelineCharacter(BaseModel):
+    id: str
+    name: str
+
+
 class TimelineEvent(BaseModel):
     id: str
     date: str
@@ -50,7 +72,9 @@ class TimelineEvent(BaseModel):
     title: str
     description: str = ""
     location: str = ""
+    location_id: str | None = None
     characters: str = ""
+    characters_detail: list[TimelineCharacter] = []
 
 
 class Issue(BaseModel):

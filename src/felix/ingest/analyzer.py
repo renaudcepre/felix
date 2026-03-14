@@ -18,7 +18,9 @@ A partir du texte d'une scene, extrais les informations suivantes :
 - title : titre court en francais (max 10 mots)
 - summary : resume en 2-3 phrases en francais
 - era : epoque par decennie ("2050s", "2140s", "1940s", etc.)
-- approximate_date : date au format YYYY-MM-DD si deductible du texte, sinon null
+- approximate_date : date au format YYYY-MM-DD si deductible du texte. \
+Si seule l'annee est connue, utilise YYYY-01-01. \
+Si l'annee et le mois sont connus, utilise YYYY-MM-01. Ne retourne null que si AUCUNE indication temporelle
 - characters : liste des personnages avec leur role et description si presente
 - location : lieu principal de la scene avec description si presente
 - mood : ambiance generale en un mot ou une courte expression

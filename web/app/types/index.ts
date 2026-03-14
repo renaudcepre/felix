@@ -25,6 +25,26 @@ export interface CharacterDetail {
   relations: Relation[]
 }
 
+export interface LocationSummary {
+  id: string
+  name: string
+  era: string | null
+}
+
+export interface LocationDetail {
+  id: string
+  name: string
+  era: string | null
+  description: string | null
+  address: string | null
+  scenes: SceneSummary[]
+}
+
+export interface TimelineCharacter {
+  id: string
+  name: string
+}
+
 export interface TimelineEvent {
   id: string
   date: string
@@ -32,7 +52,9 @@ export interface TimelineEvent {
   title: string
   description: string
   location: string
+  location_id: string | null
   characters: string
+  characters_detail: TimelineCharacter[]
 }
 
 export interface Issue {

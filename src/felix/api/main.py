@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
-from felix.api.routes import characters, chat, export, ingest, timeline
+from felix.api.routes import characters, chat, export, ingest, locations, timeline
 from felix.config import settings
 from felix.db.schema import init_db
 from felix.vectorstore.store import get_collection
@@ -46,6 +46,7 @@ app.add_middleware(
 )
 
 app.include_router(characters.router)
+app.include_router(locations.router)
 app.include_router(timeline.router)
 app.include_router(chat.router)
 app.include_router(ingest.router)

@@ -121,7 +121,7 @@ async def get_timeline_rows(
 
     query = f"""
         SELECT te.id, te.date, te.era, te.title, te.description,
-               l.name AS location_name
+               te.location_id, l.name AS location_name
         FROM timeline_events te
         LEFT JOIN locations l ON te.location_id = l.id
         {where}
@@ -134,7 +134,7 @@ async def get_timeline_rows(
     for evt in events:
         char_cursor = await db.execute(
             """
-            SELECT c.name, ce.role
+            SELECT ce.character_id, c.name
             FROM character_events ce
             JOIN characters c ON ce.character_id = c.id
             WHERE ce.event_id = ?
@@ -142,8 +142,8 @@ async def get_timeline_rows(
             (evt["id"],),
         )
         chars = await char_cursor.fetchall()
-        char_strs = [
-            f"{c['name']} ({c['role']})" if c["role"] else c["name"]
+        characters_detail = [
+            {"id": c["character_id"], "name": c["name"]}
             for c in chars
         ]
         rows.append({
@@ -153,7 +153,9 @@ async def get_timeline_rows(
             "title": evt["title"],
             "description": evt["description"] or "",
             "location": evt["location_name"] or "",
-            "characters": ", ".join(char_strs),
+            "location_id": evt["location_id"],
+            "characters": ", ".join(c["name"] for c in characters_detail),
+            "characters_detail": characters_detail,
         })
 
     return rows
@@ -433,6 +435,24 @@ async def list_all_characters_full(db: aiosqlite.Connection) -> list[dict[str, A
 async def list_all_locations(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     cursor = await db.execute("SELECT * FROM locations ORDER BY era, name")
     return [dict(row) for row in await cursor.fetchall()]
+
+
+async def get_location_detail(
+    db: aiosqlite.Connection, loc_id: str
+) -> dict[str, Any] | None:
+    cursor = await db.execute(
+        "SELECT * FROM locations WHERE id = ?", (loc_id,)
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return None
+
+    scenes_cursor = await db.execute(
+        "SELECT id, filename, title, era, date FROM scenes WHERE location_id = ? ORDER BY filename",
+        (loc_id,),
+    )
+    scenes = [dict(s) for s in await scenes_cursor.fetchall()]
+    return {**dict(row), "scenes": scenes}
 
 
 async def list_all_scenes_full(db: aiosqlite.Connection) -> list[dict[str, Any]]:
