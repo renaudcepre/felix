@@ -94,8 +94,16 @@ FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:123
 - La normalisation des accents a corrige les faux negatifs (lookup_location : 0.333 → 1.00)
 - Faiblesses restantes cote modele : hallucination sur tests negatifs, cross-era en anglais sans tool calls, semantic_archives appelle get_timeline au lieu de search_scenes
 
-**Evals Nemo local (LMStudio, Llama 3.1 8B instruct Q4_K_M, 12k ctx) :**
-- facts_score : 0.619, assertions : 72.2% — scores identiques a Nemo API
-- Lookup et coherence : tres bons resultats, le modele appelle les tools correctement
-- Memes faiblesses que Nemo API (negatifs, cross-era en anglais)
-- Conclusion : un 8B en Q4 local fonctionne aussi bien que Nemo 12B via API pour ce use case
+**Evals Llama 3.1 8B local (LMStudio, Q4_K_M, 12k ctx) :**
+- facts_score : 0.595, assertions : 83.3%, duree moyenne : 77s/case (~30x plus lent que Nemo API)
+- Points positifs : refuse de fabriquer sur les tests negatifs (Nemo hallucine), meilleur score assertions
+- Points negatifs : 30x plus lent, verbeux ("nous pourrions appeler find_character..." au lieu de l'appeler), cross-era score 0.0, lookup_location regression (0.333 vs 1.00 Nemo)
+- Ajout flag `--local` dans run_evals.py pour simplifier le lancement
+
+| Metrique | Nemo 12B API | Llama 8B local |
+|----------|-------------|----------------|
+| facts_score | 0.619 | 0.595 |
+| assertions | 72.2% | 83.3% |
+| duree/case | 2.7s | 77s |
+| negatifs | hallucine | refuse |
+| cross-era | 0.5 | 0.0 |

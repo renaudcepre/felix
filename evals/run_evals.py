@@ -1,6 +1,15 @@
-"""Run the Felix evaluation pipeline."""
+"""Run the Felix evaluation pipeline.
+
+Usage:
+    uv run python -m evals.run_evals                    # Mistral API (default)
+    uv run python -m evals.run_evals --local             # LMStudio default (meta-llama-3.1-8b-instruct)
+    uv run python -m evals.run_evals --local --model qwen2.5-7b-instruct-1m
+"""
 
 from __future__ import annotations
+
+import argparse
+import os
 
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
@@ -10,6 +19,9 @@ from pydantic_evals.evaluators import LLMJudge
 from evals.evaluators import ContainsExpectedFacts, RefusesToFabricate
 from evals.task import felix_task
 from felix.config import settings
+
+LMSTUDIO_URL = "http://localhost:1234/v1"
+LMSTUDIO_DEFAULT_MODEL = "meta-llama-3.1-8b-instruct"
 
 _judge_model = MistralModel(
     "mistral-small-latest",
@@ -100,6 +112,31 @@ dataset = Dataset[str, str](
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run Felix evals")
+    parser.add_argument(
+        "--local", action="store_true", help="Use LMStudio local model"
+    )
+    parser.add_argument(
+        "--model", type=str, default=None, help="Model name override"
+    )
+    parser.add_argument(
+        "--base-url", type=str, default=None, help="OpenAI-compatible base URL"
+    )
+    args = parser.parse_args()
+
+    if args.local:
+        os.environ["FELIX_EVAL_BASE_URL"] = args.base_url or LMSTUDIO_URL
+        os.environ["FELIX_EVAL_MODEL"] = args.model or LMSTUDIO_DEFAULT_MODEL
+    elif args.model:
+        os.environ["FELIX_EVAL_MODEL"] = args.model
+    elif args.base_url:
+        os.environ["FELIX_EVAL_BASE_URL"] = args.base_url
+
+    model_name = os.environ.get("FELIX_EVAL_MODEL", settings.mistral_model)
+    base_url = os.environ.get("FELIX_EVAL_BASE_URL", "Mistral API")
+    print(f"Model: {model_name}")
+    print(f"Provider: {base_url}\n")
+
     report = dataset.evaluate_sync(felix_task)
     report.print(include_input=True, include_output=True)
 
