@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+from pydantic_ai.models.mistral import MistralModel
+from pydantic_ai.providers.mistral import MistralProvider
 from pydantic_evals import Case, Dataset
 from pydantic_evals.evaluators import LLMJudge
 
 from evals.evaluators import ContainsExpectedFacts, RefusesToFabricate
 from evals.task import felix_task
+from felix.config import settings
+
+_judge_model = MistralModel(
+    "mistral-small-latest",
+    provider=MistralProvider(api_key=settings.mistral_api_key),
+)
 
 dataset = Dataset[str, str](
     cases=[
@@ -84,6 +92,7 @@ dataset = Dataset[str, str](
                 "(character profiles, timeline events, scene text). "
                 "It does not invent or hallucinate any facts."
             ),
+            model=_judge_model,
             include_input=True,
         ),
     ],

@@ -48,4 +48,19 @@ Les metadata des scenes (personnages presents, era, location) sont hardcodees da
 
 **Resultat :** Nemo 12B fait maintenant `find_character("Marie Dupont")` en 1 seul appel et retourne le profil complet avec relations.
 
-**Prochaine etape :** Lancer les evals avec Nemo et mistral-small pour comparer les scores.
+---
+
+### 2026-03-14 (3) — Premier run evals Nemo 12B
+
+**Resultats (open-mistral-nemo, 9 cases, ~2.7s/case) :**
+- facts_score moyen : 0.548, 66.7% assertions pass
+- Lookup et coherence : bons resultats, le modele appelle les tools correctement en 1 appel
+- Tests negatifs : echec — Nemo hallucine (invente une "Renault noir de 1938" pour la voiture de Marie, ne refuse pas pour le frere de Julien)
+- Cross-era : repond en anglais malgre le prompt FR
+- Score facts artificiellement bas a cause des accents : l'evaluator cherchait `Resistance` mais Nemo ecrit `Résistance`
+
+**Corrections :**
+- `evaluators.py` : `ContainsExpectedFacts` normalise maintenant les accents (NFKD + strip combining chars) avant comparaison
+- `run_evals.py` : `LLMJudge` utilise `mistral-small-latest` au lieu d'OpenAI (pas de clef OpenAI)
+
+**Prochaine etape :** Relancer les evals pour mesurer l'impact de la normalisation, puis tester avec mistral-small.

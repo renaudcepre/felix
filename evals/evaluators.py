@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass, field
 
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
+
+
+def _normalize(text: str) -> str:
+    """Lowercase and strip accents for fuzzy keyword matching."""
+    nfkd = unicodedata.normalize("NFKD", text.lower())
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 @dataclass
@@ -12,6 +19,7 @@ class ContainsExpectedFacts(Evaluator[str, str]):
     """Check that expected facts (keywords) appear in the agent response.
 
     expected_output on the Case must be a comma-separated string of keywords.
+    Matching is case-insensitive and accent-insensitive.
     """
 
     threshold: float = 0.5
@@ -28,8 +36,8 @@ class ContainsExpectedFacts(Evaluator[str, str]):
         if not expected_facts:
             return {}
 
-        output_lower = ctx.output.lower()
-        found = {fact: fact.lower() in output_lower for fact in expected_facts}
+        output_norm = _normalize(ctx.output)
+        found = {fact: _normalize(fact) in output_norm for fact in expected_facts}
         score = sum(found.values()) / len(found)
         missing = [f for f, present in found.items() if not present]
 
