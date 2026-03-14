@@ -15,6 +15,7 @@
     "@nuxt/eslint": "^1.15.2",
     "@nuxt/fonts": "^0.14.0",
     "@nuxt/ui": "^4.5.1",
+    "marked": "^17.0.4",
     "nuxt": "^4.4.2",
     "tailwindcss": "^4.2.1"
   },

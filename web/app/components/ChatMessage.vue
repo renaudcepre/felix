@@ -1,8 +1,14 @@
 <script setup lang="ts">
-defineProps<{
+import { marked } from 'marked'
+
+const props = defineProps<{
   role: 'user' | 'felix'
   content: string
 }>()
+
+marked.setOptions({ breaks: true, gfm: true })
+
+const html = computed(() => marked.parse(props.content) as string)
 </script>
 
 <template>
@@ -17,12 +23,11 @@ defineProps<{
       class="shrink-0 mt-1"
     />
     <div
-      class="rounded-lg px-4 py-3 text-sm whitespace-pre-wrap"
+      class="rounded-lg px-4 py-3 text-sm prose prose-sm dark:prose-invert max-w-none"
       :class="role === 'user'
         ? 'bg-green-100 text-green-900 dark:bg-green-900/30 dark:text-green-100'
         : 'bg-felix-100 text-felix-950 dark:bg-felix-950/50 dark:text-felix-100'"
-    >
-      {{ content }}
-    </div>
+      v-html="html"
+    />
   </div>
 </template>
