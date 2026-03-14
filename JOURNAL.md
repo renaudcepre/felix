@@ -88,3 +88,14 @@ FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:123
 ```
 
 **Modeles locaux disponibles (LMStudio) :** Qwen2.5 7B, Llama 3.1 8B, Ministral 3B, Gemma 2 9B.
+
+**Evals Nemo API (apres fix accents) :**
+- facts_score : 0.619 (vs 0.548 avant), assertions : 72.2% (vs 66.7%)
+- La normalisation des accents a corrige les faux negatifs (lookup_location : 0.333 → 1.00)
+- Faiblesses restantes cote modele : hallucination sur tests negatifs, cross-era en anglais sans tool calls, semantic_archives appelle get_timeline au lieu de search_scenes
+
+**Evals Nemo local (LMStudio, Llama 3.1 8B instruct Q4_K_M, 12k ctx) :**
+- facts_score : 0.619, assertions : 72.2% — scores identiques a Nemo API
+- Lookup et coherence : tres bons resultats, le modele appelle les tools correctement
+- Memes faiblesses que Nemo API (negatifs, cross-era en anglais)
+- Conclusion : un 8B en Q4 local fonctionne aussi bien que Nemo 12B via API pour ce use case
