@@ -25,6 +25,12 @@ Champs a remplir :
 - background : historique, passe, origines du personnage
 - arc : evolution narrative du personnage a travers les scenes
 - traits : traits de caractere, personnalite, manieres
+- relations : liste des relations avec d'autres personnages observees dans les textes.
+  Pour chaque relation, indique :
+  - other_name : le nom exact du personnage tel qu'il apparait dans les textes
+  - relation : description libre de la relation (ex: "collegue au relais Helios-3", \
+"mentor", "rival", "pere", "IA compagnon"). Sois precis et contextuel.
+  Ne liste que les relations clairement presentes dans les textes.
 
 Reponds en francais. Sois concis mais precis.
 """
@@ -47,6 +53,7 @@ async def profile_character(
     name: str,
     scene_texts: list[str],
     fragments: list[dict],
+    known_characters: list[str] | None = None,
 ) -> CharacterProfile:
     parts = [f"Personnage : {name}\n"]
     for frag in fragments:
@@ -54,6 +61,12 @@ async def profile_character(
         role = frag.get("role", "")
         desc = frag.get("description", "")
         parts.append(f"- Scene '{title}' (role: {role}) : {desc}")
+
+    if known_characters:
+        parts.append(f"\nPersonnages connus du scenario : {', '.join(known_characters)}")
+        parts.append(
+            "Pour les relations, utilise les noms exacts de cette liste quand possible."
+        )
 
     parts.append("\nTextes des scenes :")
     for i, text in enumerate(scene_texts, 1):

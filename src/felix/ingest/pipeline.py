@@ -20,6 +20,7 @@ from felix.db.queries import (
     delete_issues_for_scenes,
     get_character_fragments,
     update_character_profile,
+    upsert_character_relation,
 )
 from felix.ingest.analyzer import analyze_scene, create_analyzer_agent
 from felix.ingest.checker import check_consistency, create_checker_agent
@@ -518,7 +519,7 @@ async def _run_character_profiling(
     # Find characters with at least 1 fragment
     cursor = await ctx.db.execute(
         """
-        SELECT DISTINCT c.id, c.name
+        SELECT DISTINCT c.id, c.name, c.era
         FROM characters c
         JOIN character_fragments cf ON c.id = cf.character_id
         ORDER BY c.name
@@ -549,9 +550,30 @@ async def _run_character_profiling(
             results = ctx.collection.get(ids=scene_ids)
             scene_texts = results.get("documents") or []
 
-        profile = await profile_character(profiler, char_name, scene_texts, fragments)
+        known_names = [c["name"] for c in chars if c["id"] != char_id]
+        profile = await profile_character(
+            profiler, char_name, scene_texts, fragments, known_names
+        )
 
         await update_character_profile(ctx.db, char_id, profile.model_dump())
+
+        # Resolve and store relations
+        for rel in profile.relations:
+            other_match = fuzzy_match_entity(
+                rel.other_name, ctx.char_registry, ctx.char_aliases
+            )
+            if isinstance(other_match, AmbiguousMatch):
+                other_id = other_match.best_id
+            else:
+                if other_match.is_new:
+                    continue  # skip unknown characters
+                other_id = other_match.id
+            if other_id != char_id:
+                # Normalize order to avoid duplicates (a,b) vs (b,a)
+                a, b = sorted([char_id, other_id])
+                await upsert_character_relation(
+                    ctx.db, a, b, rel.relation, era=char.get("era")
+                )
 
         if ctx.queue:
             await _emit(

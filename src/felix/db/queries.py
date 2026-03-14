@@ -406,6 +406,25 @@ async def update_character_profile(
     await db.commit()
 
 
+async def upsert_character_relation(  # noqa: PLR0913
+    db: aiosqlite.Connection,
+    char_id_a: str,
+    char_id_b: str,
+    relation_type: str,
+    description: str | None = None,
+    era: str | None = None,
+) -> None:
+    await db.execute(
+        """
+        INSERT OR REPLACE INTO character_relations
+            (character_id_a, character_id_b, relation_type, description, era)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (char_id_a, char_id_b, relation_type, description, era),
+    )
+    await db.commit()
+
+
 async def get_timeline(
     db: aiosqlite.Connection,
     *,

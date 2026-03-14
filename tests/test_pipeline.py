@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 import chromadb
 
-from felix.db.queries import get_character_fragments, get_character_profile, list_issues, list_scenes
+from felix.db.queries import get_character_fragments, get_character_profile, get_character_relations, list_issues, list_scenes
 from felix.db.schema import init_db
 from felix.db.seed import seed_db
 from felix.ingest.models import (
@@ -19,6 +19,7 @@ from felix.ingest.models import (
     ConsistencyReport,
     ExtractedCharacter,
     ExtractedLocation,
+    ExtractedRelation,
     SceneAnalysis,
 )
 from felix.ingest.pipeline import ImportProgress, ImportStatus, run_import_pipeline
@@ -137,7 +138,7 @@ MOCK_PROFILE = CharacterProfile(
 
 
 def _mock_profile_character(profile: CharacterProfile):
-    async def _profile(_agent, _name, _texts, _fragments):
+    async def _profile(_agent, _name, _texts, _fragments, _known=None):
         return profile
 
     return _profile
@@ -367,3 +368,33 @@ async def test_coalesce_preserves_existing_data(
     assert row["age"] == "35 ans"
     # background was NULL, so profiler fills it
     assert row["background"] == "Resistante lyonnaise"
+
+
+MOCK_PROFILE_WITH_RELATIONS = CharacterProfile(
+    age="30 ans",
+    physical="Grande, cheveux noirs",
+    background="Ingenieure",
+    arc="Decouvre un signal inconnu",
+    traits="Determinee, curieuse",
+    relations=[
+        ExtractedRelation(other_name="Marie Dupont", relation="collegue de resistance"),
+    ],
+)
+
+
+async def test_profiling_stores_relations(
+    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+) -> None:
+    """Phase B: profiler-extracted relations are stored in character_relations."""
+    progress = ImportProgress()
+    await _run_with_patches(
+        [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
+        scenes_dir, db, collection, progress,
+        enrich_profiles=True, profile=MOCK_PROFILE_WITH_RELATIONS,
+    )
+
+    # Jacques Martin should have a relation with Marie Dupont
+    rels = await get_character_relations(db, "jacques-martin")
+    assert len(rels) >= 1
+    rel_names = [r["other_name"] for r in rels]
+    assert "Marie Dupont" in rel_names

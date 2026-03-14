@@ -24,12 +24,18 @@ class SceneAnalysis(BaseModel):
     mood: str | None = None
 
 
+class ExtractedRelation(BaseModel):
+    other_name: str
+    relation: str
+
+
 class CharacterProfile(BaseModel):
     age: str | None = None
     physical: str | None = None
     background: str | None = None
     arc: str | None = None
     traits: str | None = None
+    relations: list[ExtractedRelation] = []
 
 
 class ConsistencyIssue(BaseModel):
