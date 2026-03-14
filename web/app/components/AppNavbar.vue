@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const { loading: importLoading } = useImport()
+
 const subtitles = [
   'Fiction\'s Encyclopedic Lore & Information eXpert',
   'Faithful Expert for Literary & eXpository details',
@@ -7,7 +9,7 @@ const subtitles = [
 
 const subtitle = subtitles[Math.floor(Math.random() * subtitles.length)]
 
-const items = [[{
+const items = computed(() => [[{
   label: 'Dashboard',
   icon: 'i-lucide-layout-dashboard',
   to: '/',
@@ -25,13 +27,13 @@ const items = [[{
   to: '/timeline',
 }, {
   label: 'Import',
-  icon: 'i-lucide-upload',
+  icon: importLoading.value ? 'i-lucide-loader-circle' : 'i-lucide-upload',
   to: '/import',
 }, {
   label: 'Issues',
   icon: 'i-lucide-alert-triangle',
   to: '/issues',
-}]]
+}]])
 </script>
 
 <template>
@@ -50,3 +52,14 @@ const items = [[{
     </div>
   </header>
 </template>
+
+<style scoped>
+:deep(.i-lucide-loader-circle) {
+  animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+</style>

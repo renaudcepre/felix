@@ -221,7 +221,14 @@ watch(events, () => {
     <UCard v-if="progress">
       <div class="space-y-4">
         <div class="flex items-center justify-between">
-          <span class="font-medium">Statut</span>
+          <div class="flex items-center gap-2">
+            <UIcon
+              v-if="loading"
+              name="i-lucide-loader-circle"
+              class="animate-spin text-primary"
+            />
+            <span class="font-medium">Statut</span>
+          </div>
           <UBadge
             :color="(statusColor[progress.status] as any) || 'neutral'"
             variant="subtle"
