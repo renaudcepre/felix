@@ -117,3 +117,19 @@ def test_different_first_name_andrew_milton() -> None:
     assert isinstance(result, ResolvedEntity)
     assert result.is_new is True
     assert result.id == "andrew-milton"
+
+
+def test_shared_word_triggers_ambiguous() -> None:
+    """'Vaisseau spatial' should match 'Vaisseau Elysium-7' (shared word 'vaisseau')."""
+    locs = {"vaisseau-elysium-7": "Vaisseau Elysium-7"}
+    result = fuzzy_match_entity("Vaisseau spatial", locs)
+    assert isinstance(result, AmbiguousMatch)
+    assert result.best_id == "vaisseau-elysium-7"
+
+
+def test_no_shared_word_skips() -> None:
+    """'Naomi Chen' should NOT match 'Lucas Terra' (no shared word)."""
+    chars = {"biologiste-lucas-terra": "Biologiste Lucas Terra"}
+    result = fuzzy_match_entity("Exobiologiste Naomi Chen", chars)
+    assert isinstance(result, ResolvedEntity)
+    assert result.is_new is True

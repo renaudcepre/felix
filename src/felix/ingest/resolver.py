@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 THRESHOLD_AUTO = 0.85
-THRESHOLD_FUZZY = 0.70
+THRESHOLD_FUZZY = 0.60
+MIN_SHARED_WORD_LEN = 3
 
 
 @dataclass
@@ -37,10 +38,17 @@ def _has_different_first_name(norm_a: str, norm_b: str) -> bool:
     """Return True if both names have 2+ words and share a surname but differ on first name."""
     parts_a = norm_a.split()
     parts_b = norm_b.split()
-    if len(parts_a) < 2 or len(parts_b) < 2:
+    if len(parts_a) < 2 or len(parts_b) < 2:  # noqa: PLR2004
         return False
     # Same last word (surname) but different first word
     return parts_a[-1] == parts_b[-1] and parts_a[0] != parts_b[0]
+
+
+def _shares_significant_word(norm_a: str, norm_b: str) -> bool:
+    """Return True if the two names share at least one exact word of MIN_SHARED_WORD_LEN+ chars."""
+    words_a = {w for w in norm_a.split() if len(w) >= MIN_SHARED_WORD_LEN}
+    words_b = {w for w in norm_b.split() if len(w) >= MIN_SHARED_WORD_LEN}
+    return bool(words_a & words_b)
 
 
 def _collect_candidates(
@@ -54,14 +62,19 @@ def _collect_candidates(
         if _has_different_first_name(norm, norm_existing):
             continue
         score = SequenceMatcher(None, norm, norm_existing).ratio()
-        if score >= THRESHOLD_FUZZY:
+        if score >= THRESHOLD_AUTO or (
+            score >= THRESHOLD_FUZZY and _shares_significant_word(norm, norm_existing)
+        ):
             candidates.append((eid, ename, score))
         for alias in aliases.get(eid, []):
             norm_alias = _normalize(alias)
             if _has_different_first_name(norm, norm_alias):
                 continue
             alias_score = SequenceMatcher(None, norm, norm_alias).ratio()
-            if alias_score >= THRESHOLD_FUZZY and alias_score > score:
+            if alias_score > score and (
+                alias_score >= THRESHOLD_AUTO
+                or (alias_score >= THRESHOLD_FUZZY and _shares_significant_word(norm, norm_alias))
+            ):
                 candidates.append((eid, ename, alias_score))
     return candidates
 

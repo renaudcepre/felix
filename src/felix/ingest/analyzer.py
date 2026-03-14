@@ -32,6 +32,12 @@ IMPORTANT : si un personnage est nomme ne serait-ce qu'UNE SEULE FOIS dans le te
 
 Un personnage qui est un ancetre, un parent, un souvenir, ou dont on parle au passe est "mentioned", PAS "participant".
 
+NOMS DE PERSONNAGES :
+- Utilise UNIQUEMENT le nom propre du personnage (prenom + nom de famille).
+- Ne mets PAS le titre, le metier ou le rang dans le champ "name" \
+(pas "Docteur Jean Martin" mais "Jean Martin", pas "Capitaine Korvin" mais "Lara Korvin").
+- Le metier ou le rang doit aller dans le champ "description", pas dans "name".
+
 REGLES :
 - N'invente RIEN. Extrais uniquement ce qui est dans le texte.
 - Reponds en francais.
