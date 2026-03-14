@@ -64,3 +64,27 @@ Les metadata des scenes (personnages presents, era, location) sont hardcodees da
 - `run_evals.py` : `LLMJudge` utilise `mistral-small-latest` au lieu d'OpenAI (pas de clef OpenAI)
 
 **Prochaine etape :** Relancer les evals pour mesurer l'impact de la normalisation, puis tester avec mistral-small.
+
+---
+
+### 2026-03-14 (4) — Support modeles locaux (LMStudio)
+
+**Ajout :** Support OpenAI-compatible pour modeles locaux via LMStudio.
+
+**Modifications :**
+- `config.py` : Ajout `MODEL_BASE_URL` (optionnel). Si present, utilise OpenAI provider au lieu de Mistral API. `MISTRAL_API_KEY` devient optionnel (default `""`).
+- `chat_agent.py` : `create_agent(model_name, base_url)` — si `base_url` fourni, utilise `OpenAIModel`/`OpenAIProvider`, sinon `MistralModel`/`MistralProvider`.
+- `evals/task.py` : Support `FELIX_EVAL_BASE_URL` env var.
+- `cli.py` : Header affiche le provider (Mistral API ou URL locale).
+
+**Usage CLI local :**
+```bash
+MODEL_BASE_URL=http://localhost:1234/v1 MISTRAL_MODEL=qwen2.5-7b-instruct-1m felix
+```
+
+**Usage evals local :**
+```bash
+FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:1234/v1 uv run python -m evals.run_evals
+```
+
+**Modeles locaux disponibles (LMStudio) :** Qwen2.5 7B, Llama 3.1 8B, Ministral 3B, Gemma 2 9B.

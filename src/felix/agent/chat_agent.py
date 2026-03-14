@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
+from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.mistral import MistralProvider
+from pydantic_ai.providers.openai import OpenAIProvider
+
+if TYPE_CHECKING:
+    from pydantic_ai.models import Model
 
 from felix.agent.deps import FelixDeps
 from felix.agent.tools import (
@@ -36,11 +43,27 @@ EXAMPLE: "Est-ce coherent si Marie rencontre Sarah en mars 1942 ?"
 """
 
 
-def create_agent(model_name: str | None = None) -> Agent[FelixDeps, str]:
-    model = MistralModel(
-        model_name or settings.mistral_model,
+def _build_model(
+    model_name: str | None = None, base_url: str | None = None
+) -> Model:
+    name = model_name or settings.mistral_model
+    url = base_url or settings.model_base_url
+
+    if url:
+        return OpenAIModel(
+            name,
+            provider=OpenAIProvider(base_url=url, api_key="lm-studio"),
+        )
+    return MistralModel(
+        name,
         provider=MistralProvider(api_key=settings.mistral_api_key),
     )
+
+
+def create_agent(
+    model_name: str | None = None, base_url: str | None = None
+) -> Agent[FelixDeps, str]:
+    model = _build_model(model_name, base_url)
 
     agent = Agent(
         model,

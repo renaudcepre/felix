@@ -21,6 +21,10 @@ def _print_header() -> None:
     table.add_column(style="dim")
     table.add_column(style="bold")
     table.add_row("Model", settings.mistral_model)
+    if settings.model_base_url:
+        table.add_row("Provider", settings.model_base_url)
+    else:
+        table.add_row("Provider", "Mistral API")
     table.add_row("DB", str(settings.db_path))
     table.add_row("ChromaDB", settings.chroma_path)
 

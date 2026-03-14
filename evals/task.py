@@ -34,6 +34,7 @@ async def _get_deps() -> FelixDeps:
 async def felix_task(question: str) -> str:
     deps = await _get_deps()
     model_name = os.environ.get("FELIX_EVAL_MODEL")
-    agent = create_agent(model_name)
+    base_url = os.environ.get("FELIX_EVAL_BASE_URL")
+    agent = create_agent(model_name, base_url)
     result = await agent.run(question, deps=deps)
     return result.output
