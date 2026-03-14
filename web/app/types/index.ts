@@ -40,7 +40,14 @@ export interface ChatRequest {
   message_history: object[]
 }
 
+export interface UsageInfo {
+  request_tokens: number
+  response_tokens: number
+  total_tokens: number
+}
+
 export interface ChatResponse {
   output: string
   message_history: object[]
+  usage: UsageInfo | null
 }

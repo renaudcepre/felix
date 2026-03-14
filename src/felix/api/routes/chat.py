@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 
-from felix.api.models import ChatRequest, ChatResponse
+from felix.api.models import ChatRequest, ChatResponse, UsageInfo
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -29,4 +29,15 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
         result.all_messages(), mode="json"
     )
 
-    return ChatResponse(output=result.output, message_history=serialized)
+    usage = result.usage()
+    usage_info = UsageInfo(
+        request_tokens=usage.request_tokens or 0,
+        response_tokens=usage.response_tokens or 0,
+        total_tokens=usage.total_tokens or 0,
+    )
+
+    return ChatResponse(
+        output=result.output,
+        message_history=serialized,
+        usage=usage_info,
+    )

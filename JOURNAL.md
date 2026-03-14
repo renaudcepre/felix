@@ -228,3 +228,9 @@ Raison de la suppression : la web UI offre une UX bien superieure (design system
 - `pnpm lint` — 0 erreur
 - `pnpm nuxi typecheck` — 0 erreur
 - `uv run felix` — CLI brut fonctionne toujours
+
+
+### TODO WEB
+
+- les liens sont en haut de la sidebar, avec le titre, tout ca devrait etre un navbar (header)
+- on doit interpreter le markdown dans les questions / reponses

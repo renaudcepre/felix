@@ -1,4 +1,4 @@
-import type { ChatResponse } from '~/types'
+import type { ChatResponse, UsageInfo } from '~/types'
 
 interface ChatMessage {
   role: 'user' | 'felix'
@@ -9,10 +9,12 @@ export function useFelix() {
   const messages = ref<ChatMessage[]>([])
   const loading = ref(false)
   const messageHistory = ref<object[]>([])
+  const lastUsage = ref<UsageInfo | null>(null)
 
   async function sendMessage(text: string) {
     messages.value.push({ role: 'user', content: text })
     loading.value = true
+    lastUsage.value = null
 
     try {
       const data = await $fetch<ChatResponse>('/api/chat', {
@@ -25,6 +27,7 @@ export function useFelix() {
 
       messages.value.push({ role: 'felix', content: data.output })
       messageHistory.value = data.message_history
+      lastUsage.value = data.usage
     }
     catch (error) {
       const msg = error instanceof Error ? error.message : 'Erreur inconnue'
@@ -38,7 +41,8 @@ export function useFelix() {
   function clearChat() {
     messages.value = []
     messageHistory.value = []
+    lastUsage.value = null
   }
 
-  return { messages, loading, sendMessage, clearChat }
+  return { messages, loading, lastUsage, sendMessage, clearChat }
 }

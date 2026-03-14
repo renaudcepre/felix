@@ -61,6 +61,13 @@ class ChatRequest(BaseModel):
     message_history: list[dict[str, object]] = []
 
 
+class UsageInfo(BaseModel):
+    request_tokens: int = 0
+    response_tokens: int = 0
+    total_tokens: int = 0
+
+
 class ChatResponse(BaseModel):
     output: str
     message_history: list[dict[str, object]]
+    usage: UsageInfo | None = None

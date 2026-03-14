@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { messages, loading, sendMessage, clearChat } = useFelix()
+const { messages, loading, lastUsage, sendMessage, clearChat } = useFelix()
 const input = ref('')
 const chatContainer = ref<HTMLElement>()
 
@@ -80,6 +80,12 @@ async function handleSend() {
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- Usage info -->
+    <div v-if="lastUsage" class="px-4 py-1.5 border-t border-default flex items-center gap-3 text-xs text-muted">
+      <span>Tokens : {{ lastUsage.total_tokens.toLocaleString() }}</span>
+      <span class="text-dimmed">({{ lastUsage.request_tokens.toLocaleString() }} in / {{ lastUsage.response_tokens.toLocaleString() }} out)</span>
     </div>
 
     <!-- Input -->
