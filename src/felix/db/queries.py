@@ -209,6 +209,135 @@ async def find_location(db: aiosqlite.Connection, name: str) -> str:
     return "\n---\n".join(profiles)
 
 
+async def list_issues(
+    db: aiosqlite.Connection,
+    *,
+    type: str | None = None,
+    severity: str | None = None,
+    resolved: bool | None = None,
+) -> list[dict[str, Any]]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if type:
+        conditions.append("type = ?")
+        params.append(type)
+    if severity:
+        conditions.append("severity = ?")
+        params.append(severity)
+    if resolved is not None:
+        conditions.append("resolved = ?")
+        params.append(int(resolved))
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    query = f"SELECT * FROM issues {where} ORDER BY created_at DESC"  # noqa: S608
+    cursor = await db.execute(query, params)
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def create_issue(db: aiosqlite.Connection, issue: dict[str, Any]) -> None:
+    await db.execute(
+        """
+        INSERT INTO issues (id, type, severity, scene_id, entity_id, description, suggestion, resolved)
+        VALUES (:id, :type, :severity, :scene_id, :entity_id, :description, :suggestion, :resolved)
+        """,
+        {**issue, "resolved": issue.get("resolved", 0)},
+    )
+    await db.commit()
+
+
+async def update_issue_resolved(
+    db: aiosqlite.Connection, issue_id: str, resolved: bool
+) -> bool:
+    cursor = await db.execute(
+        "UPDATE issues SET resolved = ? WHERE id = ?",
+        (int(resolved), issue_id),
+    )
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def delete_issues_for_scenes(
+    db: aiosqlite.Connection, scene_ids: list[str]
+) -> None:
+    if not scene_ids:
+        return
+    placeholders = ",".join("?" for _ in scene_ids)
+    await db.execute(
+        f"DELETE FROM issues WHERE scene_id IN ({placeholders})",  # noqa: S608
+        scene_ids,
+    )
+    await db.commit()
+
+
+async def list_scenes(db: aiosqlite.Connection) -> list[dict[str, Any]]:
+    cursor = await db.execute(
+        "SELECT id, filename, title, era, date FROM scenes ORDER BY filename"
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def upsert_scene(db: aiosqlite.Connection, scene: dict[str, Any]) -> None:
+    await db.execute(
+        """
+        INSERT OR REPLACE INTO scenes (id, filename, title, summary, era, date, location_id, raw_text)
+        VALUES (:id, :filename, :title, :summary, :era, :date, :location_id, :raw_text)
+        """,
+        scene,
+    )
+    await db.commit()
+
+
+async def upsert_character_minimal(
+    db: aiosqlite.Connection, char: dict[str, Any]
+) -> None:
+    await db.execute(
+        """
+        INSERT OR IGNORE INTO characters (id, name, era)
+        VALUES (:id, :name, :era)
+        """,
+        char,
+    )
+    await db.commit()
+
+
+async def upsert_location_minimal(
+    db: aiosqlite.Connection, loc: dict[str, Any]
+) -> None:
+    await db.execute(
+        """
+        INSERT OR IGNORE INTO locations (id, name, description)
+        VALUES (:id, :name, :description)
+        """,
+        loc,
+    )
+    await db.commit()
+
+
+async def upsert_timeline_event(
+    db: aiosqlite.Connection, evt: dict[str, Any]
+) -> None:
+    await db.execute(
+        """
+        INSERT OR REPLACE INTO timeline_events (id, date, era, title, description, location_id, scene_id)
+        VALUES (:id, :date, :era, :title, :description, :location_id, :scene_id)
+        """,
+        evt,
+    )
+    await db.commit()
+
+
+async def upsert_character_event(
+    db: aiosqlite.Connection, character_id: str, event_id: str, role: str
+) -> None:
+    await db.execute(
+        """
+        INSERT OR REPLACE INTO character_events (character_id, event_id, role)
+        VALUES (?, ?, ?)
+        """,
+        (character_id, event_id, role),
+    )
+    await db.commit()
+
+
 async def get_timeline(
     db: aiosqlite.Connection,
     *,

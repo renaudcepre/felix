@@ -51,6 +51,46 @@ class TimelineEvent(BaseModel):
     characters: str = ""
 
 
+class Issue(BaseModel):
+    id: str
+    type: str
+    severity: str
+    scene_id: str | None = None
+    entity_id: str | None = None
+    description: str
+    suggestion: str | None = None
+    resolved: bool = False
+    created_at: str | None = None
+
+    @field_validator("resolved", mode="before")
+    @classmethod
+    def parse_resolved(cls, v: int | bool) -> bool:
+        return bool(v)
+
+
+class IssueUpdate(BaseModel):
+    resolved: bool
+
+
+class ImportProgressResponse(BaseModel):
+    status: str
+    total_scenes: int = 0
+    processed_scenes: int = 0
+    current_scene: str = ""
+    issues_found: int = 0
+    error: str = ""
+    new_characters: list[str] = []
+    new_locations: list[str] = []
+
+
+class SceneSummary(BaseModel):
+    id: str
+    filename: str
+    title: str | None = None
+    era: str | None = None
+    date: str | None = None
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str

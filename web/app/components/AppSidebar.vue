@@ -24,6 +24,14 @@ const items = [
     label: 'Timeline',
     icon: 'i-lucide-calendar',
     to: '/timeline',
+  }, {
+    label: 'Import',
+    icon: 'i-lucide-upload',
+    to: '/import',
+  }, {
+    label: 'Issues',
+    icon: 'i-lucide-alert-triangle',
+    to: '/issues',
   }],
 ]
 </script>

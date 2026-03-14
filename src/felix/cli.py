@@ -77,7 +77,7 @@ async def chat_loop(model: str, base_url: str | None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Felix — Screenplay Continuity Assistant")
-    parser.add_argument("--model", type=str, default=None, help="Model name (e.g. qwen/qwen3-4b-2507)")
+    parser.add_argument("--model", type=str, default=None, help="Model name (e.g. qwen2.5-7b-instruct-1m)")
     parser.add_argument("--base-url", type=str, default=None, help="OpenAI-compatible API base URL")
     parser.add_argument("--local", action="store_true", help="Use LMStudio (localhost:1234)")
     args = parser.parse_args()

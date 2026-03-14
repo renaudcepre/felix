@@ -2,6 +2,8 @@
 const { characters, status: charStatus } = useCharacters()
 const era = ref<string | null>(null)
 const { events, status: timeStatus } = useTimeline(era)
+const { scenes } = useScenes()
+const { issues } = useIssues({ resolved: ref(false) })
 </script>
 
 <template>
@@ -16,7 +18,7 @@ const { events, status: timeStatus } = useTimeline(era)
     </div>
 
     <!-- Stats -->
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
       <UCard class="tape-effect">
         <div class="text-center">
           <p class="text-3xl font-bold text-felix-400">
@@ -44,6 +46,26 @@ const { events, status: timeStatus } = useTimeline(era)
           </p>
           <p class="text-sm text-muted mt-1">
             Epoques
+          </p>
+        </div>
+      </UCard>
+      <UCard class="tape-effect">
+        <div class="text-center">
+          <p class="text-3xl font-bold text-felix-400">
+            {{ scenes?.length ?? '...' }}
+          </p>
+          <p class="text-sm text-muted mt-1">
+            Scenes importees
+          </p>
+        </div>
+      </UCard>
+      <UCard class="tape-effect">
+        <div class="text-center">
+          <p class="text-3xl font-bold text-felix-400">
+            {{ issues?.length ?? '...' }}
+          </p>
+          <p class="text-sm text-muted mt-1">
+            Issues
           </p>
         </div>
       </UCard>

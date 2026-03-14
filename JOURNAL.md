@@ -234,3 +234,99 @@ Raison de la suppression : la web UI offre une UX bien superieure (design system
 
 - les liens sont en haut de la sidebar, avec le titre, tout ca devrait etre un navbar (header)
 - on doit interpreter le markdown dans les questions / reponses
+- **SSE chat** : streamer les tokens du LLM mot par mot via `agent.run_stream()` + `StreamingResponse` SSE. Remplacer le POST /api/chat actuel (reponse complete) par un endpoint SSE.
+- **SSE import** : remplacer le poll /api/import/status par un flux SSE temps reel. Streamer les etapes du pipeline (analyse scene X → personnages trouves → resolution → chargement → check coherence). Pas de streaming tokens bruts (c'est du JSON structure), mais un event par etape avec le detail de ce qui vient d'etre fait.
+- **ask_user interactif pendant l'import** : les heuristiques du resolver ne suffisent pas pour les cas ambigus (ex: "Jakes" seul vs "Jakes Milton", ou deux prenoms identiques a des epoques differentes). Le matching automatique par prenom seul est dangereux (deux "Marie" differentes). Solution : via SSE, le pipeline envoie un event `clarification_needed` quand le resolver est incertain, la UI affiche la question ("Jakes = Jakes Milton ?"), l'utilisateur confirme/refuse, le pipeline reprend. Necessite SSE import d'abord.
+- **Merge/split personnages post-import** : en complement du ask_user, permettre de fusionner ou separer des personnages depuis la page Personnages (ex: corriger un lien errone apres coup).
+
+---
+
+## Phase 3 — Pipeline d'ingestion de scenes
+
+### 2026-03-14 — Implementation complete du pipeline d'import
+
+**Objectif :** Importer des fichiers .txt (1 par scene) et en extraire automatiquement les metadonnees via LLM local. Les incoherences sont logguees comme "issues" consultables dans la web UI.
+
+**Architecture :**
+```
+[Dossier .txt] → [LLM Analysis/scene] → [Entity Resolution] → [DB + ChromaDB Upsert] → [LLM Consistency Check] → [Issues en DB]
+```
+
+**Data Layer (Phase A) :**
+- `schema.py` — 2 tables ajoutees : `scenes` (id, filename, title, summary, era, date, location_id, raw_text) et `issues` (id, type, severity, scene_id, entity_id, description, suggestion, resolved)
+- `queries.py` — 9 nouvelles fonctions : CRUD issues (list/create/update/delete), CRUD scenes (list/upsert), upsert minimal chars/locs, upsert timeline event/character_event
+- `ingest/models.py` — Modeles Pydantic : SceneAnalysis, ExtractedCharacter, ExtractedLocation, ConsistencyIssue, ConsistencyReport
+- `ingest/resolver.py` — Fuzzy matching `difflib.SequenceMatcher` (stdlib). Seuils : >=0.85 auto-link, 0.60-0.85 link+issue warning, <0.60 nouvelle entite. Registre mis a jour entre scenes.
+
+**Pipeline Core (Phase B) :**
+- `ingest/analyzer.py` — Agent pydantic-ai `output_type=SceneAnalysis`, prompt FR, temperature 0.1. Reutilise `_build_model()`.
+- `ingest/loader.py` — Upsert scene/location/characters/event/chroma en 1 appel. Idempotent (INSERT OR REPLACE scenes, INSERT OR IGNORE chars/locs).
+- `ingest/checker.py` — Agent pydantic-ai `output_type=ConsistencyReport`. Detecte incoherences temporelles, contradictions personnage, infos manquantes.
+- `ingest/pipeline.py` — Orchestrateur async. ImportStatus enum, ImportProgress dataclass. Etapes : list files → load registry → analyze → resolve → load → check → insert issues.
+
+**API (Phase C) :**
+- `api/models.py` — 5 modeles ajoutes : Issue, IssueUpdate, ImportRequest, ImportProgressResponse, SceneSummary
+- `api/routes/ingest.py` — 5 endpoints : POST /api/import (202, background task, mutex 409), GET /api/import/status, GET /api/issues (filtrable), PATCH /api/issues/{id}, GET /api/scenes
+
+**Frontend (Phase D) :**
+- `types/index.ts` — 3 interfaces ajoutees : Issue, ImportProgress, SceneSummary
+- `composables/useImport.ts` — startImport + poll /api/import/status toutes les 2s
+- `composables/useIssues.ts` — list filtrable + resolveIssue
+- `composables/useScenes.ts` — list scenes
+- `pages/import.vue` — Input chemin + bouton + progress bar + resultats (nouveaux persos/lieux)
+- `pages/issues.vue` — Liste issues avec badges severity/type, filtres, bouton resoudre/reouvrir
+- `components/AppSidebar.vue` — +2 items : Import (i-lucide-upload), Issues (i-lucide-alert-triangle)
+- `pages/index.vue` — +2 stats cards : Scenes importees, Issues non resolues
+
+**Tests :**
+- `test_ingest_queries.py` — 14 tests (CRUD issues, upsert scenes, idempotence, minimal upserts)
+- `test_resolver.py` — 12 tests (slugify, normalize, exact/alias/fuzzy/ambiguous match)
+- `test_pipeline.py` — 3 tests (full pipeline mock LLM, empty dir, idempotence)
+
+**Verification :**
+- `uv run pytest` — 56/56 tests passent (29 nouveaux + 27 existants)
+- `uv run ruff check src/` — 0 erreur
+- `pnpm lint` — 0 erreur
+
+### 2026-03-14 (2) — Evals ingest + amelioration prompt analyzer
+
+**Objectif :** Mesurer la qualite de l'extraction de scenes (analyzer) via pydantic-evals, independamment du pipeline chat.
+
+**Suite d'evals creee (`evals/ingest/`) :**
+- 9 cas de test sur 2 scenes (001-la-poussiere.txt, 002-l-orbite.txt)
+- 5 evaluateurs : CharacterRoleAccuracy, ExtractsExpectedCharacters, EraAccuracy, LocationAccuracy, NoCharacterPresent
+- Metriques : role_accuracy (float), char_extraction (float), era_match (bool), location_match (bool), absent_pass (bool)
+
+**Bug fix :** `NoCharacterPresent` ne heritait pas de `Evaluator[str, SceneAnalysis]` → ExceptionGroup. Deplace dans evaluators.py avec heritage correct.
+
+**Resultats avant amelioration prompt (les deux modeles identiques) :**
+
+| Metrique | Qwen 2.5 7B | Qwen3 4B |
+|----------|-------------|----------|
+| role_accuracy | 0.667 | 0.667 |
+| char_extraction | 0.667 | 0.667 |
+| era_match | ✔ | ✔ |
+| location_match | ✔ | ✔ |
+| absent_pass | ✔ | ✔ |
+| Assertions | 100% | 100% |
+| Duree/case | 90.3s | ~37s |
+
+**Probleme identifie :** Les deux modeles ne detectent pas les personnages "mentioned" (Elias dans scene 1, Jakes dans scene 2). Le prompt demandait d'extraire les roles mais n'insistait pas assez sur les personnages simplement evoques.
+
+**Amelioration prompt analyzer :**
+- Ajout instruction explicite : "si un personnage est nomme ne serait-ce qu'UNE SEULE FOIS dans le texte, il DOIT apparaitre avec le role mentioned"
+- Reformulation de la section PERSONNAGES pour insister sur l'exhaustivite
+
+**Resultats apres amelioration (Qwen 2.5 7B) :**
+
+| Metrique | Avant | Apres |
+|----------|-------|-------|
+| role_accuracy | 0.667 | **1.00** |
+| char_extraction | 0.667 | **1.00** |
+| era_match | ✔ | ✔ |
+| location_match | ✔ | ✔ |
+| absent_pass | ✔ | ✔ |
+| Assertions | 100% | **100%** |
+| Duree/case | 90.3s | 104.8s |
+
+Le prompt v2 resout completement le probleme — score parfait sur tous les evaluateurs. Note : le modele extrait aussi Neo-Santiago comme "mentioned" (c'est un lieu, pas un personnage), mais c'est inoffensif car les evaluateurs ne penalisent pas les extras.

@@ -42,6 +42,30 @@ CREATE TABLE IF NOT EXISTS character_events (
     PRIMARY KEY (character_id, event_id)
 );
 
+CREATE TABLE IF NOT EXISTS scenes (
+    id          TEXT PRIMARY KEY,
+    filename    TEXT NOT NULL,
+    title       TEXT,
+    summary     TEXT,
+    era         TEXT,
+    date        TEXT,
+    location_id TEXT REFERENCES locations(id),
+    raw_text    TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS issues (
+    id          TEXT PRIMARY KEY,
+    type        TEXT NOT NULL,
+    severity    TEXT NOT NULL,
+    scene_id    TEXT,
+    entity_id   TEXT,
+    description TEXT NOT NULL,
+    suggestion  TEXT,
+    resolved    INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS character_relations (
     character_id_a TEXT NOT NULL REFERENCES characters(id),
     character_id_b TEXT NOT NULL REFERENCES characters(id),
