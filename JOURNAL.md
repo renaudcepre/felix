@@ -330,3 +330,39 @@ Raison de la suppression : la web UI offre une UX bien superieure (design system
 | Duree/case | 90.3s | 104.8s |
 
 Le prompt v2 resout completement le probleme — score parfait sur tous les evaluateurs. Note : le modele extrait aussi Neo-Santiago comme "mentioned" (c'est un lieu, pas un personnage), mais c'est inoffensif car les evaluateurs ne penalisent pas les extras.
+
+---
+
+### 2026-03-14 (3) — SSE import streaming + ask-user clarification
+
+**Objectif :** Remplacer le polling import par du SSE temps reel, ajouter un mecanisme interactif `ask_user` pendant l'import pour les entites ambigues.
+
+**Backend :**
+- `pipeline.py` — Refactorise avec `EventQueue`, `_PipelineContext`, `_process_scene()`, `_run_consistency_check()`. Emet des events : `status_change`, `scene_analyzed`, `entity_resolved`, `scene_loaded`, `issue_found`, `done`, `error`.
+- `pipeline.py` — `ClarificationSlot` (asyncio.Event + answer). Quand le resolver retourne `AmbiguousMatch`, le pipeline emet `clarification_needed`, attend 30s la reponse utilisateur, auto-resolve en "link" si timeout.
+- `ingest.py` — `POST /api/import/stream` (EventSourceResponse, lit la queue, yield SSE). `POST /api/import/clarify` (debloque le ClarificationSlot). Ancien endpoint polling conserve pour compat.
+
+**Frontend :**
+- `useImport.ts` — Remplace le polling par `fetch()` + `parseSSEStream()`. Expose `events`, `clarification`, `respondClarification()`. Fetch direct vers `http://localhost:8000` (bypass Nitro devProxy qui bufferise les SSE).
+- `import.vue` — Journal d'import temps reel (icones + texte formate par type d'event). Carte de clarification inline (question, score, boutons "Oui, meme entite" / "Non, nouvelle entite", note timeout 30s).
+- `types/index.ts` — Types `ImportEvent`, `ClarificationRequest`.
+- `utils/parseSSE.ts` — Parser SSE generique `async function* parseSSEStream()`.
+- `nuxt.config.ts` — `runtimeConfig.public.apiStreamBase` pour les fetches SSE directs.
+
+**Problemes rencontres :**
+1. **Nitro devProxy bufferise les SSE** — Le proxy h3 de Nitro ne supporte pas le streaming. Fix : les fetches SSE vont directement au backend (`http://localhost:8000`), CORS deja configure. Les appels non-SSE continuent via le devProxy.
+2. **SSE parser `.trim()` supprimait les espaces** — Les tokens LLM arrivaient colles ("trouvepas"). Fix : ne plus trimmer les data SSE, seulement strip le `\r` des fins de ligne.
+
+**Chat SSE non retenu :**
+- `agent.run_stream()` / `agent.iter()` + `node.stream()` envoient `stream: true` au LLM. Qwen 2.5 7B n'appelle pas les tools en mode streaming — il repond directement sans chercher. Le chat reste en `agent.run()` classique (non-streaming) ou les tools fonctionnent correctement.
+- Note : le modele ne reconnait pas toujours les noms ambigus comme "pixel" (un drone) sans contexte. Avec "qui est le personnage Pixel ?" ou un nom humain comme "Lena Voss", les tools sont appeles correctement.
+
+**A explorer :**
+- **Glossaire dynamique dans le system prompt** — Injecter la liste des personnages/lieux connus pour que le modele sache quoi chercher. Aiderait sur les noms que le modele ne reconnait pas spontanement comme des entites (ex: "Pixel", "Mite").
+- **Chat SSE quand modele compatible** — Avec un modele supportant les tool calls en streaming (Mistral API, GPT, etc.), re-activer le streaming chat via `agent.iter()` + `node.stream()`. Le code SSE (parser, composable) est deja pret cote import.
+
+**Verification :**
+- `uv run pytest` — 58/58 tests passent
+- `uv run ruff check src/` — 0 erreur
+- `pnpm lint` — 0 erreur
+- Import SSE : events temps reel, clarification interactive fonctionne, auto-resolve 30s OK
