@@ -68,6 +68,12 @@ ignore = [
 "scripts/**" = [
     "T201",     # print allowed in scripts
 ]
+"evals/**" = [
+    "T201",     # print allowed in eval scripts
+]
+"src/felix/agent/tools.py" = [
+    "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
+]
 
 [tool.mypy]
 strict = true
