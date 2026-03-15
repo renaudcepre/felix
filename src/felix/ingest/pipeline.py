@@ -98,20 +98,44 @@ def _build_registry(
 
 async def _load_registries(
     db: aiosqlite.Connection,
-) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str]]:
-    cursor = await db.execute("SELECT id, name, aliases FROM characters")
+) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str], dict[str, dict]]:
+    cursor = await db.execute("SELECT id, name, aliases, era, background, status FROM characters")
     chars = [dict(row) for row in await cursor.fetchall()]
 
     cursor = await db.execute("SELECT id, name FROM locations")
     locs = [dict(row) for row in await cursor.fetchall()]
 
-    return _build_registry(chars, locs)
+    char_details: dict[str, dict] = {
+        c["id"]: {
+            "era": c.get("era"),
+            "background": c.get("background"),
+            "status": c.get("status"),
+        }
+        for c in chars
+    }
+
+    reg = _build_registry(chars, locs)
+    return (*reg, char_details)
+
+
+_EXCERPT_MAX_LEN = 120
+
+
+def _find_excerpt(name: str, scene_text: str) -> str | None:
+    """Return the first line of scene_text that contains the name (case-insensitive)."""
+    for line in scene_text.splitlines():
+        if name.lower() in line.lower() and line.strip():
+            excerpt = line.strip()
+            return excerpt[:_EXCERPT_MAX_LEN] + "…" if len(excerpt) > _EXCERPT_MAX_LEN else excerpt
+    return None
 
 
 async def _resolve_characters(  # noqa: PLR0913
     analysis: SceneAnalysis,
+    scene_text: str,
     char_registry: dict[str, str],
     char_aliases: dict[str, list[str]],
+    char_details: dict[str, dict],
     scene_id: str,
     issues: list[dict],
     queue: EventQueue | None = None,
@@ -121,10 +145,12 @@ async def _resolve_characters(  # noqa: PLR0913
     for ec in analysis.characters:
         match = fuzzy_match_entity(ec.name, char_registry, char_aliases)
         if isinstance(match, AmbiguousMatch):
+            context = ec.description or _find_excerpt(ec.name, scene_text)
             resolved = await _handle_ambiguous_character(
                 ec.name,
-                ec.role,
+                context,
                 match,
+                char_details,
                 scene_id,
                 issues,
                 queue,
@@ -143,6 +169,7 @@ async def _resolve_characters(  # noqa: PLR0913
                     name=ec.name,
                     action=action,
                     linked_to=resolved.name if not resolved.is_new else None,
+                    score=round(resolved.score, 2) if resolved.score is not None else None,
                 )
         resolved_chars.append((resolved, ec.role, ec.description))
     return resolved_chars
@@ -150,8 +177,9 @@ async def _resolve_characters(  # noqa: PLR0913
 
 async def _handle_ambiguous_character(  # noqa: PLR0913
     name: str,
-    role: str,
+    context: str | None,
     match: AmbiguousMatch,
+    char_details: dict[str, dict],
     scene_id: str,
     issues: list[dict],
     queue: EventQueue | None,
@@ -164,14 +192,18 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
         slot = ClarificationSlot()
         pending_clarifications[clarification_id] = slot
 
+        candidate_info = char_details.get(match.best_id, {})
         await _emit(
             queue,
             "clarification_needed",
             id=clarification_id,
             question=f"'{name}' = '{match.best_name}' ?",
             entity_name=name,
+            entity_context=context,
             candidate_name=match.best_name,
             candidate_id=match.best_id,
+            candidate_era=candidate_info.get("era"),
+            candidate_background=candidate_info.get("background"),
             score=round(match.score, 2),
             options=["link", "new"],
         )
@@ -375,6 +407,7 @@ class _PipelineContext:
     char_registry: dict[str, str] = field(default_factory=dict)
     char_aliases: dict[str, list[str]] = field(default_factory=dict)
     loc_registry: dict[str, str] = field(default_factory=dict)
+    char_details: dict[str, dict] = field(default_factory=dict)
 
 
 async def _emit_status(ctx: _PipelineContext, status: ImportStatus) -> None:
@@ -408,9 +441,12 @@ async def _process_scene(
             "scene_analyzed",
             scene_id=scene_id,
             title=analysis.title,
+            summary=analysis.summary,
             characters=[{"name": c.name, "role": c.role} for c in analysis.characters],
             location=analysis.location.name,
             era=analysis.era,
+            date=analysis.approximate_date,
+            mood=analysis.mood,
         )
 
     # Resolve
@@ -420,8 +456,10 @@ async def _process_scene(
 
     resolved_chars = await _resolve_characters(
         analysis,
+        scene_text,
         ctx.char_registry,
         ctx.char_aliases,
+        ctx.char_details,
         scene_id,
         scene_issues,
         ctx.queue,
@@ -486,6 +524,13 @@ async def _run_consistency_check(
     ctx.progress.current_scene = ""
     await _emit_status(ctx, ImportStatus.CHECKING)
 
+    if ctx.queue:
+        await _emit(
+            ctx.queue,
+            "check_started",
+            scene_count=len(scenes_summary),
+        )
+
     checker = create_checker_agent(model_name, base_url)
     report = await check_consistency(checker, scenes_summary)
 
@@ -509,6 +554,14 @@ async def _run_consistency_check(
                 severity=ci.severity,
                 description=ci.description,
             )
+
+    if ctx.queue:
+        await _emit(
+            ctx.queue,
+            "check_complete",
+            issue_count=len(issues),
+        )
+
     return issues
 
 
@@ -659,7 +712,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 current_scene="",
             )
 
-        ctx.char_registry, ctx.char_aliases, ctx.loc_registry = await _load_registries(
+        ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.char_details = await _load_registries(
             db
         )
         await delete_issues_for_scenes(db, [f"scene-{f.stem}" for f in scene_files])

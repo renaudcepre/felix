@@ -78,24 +78,33 @@ const statusColor: Record<string, string> = {
 
 function formatEvent(ev: ImportEvent): { icon: string, text: string, color: string } {
   switch (ev.event) {
-    case 'scene_analyzed':
+    case 'scene_analyzed': {
+      const parts = [`${ev.characters?.length ?? 0} personnages`, `lieu : ${ev.location}`, ev.era]
+      if (ev.date) parts.push(ev.date)
+      if (ev.mood) parts.push(`ambiance : ${ev.mood}`)
       return {
         icon: 'i-lucide-search',
-        text: `Analyse : ${ev.title} (${ev.characters?.length ?? 0} personnages, lieu : ${ev.location})`,
+        text: `Analyse : ${ev.title} (${parts.join(', ')})`,
         color: 'text-blue-500',
       }
+    }
     case 'entity_resolved':
       if (ev.action === 'created') {
         return { icon: 'i-lucide-plus', text: `Nouveau : ${ev.name}`, color: 'text-green-500' }
       }
       if (ev.action === 'linked') {
-        return { icon: 'i-lucide-link', text: `Lie : ${ev.name} -> ${ev.linked_to}`, color: 'text-yellow-500' }
+        const scoreStr = ev.score != null ? ` [${Math.round((ev.score as number) * 100)}%]` : ''
+        return { icon: 'i-lucide-link', text: `Lie : ${ev.name} -> ${ev.linked_to}${scoreStr}`, color: 'text-yellow-500' }
       }
       return { icon: 'i-lucide-help-circle', text: `Entite : ${ev.name}`, color: 'text-muted' }
     case 'scene_loaded':
       return { icon: 'i-lucide-check', text: `Charge : ${ev.scene_id}`, color: 'text-green-600' }
+    case 'check_started':
+      return { icon: 'i-lucide-shield', text: `Verification coherence (${ev.scene_count} scenes)...`, color: 'text-purple-400' }
+    case 'check_complete':
+      return { icon: 'i-lucide-shield-check', text: `Verification terminee — ${ev.issue_count} issue${(ev.issue_count as number) > 1 ? 's' : ''} trouvee${(ev.issue_count as number) > 1 ? 's' : ''}`, color: 'text-purple-500' }
     case 'issue_found':
-      return { icon: 'i-lucide-alert-triangle', text: `Issue : ${ev.description}`, color: 'text-orange-500' }
+      return { icon: 'i-lucide-alert-triangle', text: `Issue [${ev.severity}] ${ev.type} : ${ev.description}`, color: 'text-orange-500' }
     case 'profiling_character':
       return {
         icon: 'i-lucide-user',
@@ -274,15 +283,51 @@ watch(events, () => {
         >
           <div class="flex items-start gap-2">
             <UIcon name="i-lucide-help-circle" class="text-yellow-500 mt-0.5 shrink-0" />
-            <div>
-              <p class="font-medium text-sm">
-                {{ clarification.question }}
+            <p class="font-medium text-sm">
+              {{ clarification.question }}
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 text-xs">
+            <!-- Nouveau nom (contexte extrait) -->
+            <div class="rounded bg-black/20 p-2 space-y-1">
+              <p class="font-semibold text-muted uppercase tracking-wide">
+                Dans la scene
               </p>
-              <p class="text-xs text-muted mt-1">
-                Score de similarite : {{ (clarification.score * 100).toFixed(0) }}% — Resolution automatique dans 30s
+              <p class="font-medium">
+                {{ clarification.entity_name }}
+              </p>
+              <p v-if="clarification.entity_context" class="text-muted italic">
+                "{{ clarification.entity_context }}"
+              </p>
+              <p v-else class="text-muted">
+                Aucun contexte
+              </p>
+            </div>
+            <!-- Candidat existant -->
+            <div class="rounded bg-black/20 p-2 space-y-1">
+              <p class="font-semibold text-muted uppercase tracking-wide">
+                Existant en base
+              </p>
+              <p class="font-medium">
+                {{ clarification.candidate_name }}
+              </p>
+              <p v-if="clarification.candidate_era" class="text-muted">
+                {{ clarification.candidate_era }}
+              </p>
+              <p v-if="clarification.candidate_background" class="text-muted italic line-clamp-2">
+                {{ clarification.candidate_background }}
+              </p>
+              <p v-else class="text-muted">
+                Aucun profil enrichi
               </p>
             </div>
           </div>
+
+          <p class="text-xs text-muted">
+            Score de similarite : {{ (clarification.score * 100).toFixed(0) }}% — Resolution automatique dans 30s
+          </p>
+
           <div class="flex gap-2">
             <UButton
               size="sm"

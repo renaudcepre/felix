@@ -115,14 +115,20 @@ export interface ImportEvent {
   // scene_analyzed
   scene_id?: string
   title?: string
+  summary?: string
   characters?: { name: string, role: string }[]
   location?: string
   era?: string
+  date?: string | null
+  mood?: string | null
   // entity_resolved
   name?: string
   action?: 'created' | 'linked' | 'ambiguous'
   linked_to?: string
   score?: number
+  // check_started / check_complete
+  scene_count?: number
+  issue_count?: number
   // issue_found
   type?: string
   severity?: string
@@ -152,8 +158,11 @@ export interface ClarificationRequest {
   id: string
   question: string
   entity_name: string
+  entity_context: string | null
   candidate_name: string
   candidate_id: string
+  candidate_era: string | null
+  candidate_background: string | null
   score: number
   options: string[]
 }

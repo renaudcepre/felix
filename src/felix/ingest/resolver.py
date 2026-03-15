@@ -15,6 +15,7 @@ class ResolvedEntity:
     id: str
     name: str
     is_new: bool = False
+    score: float | None = None
 
 
 @dataclass
@@ -115,7 +116,7 @@ def fuzzy_match_entity(
     best_id, best_name, best_score = candidates[0]
 
     if best_score >= THRESHOLD_AUTO:
-        return ResolvedEntity(id=best_id, name=best_name)
+        return ResolvedEntity(id=best_id, name=best_name, score=best_score)
 
     # Ambiguous
     return AmbiguousMatch(
