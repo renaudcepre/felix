@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     )
 
     llm_model: str = "qwen2.5-7b-instruct-1m"
-    llm_base_url: str = "http://localhost:1234/v1"
+    llm_base_url: str | None = "http://localhost:1234/v1"
     llm_api_key: str = ""
 
     db_path: Path = Path("data/felix.db")

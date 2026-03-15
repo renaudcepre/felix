@@ -4,6 +4,11 @@ import type { TimelineEvent } from '~/types'
 
 const eraFilter = ref<string | null>(null)
 const { events, status } = useTimeline(eraFilter)
+const selectedEvent = ref<TimelineEvent | null>(null)
+const modalOpen = computed({
+  get: () => selectedEvent.value !== null,
+  set: (v: boolean) => { if (!v) selectedEvent.value = null },
+})
 
 const eras = computed(() => {
   if (!events.value) return []
@@ -50,6 +55,7 @@ const columns: TableColumn<TimelineEvent>[] = [
         :data="events ?? []"
         :columns="columns"
         :loading="status === 'pending'"
+        @select="(_e: Event, row: any) => selectedEvent = row.original"
       >
         <template #era-cell="{ row }">
           <UBadge
@@ -87,5 +93,65 @@ const columns: TableColumn<TimelineEvent>[] = [
         </template>
       </UTable>
     </UCard>
+
+    <UModal v-model:open="modalOpen" :close="{ onClick: () => selectedEvent = null }">
+      <template v-if="selectedEvent" #content>
+        <div class="p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <h2 class="text-lg font-semibold">
+              {{ selectedEvent.title }}
+            </h2>
+            <UBadge
+              :color="selectedEvent.era.includes('1940') ? 'warning' : 'info'"
+              variant="subtle"
+              size="xs"
+            >
+              {{ selectedEvent.era }}
+            </UBadge>
+          </div>
+
+          <div class="flex gap-4 text-sm text-muted">
+            <span>{{ selectedEvent.date }}</span>
+            <NuxtLink
+              v-if="selectedEvent.location_id"
+              :to="`/locations/${selectedEvent.location_id}`"
+              class="text-primary hover:underline"
+            >
+              {{ selectedEvent.location }}
+            </NuxtLink>
+            <span v-else-if="selectedEvent.location">{{ selectedEvent.location }}</span>
+          </div>
+
+          <p v-if="selectedEvent.description" class="whitespace-pre-wrap">
+            {{ selectedEvent.description }}
+          </p>
+          <p v-else class="text-muted text-sm">
+            Aucune description
+          </p>
+
+          <div v-if="selectedEvent.characters_detail.length">
+            <p class="text-xs font-semibold text-muted uppercase tracking-wide mb-2">
+              Personnages
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <NuxtLink
+                v-for="c in selectedEvent.characters_detail"
+                :key="c.id"
+                :to="`/characters/${c.id}`"
+                class="text-primary hover:underline text-sm"
+              >
+                {{ c.name }}
+              </NuxtLink>
+            </div>
+          </div>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
+
+<style scoped>
+:deep([data-slot="tr"]) {
+  cursor: pointer;
+}
+</style>

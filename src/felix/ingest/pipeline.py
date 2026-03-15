@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -34,6 +35,8 @@ from felix.ingest.resolver import (
     slugify,
 )
 
+logger = logging.getLogger("felix.ingest")
+
 EventQueue = asyncio.Queue[dict[str, Any]]
 
 CLARIFICATION_TIMEOUT = 30.0
@@ -55,6 +58,7 @@ class ImportProgress:
     status: ImportStatus = ImportStatus.PENDING
     total_scenes: int = 0
     processed_scenes: int = 0
+    failed_scenes: int = 0
     current_scene: str = ""
     issues_found: int = 0
     error: str = ""
@@ -536,75 +540,86 @@ async def _run_character_profiling(
         char_id = char["id"]
         char_name = char["name"]
 
-        # Fetch fragments
-        fragments = await get_character_fragments(ctx.db, char_id)
+        try:
+            # Fetch fragments
+            fragments = await get_character_fragments(ctx.db, char_id)
 
-        # Fetch scene texts from ChromaDB
-        scene_ids = [f["scene_id"] for f in fragments]
-        scene_texts: list[str] = []
-        if scene_ids:
-            results = ctx.collection.get(ids=scene_ids)
-            scene_texts = results.get("documents") or []
+            # Fetch scene texts from ChromaDB
+            scene_ids = [f["scene_id"] for f in fragments]
+            scene_texts: list[str] = []
+            if scene_ids:
+                results = ctx.collection.get(ids=scene_ids)
+                scene_texts = results.get("documents") or []
 
-        if ctx.queue:
-            await _emit(
-                ctx.queue,
-                "profiling_character",
-                name=char_name,
-                id=char_id,
-                fragment_count=len(fragments),
-                scene_count=len(scene_texts),
-            )
-
-        known_names = [c["name"] for c in chars if c["id"] != char_id]
-        profile = await profile_character(
-            profiler, char_name, scene_texts, fragments, known_names
-        )
-
-        await update_character_profile(ctx.db, char_id, profile.model_dump())
-
-        # Resolve and store relations
-        stored_relations: list[dict[str, str]] = []
-        for rel in profile.relations:
-            other_match = fuzzy_match_entity(
-                rel.other_name, ctx.char_registry, ctx.char_aliases
-            )
-            if isinstance(other_match, AmbiguousMatch):
-                other_id = other_match.best_id
-                other_name = other_match.best_name
-            else:
-                if other_match.is_new:
-                    continue  # skip unknown characters
-                other_id = other_match.id
-                other_name = other_match.name
-            if other_id != char_id:
-                a, b = sorted([char_id, other_id])
-                await upsert_character_relation(
-                    ctx.db, a, b, rel.relation, era=char.get("era")
+            if ctx.queue:
+                await _emit(
+                    ctx.queue,
+                    "profiling_character",
+                    name=char_name,
+                    id=char_id,
+                    fragment_count=len(fragments),
+                    scene_count=len(scene_texts),
                 )
-                stored_relations.append({
-                    "other_name": other_name,
-                    "relation": rel.relation,
-                })
 
-        # Summary of filled fields
-        filled = [
-            k for k in ("age", "physical", "background", "arc", "traits")
-            if getattr(profile, k)
-        ]
-
-        if ctx.queue:
-            await _emit(
-                ctx.queue,
-                "character_profiled",
-                name=char_name,
-                id=char_id,
-                filled_fields=filled,
-                relations=stored_relations,
+            known_names = [c["name"] for c in chars if c["id"] != char_id]
+            profile = await profile_character(
+                profiler, char_name, scene_texts, fragments, known_names
             )
 
+            await update_character_profile(ctx.db, char_id, profile.model_dump())
 
-async def run_import_pipeline(  # noqa: PLR0913
+            # Resolve and store relations
+            stored_relations: list[dict[str, str]] = []
+            for rel in profile.relations:
+                other_match = fuzzy_match_entity(
+                    rel.other_name, ctx.char_registry, ctx.char_aliases
+                )
+                if isinstance(other_match, AmbiguousMatch):
+                    other_id = other_match.best_id
+                    other_name = other_match.best_name
+                else:
+                    if other_match.is_new:
+                        continue  # skip unknown characters
+                    other_id = other_match.id
+                    other_name = other_match.name
+                if other_id != char_id:
+                    a, b = sorted([char_id, other_id])
+                    await upsert_character_relation(
+                        ctx.db, a, b, rel.relation, era=char.get("era")
+                    )
+                    stored_relations.append({
+                        "other_name": other_name,
+                        "relation": rel.relation,
+                    })
+
+            # Summary of filled fields
+            filled = [
+                k for k in ("age", "physical", "background", "arc", "traits")
+                if getattr(profile, k)
+            ]
+
+            if ctx.queue:
+                await _emit(
+                    ctx.queue,
+                    "character_profiled",
+                    name=char_name,
+                    id=char_id,
+                    filled_fields=filled,
+                    relations=stored_relations,
+                )
+        except Exception as e:
+            logger.exception("Profiling failed for character: %s", char_name)
+            if ctx.queue:
+                await _emit(
+                    ctx.queue,
+                    "profiling_error",
+                    name=char_name,
+                    id=char_id,
+                    error=str(e),
+                )
+
+
+async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
     scenes_dir: str,
     db: aiosqlite.Connection,
     collection: chromadb.Collection,
@@ -623,8 +638,8 @@ async def run_import_pipeline(  # noqa: PLR0913
         pending_clarifications=pending_clarifications,
     )
     try:
-        scene_files = sorted(  # noqa: ASYNC240
-            f for ext in SCENE_FILE_EXTENSIONS for f in Path(scenes_dir).glob(f"*{ext}")
+        scene_files = sorted(
+            f for ext in SCENE_FILE_EXTENSIONS for f in Path(scenes_dir).glob(f"*{ext}")  # noqa: ASYNC240
         )
         if not scene_files:
             progress.error = f"Aucun fichier texte dans {scenes_dir}"
@@ -654,14 +669,39 @@ async def run_import_pipeline(  # noqa: PLR0913
         scenes_summary: list[dict] = []
 
         for scene_file in scene_files:
-            scene_issues, summary = await _process_scene(ctx, scene_file, analyzer)
-            all_issues.extend(scene_issues)
-            scenes_summary.append(summary)
+            try:
+                scene_issues, summary = await _process_scene(ctx, scene_file, analyzer)
+                all_issues.extend(scene_issues)
+                scenes_summary.append(summary)
+            except Exception as e:
+                logger.exception("Scene analysis failed: %s", scene_file.name)
+                progress.failed_scenes += 1
+                progress.processed_scenes += 1
+                if queue:
+                    await _emit(
+                        queue,
+                        "scene_error",
+                        scene_id=f"scene-{scene_file.stem}",
+                        filename=scene_file.name,
+                        error=str(e),
+                    )
 
-        check_issues = await _run_consistency_check(
-            ctx, scenes_summary, model_name, base_url
-        )
-        all_issues.extend(check_issues)
+        if not scenes_summary:
+            progress.error = f"Toutes les scenes ont echoue ({progress.failed_scenes}/{progress.total_scenes})"
+            progress.status = ImportStatus.ERROR
+            if queue:
+                await _emit(queue, "error", message=progress.error)
+            return
+
+        try:
+            check_issues = await _run_consistency_check(
+                ctx, scenes_summary, model_name, base_url
+            )
+            all_issues.extend(check_issues)
+        except Exception as e:
+            logger.exception("Consistency check failed")
+            if queue:
+                await _emit(queue, "consistency_error", error=str(e))
 
         for issue in all_issues:
             await create_issue(db, issue)
@@ -682,6 +722,7 @@ async def run_import_pipeline(  # noqa: PLR0913
             )
 
     except Exception as e:
+        logger.exception("Import pipeline failed")
         progress.error = str(e)
         progress.status = ImportStatus.ERROR
         if queue:

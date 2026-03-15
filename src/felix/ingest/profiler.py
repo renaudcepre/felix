@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
@@ -10,6 +11,8 @@ from felix.ingest.models import CharacterProfile
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
+
+logger = logging.getLogger("felix.ingest.profiler")
 
 PROFILER_PROMPT = """\
 Tu es un assistant specialise dans la synthese de profils de personnages de scenario.
@@ -53,6 +56,7 @@ def create_profiler_agent(
         instructions=PROFILER_PROMPT,
         output_type=CharacterProfile,
         model_settings=ModelSettings(temperature=0.1),
+        retries=2,
     )
 
 

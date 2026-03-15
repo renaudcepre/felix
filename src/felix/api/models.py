@@ -102,6 +102,7 @@ class ImportProgressResponse(BaseModel):
     status: str
     total_scenes: int = 0
     processed_scenes: int = 0
+    failed_scenes: int = 0
     current_scene: str = ""
     issues_found: int = 0
     error: str = ""

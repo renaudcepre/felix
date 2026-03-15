@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.settings import ModelSettings
 
 from felix.agent.chat_agent import _build_model
@@ -10,6 +11,8 @@ from felix.ingest.models import SceneAnalysis
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
+
+logger = logging.getLogger("felix.ingest.analyzer")
 
 ANALYZER_PROMPT = """\
 Tu es un assistant specialise dans l'analyse de scenes de scenario.
@@ -52,12 +55,21 @@ def create_analyzer_agent(
     model_name: str | None = None, base_url: str | None = None
 ) -> Agent[None, SceneAnalysis]:
     model: Model = _build_model(model_name, base_url)
-    return Agent(
+    agent: Agent[None, SceneAnalysis] = Agent(
         model,
         instructions=ANALYZER_PROMPT,
         output_type=SceneAnalysis,
         model_settings=ModelSettings(temperature=0.1),
+        retries=2,
     )
+
+    @agent.output_validator
+    def validate_output(output: SceneAnalysis) -> SceneAnalysis:
+        if len(output.characters) < 1:
+            raise ModelRetry("La scene doit contenir au moins un personnage")
+        return output
+
+    return agent
 
 
 async def analyze_scene(

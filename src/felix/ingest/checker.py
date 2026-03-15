@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent
@@ -11,6 +12,8 @@ from felix.ingest.models import ConsistencyReport
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
+
+logger = logging.getLogger("felix.ingest.checker")
 
 CHECKER_PROMPT = """\
 Tu es un assistant specialise dans la verification de coherence de scenarios.
@@ -54,6 +57,7 @@ def create_checker_agent(
         instructions=CHECKER_PROMPT,
         output_type=ConsistencyReport,
         model_settings=ModelSettings(temperature=0.1),
+        retries=2,
     )
 
 
