@@ -14,7 +14,7 @@ from rich.text import Text
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
 from felix.config import settings
-from felix.db import queries as db_queries
+from felix.db import repository as db_queries
 from felix.db.schema import init_db
 from felix.vectorstore.store import get_collection
 

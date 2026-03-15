@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 import chromadb
 
-from felix.db.queries import get_character_fragments, get_character_profile, get_character_relations, list_issues, list_scenes
+from felix.db.repository import get_character_fragments, get_character_profile, get_character_relations, list_issues, list_scenes
 from felix.db.schema import init_db
 from felix.db.seed import seed_db
 from felix.ingest.models import (
@@ -283,7 +283,7 @@ async def test_format_profile_includes_fragments(
     db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
     """Phase A: _format_character_profile includes fragments section."""
-    from felix.db.queries import _format_character_profile
+    from felix.db.formatters import _format_character_profile
 
     progress = ImportProgress()
     await _run_with_patches(

@@ -7,7 +7,7 @@ import pytest
 if TYPE_CHECKING:
     import aiosqlite
 
-from felix.db import queries
+from felix.db import formatters, repository
 
 
 @pytest.fixture
@@ -19,7 +19,7 @@ async def db(seeded_db: aiosqlite.Connection) -> aiosqlite.Connection:
 
 
 async def test_find_character_by_name(db: aiosqlite.Connection) -> None:
-    result = await queries.find_character(db, "Marie Dupont")
+    result = await formatters.find_character(db, "Marie Dupont")
     assert "Marie Dupont" in result
     assert "1940s" in result
     assert "Resistance" in result
@@ -28,22 +28,22 @@ async def test_find_character_by_name(db: aiosqlite.Connection) -> None:
 
 
 async def test_find_character_partial(db: aiosqlite.Connection) -> None:
-    result = await queries.find_character(db, "Marie")
+    result = await formatters.find_character(db, "Marie")
     assert "Marie Dupont" in result
 
 
 async def test_find_character_by_alias(db: aiosqlite.Connection) -> None:
-    result = await queries.find_character(db, "La Louve")
+    result = await formatters.find_character(db, "La Louve")
     assert "Marie Dupont" in result
 
 
 async def test_find_character_case_insensitive(db: aiosqlite.Connection) -> None:
-    result = await queries.find_character(db, "marie")
+    result = await formatters.find_character(db, "marie")
     assert "Marie Dupont" in result
 
 
 async def test_find_character_no_match(db: aiosqlite.Connection) -> None:
-    result = await queries.find_character(db, "Napoleon")
+    result = await formatters.find_character(db, "Napoleon")
     assert "Aucun personnage" in result
     assert "Marie Dupont" in result
     assert "Pierre Renard" in result
@@ -53,27 +53,27 @@ async def test_find_character_no_match(db: aiosqlite.Connection) -> None:
 
 
 async def test_find_location_by_name(db: aiosqlite.Connection) -> None:
-    result = await queries.find_location(db, "Lyon")
+    result = await formatters.find_location(db, "Lyon")
     assert "Planque de Lyon" in result
     assert "rue Merciere" in result
 
 
 async def test_find_location_partial(db: aiosqlite.Connection) -> None:
-    result = await queries.find_location(db, "planque")
+    result = await formatters.find_location(db, "planque")
     assert "Planque de Lyon" in result
 
 
 async def test_find_location_no_match(db: aiosqlite.Connection) -> None:
-    result = await queries.find_location(db, "Berlin")
+    result = await formatters.find_location(db, "Berlin")
     assert "Aucun lieu" in result
     assert "Planque de Lyon" in result
 
 
-# --- get_timeline (unchanged) ---
+# --- get_timeline ---
 
 
 async def test_get_timeline_filtered_by_date(db: aiosqlite.Connection) -> None:
-    result = await queries.get_timeline(
+    result = await formatters.get_timeline(
         db, date_from="1942-03-01", date_to="1942-03-31"
     )
     assert "Sarah" in result
@@ -81,7 +81,7 @@ async def test_get_timeline_filtered_by_date(db: aiosqlite.Connection) -> None:
 
 
 async def test_get_timeline_filtered_by_era(db: aiosqlite.Connection) -> None:
-    result = await queries.get_timeline(db, era="1970s")
+    result = await formatters.get_timeline(db, era="1970s")
     assert "Julien" in result
     assert "1974" in result
     # Should not include 1940s events
@@ -89,7 +89,7 @@ async def test_get_timeline_filtered_by_era(db: aiosqlite.Connection) -> None:
 
 
 async def test_get_timeline_summer_1942(db: aiosqlite.Connection) -> None:
-    result = await queries.get_timeline(
+    result = await formatters.get_timeline(
         db, date_from="1942-06-01", date_to="1942-09-30"
     )
     assert "Benoit transmet" in result
@@ -98,14 +98,14 @@ async def test_get_timeline_summer_1942(db: aiosqlite.Connection) -> None:
 
 
 async def test_get_timeline_no_results(db: aiosqlite.Connection) -> None:
-    result = await queries.get_timeline(
+    result = await formatters.get_timeline(
         db, date_from="2000-01-01", date_to="2000-12-31"
     )
     assert "No timeline events found" in result
 
 
 async def test_get_timeline_includes_characters(db: aiosqlite.Connection) -> None:
-    result = await queries.get_timeline(
+    result = await formatters.get_timeline(
         db, date_from="1942-06-01", date_to="1942-06-30"
     )
     assert "Benoit Laforge" in result
@@ -116,7 +116,7 @@ async def test_get_timeline_includes_characters(db: aiosqlite.Connection) -> Non
 
 
 async def test_list_all_characters(db: aiosqlite.Connection) -> None:
-    rows = await queries.list_all_characters(db)
+    rows = await repository.list_all_characters(db)
     assert len(rows) == 5
     names = [r["name"] for r in rows]
     assert "Marie Dupont" in names
@@ -124,7 +124,7 @@ async def test_list_all_characters(db: aiosqlite.Connection) -> None:
 
 
 async def test_list_all_characters_has_era(db: aiosqlite.Connection) -> None:
-    rows = await queries.list_all_characters(db)
+    rows = await repository.list_all_characters(db)
     eras = {r["era"] for r in rows}
     assert "1940s" in eras
     assert "1970s" in eras
@@ -134,7 +134,7 @@ async def test_list_all_characters_has_era(db: aiosqlite.Connection) -> None:
 
 
 async def test_get_character_profile(db: aiosqlite.Connection) -> None:
-    row = await queries.get_character_profile(db, "marie-dupont")
+    row = await repository.get_character_profile(db, "marie-dupont")
     assert row is not None
     assert row["name"] == "Marie Dupont"
     assert row["era"] == "1940s"
@@ -142,7 +142,7 @@ async def test_get_character_profile(db: aiosqlite.Connection) -> None:
 
 
 async def test_get_character_profile_not_found(db: aiosqlite.Connection) -> None:
-    row = await queries.get_character_profile(db, "nonexistent")
+    row = await repository.get_character_profile(db, "nonexistent")
     assert row is None
 
 
@@ -150,7 +150,7 @@ async def test_get_character_profile_not_found(db: aiosqlite.Connection) -> None
 
 
 async def test_get_character_relations(db: aiosqlite.Connection) -> None:
-    rels = await queries.get_character_relations(db, "marie-dupont")
+    rels = await repository.get_character_relations(db, "marie-dupont")
     assert len(rels) == 3
     types = {r["relation_type"] for r in rels}
     assert "spouse" in types
@@ -158,7 +158,7 @@ async def test_get_character_relations(db: aiosqlite.Connection) -> None:
 
 
 async def test_get_character_relations_empty(db: aiosqlite.Connection) -> None:
-    rels = await queries.get_character_relations(db, "nonexistent")
+    rels = await repository.get_character_relations(db, "nonexistent")
     assert rels == []
 
 
@@ -166,7 +166,7 @@ async def test_get_character_relations_empty(db: aiosqlite.Connection) -> None:
 
 
 async def test_get_timeline_rows_all(db: aiosqlite.Connection) -> None:
-    rows = await queries.get_timeline_rows(db)
+    rows = await repository.get_timeline_rows(db)
     assert len(rows) == 10
     assert all(isinstance(r, dict) for r in rows)
     assert "date" in rows[0]
@@ -174,13 +174,13 @@ async def test_get_timeline_rows_all(db: aiosqlite.Connection) -> None:
 
 
 async def test_get_timeline_rows_filter_era(db: aiosqlite.Connection) -> None:
-    rows = await queries.get_timeline_rows(db, era="1970s")
+    rows = await repository.get_timeline_rows(db, era="1970s")
     assert len(rows) == 2
     assert all(r["era"] == "1970s" for r in rows)
 
 
 async def test_get_timeline_rows_has_characters(db: aiosqlite.Connection) -> None:
-    rows = await queries.get_timeline_rows(
+    rows = await repository.get_timeline_rows(
         db, date_from="1942-06-01", date_to="1942-06-30"
     )
     assert len(rows) == 1

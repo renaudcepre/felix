@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic_ai import RunContext
 
 from felix.agent.deps import FelixDeps
-from felix.db import queries
+from felix.db import formatters
 from felix.vectorstore.store import search_scenes_in_chroma
 
 
@@ -13,7 +13,7 @@ async def find_character(ctx: RunContext[FelixDeps], name: str) -> str:
     Args:
         name: Full or partial character name (e.g. 'Marie', 'Renard', 'La Louve').
     """
-    return await queries.find_character(ctx.deps.db, name)
+    return await formatters.find_character(ctx.deps.db, name)
 
 
 async def find_location(ctx: RunContext[FelixDeps], name: str) -> str:
@@ -22,7 +22,7 @@ async def find_location(ctx: RunContext[FelixDeps], name: str) -> str:
     Args:
         name: Full or partial location name (e.g. 'Lyon', 'planque', 'Tribune').
     """
-    return await queries.find_location(ctx.deps.db, name)
+    return await formatters.find_location(ctx.deps.db, name)
 
 
 async def get_timeline(
@@ -30,19 +30,21 @@ async def get_timeline(
     era: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    location: str | None = None,
 ) -> str:
-    """Get timeline events filtered by era and/or date range.
+    """Get timeline events, optionally filtered by era, date range, and/or location.
 
-    IMPORTANT: Always provide date_from and date_to to avoid retrieving too many events.
-    Use ISO date format: YYYY-MM-DD.
+    All filters are optional. Omit date filters if the question is not date-specific.
+    Use ISO date format (YYYY-MM-DD) for dates if provided.
 
     Args:
         era: Filter by era (e.g. '1940s', '1970s'). Optional.
-        date_from: Start date inclusive (e.g. '1942-03-01'). Strongly recommended.
-        date_to: End date inclusive (e.g. '1942-03-31'). Strongly recommended.
+        date_from: Start date inclusive (e.g. '1942-03-01'). Optional.
+        date_to: End date inclusive (e.g. '1942-03-31'). Optional.
+        location: Filter by location name (partial match, e.g. 'poste de relais', 'Lyon'). Optional.
     """
-    return await queries.get_timeline(
-        ctx.deps.db, era=era, date_from=date_from, date_to=date_to
+    return await formatters.get_timeline(
+        ctx.deps.db, era=era, date_from=date_from, date_to=date_to, location=location
     )
 
 

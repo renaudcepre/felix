@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from felix.api.models import LocationDetail, LocationSummary, SceneSummary
-from felix.db.queries import get_location_detail, list_all_locations
+from felix.db.repository import get_location_detail, list_all_locations
 
 router = APIRouter(prefix="/api/locations", tags=["locations"])
 

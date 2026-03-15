@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from felix.ingest.models import SceneAnalysis
 
 from felix.config import SCENE_FILE_EXTENSIONS
-from felix.db.queries import (
+from felix.db.repository import (
     create_issue,
     delete_issues_for_scenes,
     get_character_fragments,

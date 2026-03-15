@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 
 from felix.api.models import CharacterDetail, CharacterSummary, Relation
-from felix.db.queries import (
+from felix.db.repository import (
     get_character_profile,
     get_character_relations,
     list_all_characters,

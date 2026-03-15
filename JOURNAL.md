@@ -382,3 +382,42 @@ Le prompt v2 resout completement le probleme — score parfait sur tous les eval
 - Aucun ajustement de seuil necessaire (THRESHOLD_AUTO=0.85 conserve)
 - Gain de performance attendu : 5-100x vs SequenceMatcher (C++ vs Python pur)
 - Import SSE : events temps reel, clarification interactive fonctionne, auto-resolve 30s OK
+
+---
+
+### 2026-03-15 — Separation queries.py → repository + formatters (issue #11)
+
+**Objectif :** Appliquer le SRP sur `src/felix/db/queries.py` (532 lignes) qui melangeait CRUD pur et formatage texte pour l'agent.
+
+**Changements :**
+- `src/felix/db/repository.py` — cree : toutes les fonctions CRUD pures (SELECT, INSERT, UPSERT, UPDATE, DELETE), retournent `dict`, `Row`, ou `None`
+- `src/felix/db/formatters.py` — cree : fonctions de formatage texte pour l'agent (`find_character`, `find_location`, `get_timeline`, `_format_character_profile`). Consomme repository. `get_timeline` appelle `repository.get_timeline_rows()` eliminant la duplication SQL.
+- `src/felix/db/queries.py` — supprime
+- `agent/tools.py` — import `formatters`
+- `api/routes/characters.py`, `locations.py`, `ingest.py`, `timeline.py`, `export.py` — import `repository`
+- `cli.py` — import `repository as db_queries`
+- `ingest/pipeline.py`, `ingest/loader.py` — import `repository`
+- `tests/test_formatters.py` — cree (renomme depuis `test_queries.py`), imports scindés `formatters` + `repository`
+- `tests/test_queries.py` — supprime
+- `tests/test_ingest_queries.py` — import `repository as queries`, `find_location` remplace par `get_location_detail`
+- `tests/test_pipeline.py` — imports scindés `repository` + `formatters`
+
+**Resultats :**
+- 69/69 tests passent
+- Aucun import residuel vers `felix.db.queries`
+
+---
+
+### 2026-03-15 — Filtre location sur get_timeline + durcissement system prompt
+
+**Probleme :** Felix ne pouvait pas repondre a "qui est au poste de relais ?" — `get_timeline` n'avait pas de filtre par lieu. De plus le modele hallucine sur les descriptions de lieux et demande des clarifications inutiles.
+
+**Modifications :**
+- `repository.py` : `get_timeline_rows` accepte `location: str | None` — filtre `LOWER(l.name) LIKE '%...%'` + `INNER JOIN` quand actif
+- `formatters.py` : `get_timeline` passe `location` au repository, mention dans le message no-result
+- `agent/tools.py` : parametre `location` expose dans le tool, docstring corrigee (suppression "Always provide date_from/date_to")
+- `agent/chat_agent.py` : system prompt durci — interdiction explicite d'inventer au-dela des tools, interdiction de demander des clarifications, exemple mis a jour avec `get_timeline(location=...)`
+
+**Resultats :**
+- 69/69 tests passent
+- Pour "qui est au poste de relais ?", Felix peut enchainer `find_location` + `get_timeline(location="poste de relais")`

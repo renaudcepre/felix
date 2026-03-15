@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
     from felix.ingest.resolver import ResolvedEntity
 
-from felix.db.queries import (
+from felix.db.repository import (
     upsert_character_event,
     upsert_character_fragment,
     upsert_character_minimal,

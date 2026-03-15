@@ -8,7 +8,7 @@ import pytest
 if TYPE_CHECKING:
     import aiosqlite
 
-from felix.db import queries
+from felix.db import repository as queries
 
 
 @pytest.fixture
@@ -156,8 +156,9 @@ async def test_upsert_location_minimal_ignore(db: aiosqlite.Connection) -> None:
     await queries.upsert_location_minimal(
         db, {"id": "lyon-safe-house", "name": "CHANGED", "description": "new"}
     )
-    result = await queries.find_location(db, "Planque de Lyon")
-    assert "Planque de Lyon" in result  # NOT changed
+    detail = await queries.get_location_detail(db, "lyon-safe-house")
+    assert detail is not None
+    assert detail["name"] == "Planque de Lyon"  # NOT changed
 
 
 async def test_upsert_timeline_event(db: aiosqlite.Connection) -> None:
