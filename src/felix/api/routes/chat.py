@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
+from felix.agent.deps import FelixDeps
+from felix.api.deps import ChatAgent, Collection, DB
 from felix.api.models import ChatRequest, ChatResponse, UsageInfo
 
 if TYPE_CHECKING:
@@ -17,9 +19,8 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 @router.post("")
-async def chat(body: ChatRequest, request: Request) -> ChatResponse:
-    agent = request.app.state.agent
-    deps = request.app.state.deps
+async def chat(body: ChatRequest, agent: ChatAgent, db: DB, collection: Collection) -> ChatResponse:
+    deps = FelixDeps(db=db, chroma_collection=collection)
 
     message_history = None
     if body.message_history:
@@ -50,9 +51,8 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
 
 
 @router.post("/stream")
-async def chat_stream(body: ChatRequest, request: Request) -> EventSourceResponse:
-    agent: Agent = request.app.state.agent
-    deps = request.app.state.deps
+async def chat_stream(body: ChatRequest, agent: ChatAgent, db: DB, collection: Collection) -> EventSourceResponse:
+    deps = FelixDeps(db=db, chroma_collection=collection)
 
     message_history = None
     if body.message_history:

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 
+from felix.api.deps import DB
 from felix.api.models import CharacterDetail, CharacterSummary, Relation
 from felix.db.repository import (
     get_character_profile,
@@ -13,8 +14,7 @@ router = APIRouter(prefix="/api/characters", tags=["characters"])
 
 
 @router.get("")
-async def list_characters(request: Request) -> list[CharacterSummary]:
-    db = request.app.state.db
+async def list_characters(db: DB) -> list[CharacterSummary]:
     rows = await list_all_characters(db)
     return [
         CharacterSummary(id=row["id"], name=row["name"], era=row["era"])
@@ -23,8 +23,7 @@ async def list_characters(request: Request) -> list[CharacterSummary]:
 
 
 @router.get("/{char_id}")
-async def get_character(char_id: str, request: Request) -> CharacterDetail:
-    db = request.app.state.db
+async def get_character(char_id: str, db: DB) -> CharacterDetail:
     row = await get_character_profile(db, char_id)
     if not row:
         raise HTTPException(status_code=404, detail="Character not found")

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException
 
+from felix.api.deps import DB
 from felix.api.models import LocationDetail, LocationSummary, SceneSummary
 from felix.db.repository import get_location_detail, list_all_locations
 
@@ -9,8 +10,7 @@ router = APIRouter(prefix="/api/locations", tags=["locations"])
 
 
 @router.get("")
-async def list_locations(request: Request) -> list[LocationSummary]:
-    db = request.app.state.db
+async def list_locations(db: DB) -> list[LocationSummary]:
     rows = await list_all_locations(db)
     return [
         LocationSummary(id=row["id"], name=row["name"], era=row.get("era"))
@@ -19,8 +19,7 @@ async def list_locations(request: Request) -> list[LocationSummary]:
 
 
 @router.get("/{loc_id}")
-async def get_location(loc_id: str, request: Request) -> LocationDetail:
-    db = request.app.state.db
+async def get_location(loc_id: str, db: DB) -> LocationDetail:
     data = await get_location_detail(db, loc_id)
     if not data:
         raise HTTPException(status_code=404, detail="Location not found")

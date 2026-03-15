@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
+from felix.api.deps import DB
 from felix.api.models import FullExport
 from felix.db import repository
 
@@ -11,8 +12,7 @@ router = APIRouter(prefix="/api", tags=["export"])
 
 
 @router.get("/export", response_model=FullExport)
-async def export_all(request: Request) -> FullExport:
-    db = request.app.state.db
+async def export_all(db: DB) -> FullExport:
     return FullExport(
         exported_at=datetime.now(timezone.utc),
         characters=await repository.list_all_characters_full(db),

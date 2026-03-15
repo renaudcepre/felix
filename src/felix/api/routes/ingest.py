@@ -6,6 +6,7 @@ import tempfile
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
+from felix.api.deps import BaseUrl, Collection, DB, ModelName
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
@@ -40,6 +41,10 @@ class ClarifyRequest(BaseModel):
 @router.post("/import", status_code=202)
 async def start_import(
     request: Request,
+    db: DB,
+    collection: Collection,
+    model_name: ModelName,
+    base_url: BaseUrl,
     files: list[UploadFile] = [],  # noqa: B006
     enrich: bool = True,
 ) -> ImportProgressResponse:
@@ -67,11 +72,6 @@ async def start_import(
     new_progress = ImportProgress()
     request.app.state.import_progress = new_progress
 
-    db = request.app.state.db
-    collection = request.app.state.deps.chroma_collection
-    model_name = request.app.state.model_name
-    base_url = request.app.state.base_url
-
     request.app.state.import_task = asyncio.create_task(
         run_import_pipeline(
             tmp_dir, db, collection, model_name, base_url, new_progress,
@@ -85,6 +85,10 @@ async def start_import(
 @router.post("/import/stream")
 async def import_stream(
     request: Request,
+    db: DB,
+    collection: Collection,
+    model_name: ModelName,
+    base_url: BaseUrl,
     files: list[UploadFile] = [],  # noqa: B006
     enrich: bool = True,
 ) -> EventSourceResponse:
@@ -115,11 +119,6 @@ async def import_stream(
     queue: EventQueue = asyncio.Queue()
     pending: dict[str, ClarificationSlot] = {}
     request.app.state.pending_clarifications = pending
-
-    db = request.app.state.db
-    collection = request.app.state.deps.chroma_collection
-    model_name = request.app.state.model_name
-    base_url = request.app.state.base_url
 
     task = asyncio.create_task(
         run_import_pipeline(
@@ -198,19 +197,17 @@ async def get_import_status(request: Request) -> ImportProgressResponse:
 
 @router.get("/issues")
 async def get_issues(
-    request: Request,
+    db: DB,
     type: str | None = None,
     severity: str | None = None,
     resolved: bool | None = None,
 ) -> list[Issue]:
-    db = request.app.state.db
     rows = await list_issues(db, type=type, severity=severity, resolved=resolved)
     return [Issue(**row) for row in rows]
 
 
 @router.patch("/issues/{issue_id}")
-async def patch_issue(issue_id: str, body: IssueUpdate, request: Request) -> Issue:
-    db = request.app.state.db
+async def patch_issue(issue_id: str, body: IssueUpdate, db: DB) -> Issue:
     ok = await update_issue_resolved(db, issue_id, body.resolved)
     if not ok:
         raise HTTPException(status_code=404, detail="Issue not found")
@@ -222,8 +219,7 @@ async def patch_issue(issue_id: str, body: IssueUpdate, request: Request) -> Iss
 
 
 @router.get("/scenes")
-async def get_scenes(request: Request) -> list[SceneSummary]:
-    db = request.app.state.db
+async def get_scenes(db: DB) -> list[SceneSummary]:
     rows = await list_scenes(db)
     return [SceneSummary(**row) for row in rows]
 

@@ -465,3 +465,16 @@ Le prompt v2 resout completement le probleme — score parfait sur tous les eval
 - `ingest/pipeline.py` : avant chaque `upsert_character_relation`, vérification fuzzy (`fuzz.ratio >= 75`) contre les relations existantes pour la paire — skip si trop similaire, insert sinon
 
 **Choix du seuil 75 :** bloque "collaborateur" vs "collaborateur sur l'interpretation..." (~60-70), laisse passer "père" vs "rival" (~30).
+
+---
+
+### 2026-03-15 (5) — DI idiomatique FastAPI (issue #8)
+
+**Probleme :** Toutes les routes accédaient aux services via `request.app.state` — Service Locator implicite sans typage, non documenté, non testable.
+
+**Modifications :**
+- `api/deps.py` : nouveau fichier — 5 fonctions `get_*` (db, collection, agent, model_name, base_url) + 5 alias `TypeAlias` annotés (`DB`, `Collection`, `ChatAgent`, `ModelName`, `BaseUrl`)
+- `api/main.py` : lifespan stocke `collection` directement sur `app.state` (suppression du wrapper `FelixDeps`), endpoint `health` utilise `ModelName`/`BaseUrl` via Depends
+- `api/routes/characters.py`, `locations.py`, `timeline.py`, `export.py` : `request: Request` remplacé par `db: DB`
+- `api/routes/chat.py` : `request: Request` remplacé par `agent: ChatAgent, db: DB, collection: Collection` ; `FelixDeps` reconstruit à la volée pour pydantic-ai
+- `api/routes/ingest.py` : état statique (db, collection, model_name, base_url) → typed deps ; état dynamique (import_progress, import_task, pending_clarifications) reste sur `request.app.state` (mutable runtime)

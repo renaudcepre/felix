@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from felix.agent.chat_agent import create_agent
-from felix.agent.deps import FelixDeps
+from felix.api.deps import BaseUrl, ModelName
 from felix.api.routes import characters, chat, export, ingest, locations, timeline
 from felix.config import settings
 from felix.db.schema import init_db
@@ -21,11 +21,10 @@ if TYPE_CHECKING:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     db = await init_db(str(settings.db_path))
     collection = get_collection()
-    deps = FelixDeps(db=db, chroma_collection=collection)
     agent = create_agent(settings.llm_model, settings.llm_base_url)
 
     app.state.db = db
-    app.state.deps = deps
+    app.state.collection = collection
     app.state.agent = agent
     app.state.model_name = settings.llm_model
     app.state.base_url = settings.llm_base_url
@@ -54,11 +53,11 @@ app.include_router(export.router)
 
 
 @app.get("/api/health")
-async def health() -> dict[str, str]:
+async def health(model_name: ModelName, base_url: BaseUrl) -> dict[str, str]:
     return {
         "status": "ok",
-        "model": app.state.model_name,
-        "base_url": app.state.base_url or "Mistral API",
+        "model": model_name,
+        "base_url": base_url or "Mistral API",
     }
 
 
