@@ -16,12 +16,6 @@ class Settings(BaseSettings):
     llm_base_url: str | None = "http://localhost:1234/v1"
     llm_api_key: str = ""
 
-    # Clé OpenRouter — lue depuis OPEN_ROUTER ou FLX_OPEN_ROUTER
-    open_router_key: str = Field(
-        default="",
-        validation_alias=AliasChoices("OPEN_ROUTER", "FLX_OPEN_ROUTER"),
-    )
-
     # Clé Together AI — lue depuis TOGETHER_API_KEY ou FLX_TOGETHER_KEY
     together_key: str = Field(
         default="",
