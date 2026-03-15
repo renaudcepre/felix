@@ -33,3 +33,4 @@ web/.nuxt/
 web/.output/
 web/dist/
 data/archives/
+exports/

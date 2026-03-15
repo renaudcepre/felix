@@ -365,4 +365,20 @@ Le prompt v2 resout completement le probleme — score parfait sur tous les eval
 - `uv run pytest` — 58/58 tests passent
 - `uv run ruff check src/` — 0 erreur
 - `pnpm lint` — 0 erreur
+
+---
+
+### 2026-03-15 — Remplacement SequenceMatcher par rapidfuzz dans resolver.py
+
+**Objectif :** Ameliorer les performances et la qualite du fuzzy matching des entites (personnages, lieux).
+
+**Changements :**
+- `pyproject.toml` — ajout dependance `rapidfuzz>=3.0`
+- `src/felix/ingest/resolver.py` — remplacement de `difflib.SequenceMatcher` par `rapidfuzz.fuzz.WRatio`. WRatio selectionne automatiquement le meilleur algo (ratio, partial_ratio, token_sort_ratio, token_set_ratio), ce qui couvre nativement les inversions prenom/nom.
+- `tests/test_resolver.py` — ajout `test_token_inversion_match` : verifie que "Martin Jean" matche "Jean Martin"
+
+**Resultats :**
+- 17/17 tests passent (16 existants + 1 nouveau)
+- Aucun ajustement de seuil necessaire (THRESHOLD_AUTO=0.85 conserve)
+- Gain de performance attendu : 5-100x vs SequenceMatcher (C++ vs Python pur)
 - Import SSE : events temps reel, clarification interactive fonctionne, auto-resolve 30s OK

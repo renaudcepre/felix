@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
+from datetime import datetime
+from pathlib import Path
 
 from rich.console import Console
 from rich.panel import Panel
@@ -11,6 +14,7 @@ from rich.text import Text
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
 from felix.config import settings
+from felix.db import queries as db_queries
 from felix.db.schema import init_db
 from felix.vectorstore.store import get_collection
 
@@ -73,6 +77,35 @@ async def chat_loop(model: str, base_url: str | None) -> None:
             message_history = result.all_messages()
     finally:
         await db.close()
+
+
+async def _export_db() -> dict:
+    db = await init_db(str(settings.db_path))
+    try:
+        return {
+            "exported_at": datetime.now().isoformat(),
+            "characters": await db_queries.list_all_characters_full(db),
+            "locations": await db_queries.list_all_locations(db),
+            "scenes": await db_queries.list_all_scenes_full(db),
+            "timeline_events": await db_queries.list_all_timeline_events(db),
+            "character_events": await db_queries.list_all_character_events(db),
+            "character_relations": await db_queries.list_all_character_relations(db),
+            "character_fragments": await db_queries.list_all_character_fragments(db),
+            "issues": await db_queries.list_issues(db),
+        }
+    finally:
+        await db.close()
+
+
+def export() -> None:
+    """Export DB directly to exports/<timestamp>.json."""
+    console = Console()
+    data = asyncio.run(_export_db())
+    exports_dir = Path("exports")
+    exports_dir.mkdir(exist_ok=True)
+    filename = exports_dir / f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filename.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    console.print(f"[green]Export sauvegarde :[/green] {filename} ({len(data['characters'])} perso, {len(data['scenes'])} scenes)")
 
 
 def main() -> None:

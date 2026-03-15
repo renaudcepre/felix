@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from difflib import SequenceMatcher
+from rapidfuzz import fuzz
 
 THRESHOLD_AUTO = 0.85
 THRESHOLD_FUZZY = 0.60
@@ -52,6 +52,20 @@ def _shares_significant_word(norm_a: str, norm_b: str) -> bool:
     return bool(words_a & words_b)
 
 
+def _coverage_score(norm_query: str, norm_candidate: str) -> float:
+    """WRatio with a length penalty when the query has fewer tokens than the candidate.
+
+    token_set_ratio (used internally by WRatio) inflates scores when the query is a
+    strict subset of a longer name ("Voss" vs "Lena Voss" → 100%).  Applying
+    sqrt(n_query / n_candidate) brings that down to ~0.71, landing in AmbiguousMatch
+    territory instead of auto-resolving.
+    """
+    raw = fuzz.WRatio(norm_query, norm_candidate) / 100.0
+    n_q = len(norm_query.split())
+    n_c = len(norm_candidate.split())
+    return raw * (n_q / n_c) ** 0.5 if n_q < n_c else raw
+
+
 def _collect_candidates(
     norm: str,
     existing: dict[str, str],
@@ -62,7 +76,7 @@ def _collect_candidates(
         norm_existing = _normalize(ename)
         if _has_different_first_name(norm, norm_existing):
             continue
-        score = SequenceMatcher(None, norm, norm_existing).ratio()
+        score = _coverage_score(norm, norm_existing)
         if score >= THRESHOLD_AUTO or (
             score >= THRESHOLD_FUZZY and _shares_significant_word(norm, norm_existing)
         ):
@@ -71,7 +85,7 @@ def _collect_candidates(
             norm_alias = _normalize(alias)
             if _has_different_first_name(norm, norm_alias):
                 continue
-            alias_score = SequenceMatcher(None, norm, norm_alias).ratio()
+            alias_score = _coverage_score(norm, norm_alias)
             if alias_score > score and (
                 alias_score >= THRESHOLD_AUTO
                 or (alias_score >= THRESHOLD_FUZZY and _shares_significant_word(norm, norm_alias))

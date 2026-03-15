@@ -127,6 +127,30 @@ def test_shared_word_triggers_ambiguous() -> None:
     assert result.best_id == "vaisseau-elysium-7"
 
 
+def test_token_inversion_match() -> None:
+    """'Martin Jean' doit matcher 'Jean Martin' (même personne, ordre inversé)."""
+    chars = {"jean-martin": "Jean Martin"}
+    result = fuzzy_match_entity("Martin Jean", chars)
+    assert isinstance(result, ResolvedEntity)
+    assert result.id == "jean-martin"
+
+
+def test_single_token_does_not_auto_resolve() -> None:
+    """'Voss' seul ne doit pas auto-resolver vers 'Lena Voss' (score penalise -> AmbiguousMatch)."""
+    chars = {"lena-voss": "Lena Voss"}
+    result = fuzzy_match_entity("Voss", chars)
+    assert isinstance(result, AmbiguousMatch)
+    assert result.best_id == "lena-voss"
+
+
+def test_single_token_ambiguous_two_candidates() -> None:
+    """'Voss' avec deux personnages Voss -> AmbiguousMatch avec les deux candidats."""
+    chars = {"lena-voss": "Lena Voss", "karl-voss": "Karl Voss"}
+    result = fuzzy_match_entity("Voss", chars)
+    assert isinstance(result, AmbiguousMatch)
+    assert len(result.candidates) == 2  # noqa: PLR2004
+
+
 def test_no_shared_word_skips() -> None:
     """'Naomi Chen' should NOT match 'Lucas Terra' (no shared word)."""
     chars = {"biologiste-lucas-terra": "Biologiste Lucas Terra"}

@@ -19,11 +19,13 @@ dependencies = [
     "aiosqlite>=0.20",
     "rich>=14.3.3",
     "fastapi[standard]>=0.115",
+    "rapidfuzz>=3.0",
 ]
 
 [project.scripts]
 felix = "felix.cli:main"
 felix-api = "felix.api.main:cli"
+felix-export = "felix.cli:export"
 
 [tool.setuptools.packages.find]
 where = ["src"]
