@@ -96,7 +96,8 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
       - "irina_profile"            → background text for irina-voss
       - "irina_fragments"          → fragment_count for irina-voss
       - "profile:<char_id>"        → background text for any character
-      - "fragments:<char_id>"      → fragment_count for any character
+      - "fragments:<char_id>"      → fragment_count for any character (all roles)
+      - "active_fragments:<char_id>" → fragment_count for participant role only
       - "relations"                → all character relations
       - "relations:<char_id>"      → relations involving a specific character
       - "issues:<scene_id>"        → issues for that scene
@@ -148,6 +149,15 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
         row = await cursor.fetchone()
         return PipelineQueryResult(fragment_count=row[0] if row else 0)
 
+    if query.startswith("active_fragments:"):
+        char_id = query[len("active_fragments:"):]
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM character_fragments WHERE character_id = ? AND role = 'participant'",
+            (char_id,),
+        )
+        row = await cursor.fetchone()
+        return PipelineQueryResult(fragment_count=row[0] if row else 0)
+
     if query == "relations":
         cursor = await db.execute(
             "SELECT character_id_a, character_id_b, relation_type FROM character_relations"
@@ -163,6 +173,12 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
         )
         rows = await cursor.fetchall()
         return PipelineQueryResult(issues=[{"type": r[0], "severity": r[1], "description": r[2]} for r in rows])
+
+    if query.startswith("scene_date:"):
+        scene_id = query[len("scene_date:"):]
+        cursor = await db.execute("SELECT date FROM scenes WHERE id = ?", (scene_id,))
+        row = await cursor.fetchone()
+        return PipelineQueryResult(background=row[0] if row else None)
 
     if query == "all_issues":
         cursor = await db.execute("SELECT type, severity, description, scene_id FROM issues")

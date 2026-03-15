@@ -232,6 +232,22 @@ class MaxIssueSeverityCount(Evaluator[str, PipelineQueryResult]):
 
 
 @dataclass
+class IssueTypeAbsent(Evaluator[str, PipelineQueryResult]):
+    """Check that NO issue has the expected type (partial match) — inverse of IssueTypePresent.
+
+    expected_output: type substring that must NOT appear.
+    Example: "timeline_inconsistency"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool]:
+        kw = (ctx.expected_output or "").strip()
+        found = any(kw in i.get("type", "") for i in ctx.output.issues)
+        return {"issue_type_absent": not found}
+
+
+@dataclass
 class AllLocationsContainKeyword(Evaluator[str, PipelineQueryResult]):
     """Check that ALL locations contain the expected keyword (tests deduplication).
 

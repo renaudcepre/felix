@@ -41,6 +41,7 @@ from evals.pipeline.evaluators import (
     CharacterIdsPresent,
     ExactFragmentCount,
     IssueDescriptionContains,
+    IssueTypeAbsent,
     IssueTypePresent,
     LocationContainsKeyword,
     MaxIssueSeverityCount,
@@ -165,7 +166,7 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
         ),
         Case(
             name="chen_appears_in_scene2_only",
-            inputs="fragments:chen-wei",
+            inputs="active_fragments:chen-wei",
             expected_output="1",
             metadata={"category": "character_arc", "difficulty": "medium"},
             evaluators=[ExactFragmentCount()],
@@ -221,6 +222,67 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
             expected_output="helios",
             metadata={"category": "spatial", "difficulty": "hard"},
             evaluators=[AllLocationsContainKeyword()],
+        ),
+        # --- famille / noms proches ---
+        Case(
+            name="nakamura_family_extracted",
+            inputs="characters",
+            expected_output="hana-nakamura,lena-nakamura,kenji-nakamura",
+            metadata={"category": "disambiguation", "difficulty": "medium"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+        Case(
+            name="nakamura_sisters_related",
+            inputs="relations:hana-nakamura",
+            expected_output="lena-nakamura",
+            metadata={"category": "disambiguation", "difficulty": "medium"},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        Case(
+            name="kenji_mentioned_only",
+            inputs="active_fragments:kenji-nakamura",
+            expected_output="0",
+            metadata={"category": "disambiguation", "difficulty": "medium"},
+            evaluators=[ExactFragmentCount()],
+        ),
+        # --- flashback / extraction de date ---
+        Case(
+            name="flashback_scene_date_correct",
+            inputs="scene_date:scene-06_flashback",
+            expected_output="2157",
+            metadata={"category": "timeline", "difficulty": "medium"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="flashback_no_false_timeline_issue",
+            inputs="issues:scene-06_flashback",
+            expected_output="timeline_inconsistency",
+            metadata={"category": "timeline", "difficulty": "medium"},
+            evaluators=[IssueTypeAbsent()],
+        ),
+        Case(
+            name="irina_kepler9_in_profile",
+            inputs="profile:irina-voss",
+            expected_output="kepler",
+            metadata={"category": "timeline", "difficulty": "medium"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="irina_kepler9_date_resolved",
+            inputs="profile:irina-voss",
+            expected_output="2155",
+            metadata={"category": "timeline", "difficulty": "hard"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # hard : la date 2155 n'est plus dans le texte, uniquement "deux ans avant" + scène en 2157
+        # le LLM doit calculer 2157 - 2 = 2155 de lui-même
+        # --- contradiction physique ---
+        Case(
+            name="lena_physical_contradiction_detected",
+            inputs="issues:scene-05_contradiction",
+            expected_output="character_contradiction",
+            metadata={"category": "issues", "difficulty": "hard"},
+            evaluators=[IssueTypePresent()],
         ),
     ],
 )
