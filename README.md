@@ -19,25 +19,34 @@ uv sync
 
 ### Local (LMStudio)
 
+Par defaut Felix pointe sur `http://localhost:1234/v1` avec Qwen 2.5 7B.
+
 ```bash
-# Modele par defaut (Qwen 2.5 7B)
-uv run felix --local
+# Modele par defaut
+uv run felix
 
 # Choisir un modele
-uv run felix --local --model qwen/qwen3-4b-2507
+uv run felix --model qwen/qwen3-4b-2507
 
-# URL custom
-uv run felix --local --base-url http://192.168.1.10:1234/v1
+# URL custom (autre machine)
+uv run felix --base-url http://192.168.1.10:1234/v1
 ```
 
 ### API Mistral
 
 ```bash
-# Necessite FELIX_API_KEY dans .env
-uv run felix
+# Necessite FLX_LLM_BASE_URL="" et FLX_LLM_API_KEY dans .env
+uv run felix --base-url "" --model mistral-small-latest
+```
 
-# Override du modele
-uv run felix --model mistral-small-latest
+## Dev (just)
+
+```bash
+just dev-up   # API (hot reload, port 8000) + frontend Nuxt (port 3000)
+just api      # API seule
+just web      # frontend seul
+just db-clean # supprime DB + ChromaDB
+just db-archive # archive puis nettoie
 ```
 
 ## Evals
@@ -78,6 +87,6 @@ Variables d'environnement (ou `.env`) :
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FELIX_MODEL` | Nom du modele | `open-mistral-nemo` |
-| `FELIX_BASE_URL` | URL API OpenAI-compatible | _(none = Mistral API)_ |
-| `FELIX_API_KEY` | Cle API Mistral | _(vide)_ |
+| `FLX_LLM_MODEL` | Nom du modele | `qwen2.5-7b-instruct-1m` |
+| `FLX_LLM_BASE_URL` | URL API OpenAI-compatible | `http://localhost:1234/v1` |
+| `FLX_LLM_API_KEY` | Cle API | _(vide)_ |

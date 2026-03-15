@@ -1,8 +1,28 @@
 # Felix — task runner
+# Usage: just <recipe>
+# just dev-up   → API (hot reload) + frontend Nuxt en parallèle
+# just api      → API seule
+# just web      → frontend seul
 
 db_path := "data/felix.db"
 chroma_path := "chroma_data"
 archive_dir := "data/archives"
+
+# Lance API FastAPI (hot reload) + frontend Nuxt en parallèle
+dev-up:
+    #!/usr/bin/env bash
+    uv run felix-api &
+    API_PID=$!
+    cd web && pnpm dev
+    kill $API_PID 2>/dev/null || true
+
+# Lance uniquement l'API FastAPI avec hot reload (port 8000)
+api:
+    uv run felix-api
+
+# Lance uniquement le frontend Nuxt avec hot reload (port 3000)
+web:
+    cd web && pnpm dev
 
 # Remove database and vector store
 db-clean:
