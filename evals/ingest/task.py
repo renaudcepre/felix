@@ -21,8 +21,8 @@ def _get_agent():
     global _agent  # noqa: PLW0603
     if _agent is not None:
         return _agent
-    model_name = os.environ.get("FELIX_EVAL_MODEL")
-    base_url = os.environ.get("FELIX_EVAL_BASE_URL")
+    model_name = os.environ.get("FLX_EVAL_MODEL")
+    base_url = os.environ.get("FLX_EVAL_BASE_URL")
     _agent = create_analyzer_agent(model_name, base_url)
     return _agent
 

@@ -87,6 +87,6 @@ Variables d'environnement (ou `.env`) :
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FLX_LLM_MODEL` | Nom du modele | `qwen2.5-7b-instruct-1m` |
+| `FLX_LLM_MODEL` | Nom du modele | `qwen/qwen2.5-7b-instruct` |
 | `FLX_LLM_BASE_URL` | URL API OpenAI-compatible | `http://localhost:1234/v1` |
 | `FLX_LLM_API_KEY` | Cle API | _(vide)_ |

@@ -34,3 +34,4 @@ web/.output/
 web/dist/
 data/archives/
 exports/
+/evals/results/

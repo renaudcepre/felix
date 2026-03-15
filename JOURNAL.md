@@ -1,5 +1,34 @@
 # Journal de developpement — Felix
 
+## Eval suite — refonte complète — 2026-03-15
+
+**Objectif :** Rendre les evals rapides, fiables et exploitables pour guider les améliorations.
+
+**Infra :**
+- `evals/_runner.py` : exécution parallèle via `asyncio.gather`, auto-detect LM Studio → Together AI, output compact (✔/✗ par case + `N/M passed`), résultats détaillés en fichiers `evals/results/<suite>_<ts>/<case>.md`
+- `evals/run_evals.py` : unified entry point, 3 suites (pipeline/ingest/chatbot), CLI `--suite`, `--case`, `--list`, `--together`, `--local`
+- `justfile` : commande `just evals [options...]`
+- Provider Together AI (`Qwen/Qwen2.5-7B-Instruct-Turbo`) comme fallback cloud rapide
+
+**Datasets :**
+- Pipeline : 11 cases (extraction, apparitions, profiling, consistency, relations)
+- Ingest : 16 cases sur scènes réelles + fixtures test (supprimable, redondant avec pipeline)
+- Chatbot : 17 cases — lookup, coherence, semantic, cross-era, causal (4 nouveaux), négatifs
+
+**Évaluateurs :**
+- `ContainsExpectedFacts` : ajout assertion `facts_ok` (bool) avec `min_score=0.5` — les cas sans réponse tombent maintenant en ✗
+- `CharacterRoleAccuracy` : fix normalisation Unicode sur les rôles extraits (`_normalize` au lieu de `.lower()`)
+- Cas causaux → `LLMJudge` avec rubric sémantique (résiste aux synonymes/paraphrases)
+- Cas à données absentes → `RefusesToFabricate`
+- Dataset-level evaluators ne créent pas d'assertions per-case → tous les cas non-négatifs ont `ContainsExpectedFacts()` en case-level
+
+**Résultats actuels :** pipeline 10/11, ingest 15/16, chatbot 16/17
+- `yuna_profile_background` : profil vide en DB → bug pipeline
+- `scene2_no_jakes_participant` : Jakes extrait dans scène 002 → comportement LLM à investiguer
+- `semantic_archives` : bot rate les requêtes par lieu/contexte (vs personnage) → gap fonctionnel à corriger
+
+---
+
 ## Fix SSE breaking changes — 2026-03-15
 
 `check_started` et `profiling_character` avaient des champs renommés après la refonte incrémentale,
@@ -106,7 +135,7 @@ MODEL_BASE_URL=http://localhost:1234/v1 MISTRAL_MODEL=qwen2.5-7b-instruct-1m fel
 
 **Usage evals local :**
 ```bash
-FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:1234/v1 uv run python -m evals.run_evals
+FELIX_EVAL_MODEL=qwen/qwen2.5-7b-instruct FELIX_EVAL_BASE_URL=http://localhost:1234/v1 uv run python -m evals.run_evals
 ```
 
 **Modeles locaux disponibles (LMStudio) :** Qwen2.5 7B, Llama 3.1 8B, Ministral 3B, Gemma 2 9B.
@@ -126,7 +155,7 @@ FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:123
 - facts_score : 0.810, assertions : 94.4%, duree moyenne : 118s/case
 - Refuse proprement de fabriquer, cite les scenes par numero (042, 088), repond en francais, concis
 
-**Evals Qwen 2.5 7B local (LMStudio, qwen2.5-7b-instruct-1m) :**
+**Evals Qwen 2.5 7B local (LMStudio, qwen/qwen2.5-7b-instruct) :**
 - facts_score : **0.857**, assertions : **100%**, duree moyenne : 89.8s/case
 - Meilleur modele teste : 100% assertions, cross-era 0.75 (meilleur score), refuse proprement, plus rapide que Gemma 2 9B
 - Seul 7B a atteindre 100% assertions — excellent tool-calling et raisonnement cross-era

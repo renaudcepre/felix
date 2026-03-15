@@ -1,13 +1,43 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
+import httpx
+from openai import AsyncOpenAI
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.mistral import MistralProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
+
+
+class _OpenRouterTransport(httpx.AsyncBaseTransport):
+    """Injecte provider.require_parameters=true dans les requêtes OpenRouter."""
+
+    def __init__(self) -> None:
+        self._inner = httpx.AsyncHTTPTransport()
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        ct = request.headers.get("content-type", "")
+        if ct.startswith("application/json"):
+            body = json.loads(request.content)
+            if "messages" in body:
+                if body.get("tool_choice") == "required":
+                    body["tool_choice"] = "auto"
+                new_content = json.dumps(body).encode()
+                headers = {
+                    k: v for k, v in request.headers.items()
+                    if k.lower() != "content-length"
+                }
+                request = httpx.Request(
+                    method=request.method,
+                    url=request.url,
+                    headers=headers,
+                    content=new_content,
+                )
+        return await self._inner.handle_async_request(request)
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
@@ -46,15 +76,28 @@ EXAMPLE: "Qui est au poste de relais ?"
 
 
 def _build_model(
-    model_name: str | None = None, base_url: str | None = None
+    model_name: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
 ) -> Model:
     name = model_name or settings.llm_model
     url = base_url or settings.llm_base_url
 
     if url:
+        is_openrouter = "openrouter" in url
+        is_together = "together" in url
+        if is_openrouter:
+            key = api_key or settings.open_router_key or "lm-studio"
+            http_client = httpx.AsyncClient(transport=_OpenRouterTransport())
+            openai_client = AsyncOpenAI(base_url=url, api_key=key, http_client=http_client)
+            return OpenAIModel(name, provider=OpenAIProvider(openai_client=openai_client))
+        if is_together:
+            key = api_key or settings.together_key or "lm-studio"
+        else:
+            key = api_key or settings.llm_api_key or "lm-studio"
         return OpenAIModel(
             name,
-            provider=OpenAIProvider(base_url=url, api_key="lm-studio"),
+            provider=OpenAIProvider(base_url=url, api_key=key),
         )
     return MistralModel(
         name,

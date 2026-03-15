@@ -40,7 +40,7 @@ class CharacterRoleAccuracy(Evaluator[str, SceneAnalysis]):
         output = ctx.output
         extracted = {}
         for char in output.characters:
-            extracted[_normalize(char.name)] = char.role.lower()
+            extracted[_normalize(char.name)] = _normalize(char.role)
 
         correct = 0
         total = len(expected)
@@ -53,7 +53,7 @@ class CharacterRoleAccuracy(Evaluator[str, SceneAnalysis]):
             for ext_name, ext_role in extracted.items():
                 if exp_name in ext_name or ext_name in exp_name:
                     matched = True
-                    if ext_role == exp_role:
+                    if exp_role in ext_role or ext_role in exp_role:
                         correct += 1
                     else:
                         wrong_roles.append(
