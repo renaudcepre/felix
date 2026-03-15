@@ -528,7 +528,12 @@ async def _check_scene(
     await _emit_status(ctx, ImportStatus.CHECKING)
 
     if ctx.queue:
-        await _emit(ctx.queue, "check_started", scene_id=scene_summary["scene_id"])
+        await _emit(
+            ctx.queue,
+            "check_started",
+            scene_id=scene_summary["scene_id"],
+            scene_title=scene_summary.get("title"),
+        )
 
     try:
         report = await check_scene_consistency(
@@ -601,7 +606,7 @@ async def _profile_scene_characters(
             }
 
             if ctx.queue:
-                await _emit(ctx.queue, "profiling_character", name=char_name, id=char_id)
+                await _emit(ctx.queue, "profiling_character", name=char_name, id=char_id, scene_title=scene_title)
 
             char_known_names = [n for n in known_names if n != char_name]
 

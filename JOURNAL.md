@@ -1,5 +1,13 @@
 # Journal de developpement — Felix
 
+## Fix SSE breaking changes — 2026-03-15
+
+`check_started` et `profiling_character` avaient des champs renommés après la refonte incrémentale,
+cassant l'affichage dans le journal d'import. Fix : ajout de `scene_title` aux deux events côté pipeline,
+mise à jour frontend (`import.vue` + `types/index.ts`).
+
+---
+
 ## Pipeline incremental — 2026-03-15
 
 **Objectif :** Passer d'un pipeline batch (check + profiling en fin d'import) a un pipeline incremental (check + profiling apres chaque scene).
