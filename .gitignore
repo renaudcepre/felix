@@ -35,3 +35,4 @@ web/dist/
 data/archives/
 exports/
 /evals/results/
+!/evals/results/history.jsonl

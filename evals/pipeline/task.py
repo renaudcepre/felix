@@ -174,6 +174,18 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
         rows = await cursor.fetchall()
         return PipelineQueryResult(issues=[{"type": r[0], "severity": r[1], "description": r[2]} for r in rows])
 
+    if query.startswith("relation_count:"):
+        parts = query[len("relation_count:"):].split(",")
+        if len(parts) == 2:  # noqa: PLR2004
+            a, b = sorted(parts)
+            cursor = await db.execute(
+                "SELECT COUNT(*) FROM character_relations WHERE character_id_a = ? AND character_id_b = ?",
+                (a, b),
+            )
+            row = await cursor.fetchone()
+            return PipelineQueryResult(fragment_count=row[0] if row else 0)
+        return PipelineQueryResult()
+
     if query.startswith("scene_date:"):
         scene_id = query[len("scene_date:"):]
         cursor = await db.execute("SELECT date FROM scenes WHERE id = ?", (scene_id,))

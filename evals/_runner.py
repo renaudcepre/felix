@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import os
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -186,9 +187,53 @@ def run_with_spinners(
     color = "green" if passed == total else "yellow" if passed >= total * 0.8 else "red"
     console.print(f"\n[{color}]{passed}/{total} passed[/{color}]  [dim]→ {suite_dir}[/dim]")
 
+    # Persist run to history
+    _append_history(report_name, ts, all_report_cases)
+
     report = EvaluationReport(
         name=report_name,
         cases=all_report_cases,
         failures=all_failures,
     )
     return report
+
+
+HISTORY_FILE = RESULTS_DIR / "history.jsonl"
+
+
+def _case_passed(rc: Any) -> bool:
+    return all(v.value for v in rc.assertions.values()) if rc.assertions else True
+
+
+def _append_history(suite: str, ts: str, cases: list[Any]) -> None:
+    """Append a single-line JSON entry to history.jsonl."""
+    model = os.environ.get("FLX_EVAL_MODEL", "unknown")
+    case_results: dict[str, bool] = {}
+    for rc in cases:
+        case_results[rc.name] = _case_passed(rc)
+
+    passed = sum(1 for v in case_results.values() if v)
+    entry = {
+        "ts": ts,
+        "suite": suite,
+        "model": model,
+        "passed": passed,
+        "total": len(case_results),
+        "cases": case_results,
+    }
+    HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with HISTORY_FILE.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def load_history(suite: str | None = None) -> list[dict]:
+    """Load history entries, optionally filtered by suite."""
+    if not HISTORY_FILE.exists():
+        return []
+    entries = []
+    for line in HISTORY_FILE.read_text(encoding="utf-8").strip().splitlines():
+        entry = json.loads(line)
+        if suite and entry["suite"] != suite:
+            continue
+        entries.append(entry)
+    return entries

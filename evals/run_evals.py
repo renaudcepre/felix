@@ -24,7 +24,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 
-from evals._runner import run_with_spinners, setup_model_env
+from evals._runner import load_history, run_with_spinners, setup_model_env
 from evals.evaluators import ContainsExpectedFacts, RefusesToFabricate
 from evals.ingest.evaluators import (
     CharacterRoleAccuracy,
@@ -165,9 +165,9 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
             evaluators=[ExactFragmentCount()],
         ),
         Case(
-            name="chen_appears_in_scene2_only",
+            name="chen_active_appearances",
             inputs="active_fragments:chen-wei",
-            expected_output="1",
+            expected_output="2",
             metadata={"category": "character_arc", "difficulty": "medium"},
             evaluators=[ExactFragmentCount()],
         ),
@@ -276,6 +276,14 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
         ),
         # hard : la date 2155 n'est plus dans le texte, uniquement "deux ans avant" + scène en 2157
         # le LLM doit calculer 2157 - 2 = 2155 de lui-même
+        # --- déduplication des relations ---
+        Case(
+            name="no_duplicate_irina_kofi_relation",
+            inputs="relation_count:irina-voss,kofi-adu",
+            expected_output="1",
+            metadata={"category": "relations", "difficulty": "hard"},
+            evaluators=[ExactFragmentCount()],
+        ),
         # --- contradiction physique ---
         Case(
             name="lena_physical_contradiction_detected",
@@ -283,6 +291,36 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
             expected_output="character_contradiction",
             metadata={"category": "issues", "difficulty": "hard"},
             evaluators=[IssueTypePresent()],
+        ),
+        # --- relative date resolution ---
+        Case(
+            name="reldate_scene07_date_extracted",
+            inputs="scene_date:scene-07_reldate",
+            expected_output="2157",
+            metadata={"category": "relative_date", "difficulty": "easy"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="reldate_vingt_neuf_in_profile",
+            inputs="profile:irina-voss",
+            expected_output="vingt-neuf,mois,semaine",
+            metadata={"category": "relative_date", "difficulty": "hard"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- incremental profile (amnesia) ---
+        Case(
+            name="amnesia_irina_all_scenes",
+            inputs="fragments:irina-voss",
+            expected_output="4",
+            metadata={"category": "amnesia", "difficulty": "medium"},
+            evaluators=[MinFragmentCount()],
+        ),
+        Case(
+            name="amnesia_profile_survives_patching",
+            inputs="profile:irina-voss",
+            expected_output="signal,avril",
+            metadata={"category": "amnesia", "difficulty": "hard"},
+            evaluators=[BackgroundContainsKeywords(min_match=2)],
         ),
     ],
 )
@@ -524,6 +562,80 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
                 include_input=True,
             )],
         ),
+        # --- prop tracking (Fusil de Tchekhov) ---
+        Case(
+            name="prop_carbone_origin",
+            inputs="Qui a créé le carbone mentionné dans les archives de 1942 ?",
+            expected_output="Benoit,calendrier,rafle",
+            metadata={"category": "prop_tracking", "difficulty": "medium"},
+            evaluators=[ContainsExpectedFacts()],
+        ),
+        Case(
+            name="prop_carbone_rediscovery",
+            inputs="Quand et où le carbone réapparaît-il après 1942 ?",
+            expected_output="Julien,1974,archives",
+            metadata={"category": "prop_tracking", "difficulty": "medium"},
+            evaluators=[ContainsExpectedFacts()],
+        ),
+        Case(
+            name="prop_carbone_full_trace",
+            inputs="Retrace le parcours du document des rafles depuis sa création jusqu'à sa redécouverte.",
+            expected_output="Benoit crée le carbone en 1942, Julien le retrouve dans les archives en 1974",
+            metadata={"category": "prop_tracking", "difficulty": "hard"},
+            evaluators=[LLMJudge(
+                rubric="Response traces the document from Benoit's clandestine carbon copy in 1942 to Julien's discovery in the Paris Tribune archives in 1974, identifying Benoit as the origin.",
+                model=_judge_model,
+                include_input=True,
+            )],
+        ),
+        # --- information asymmetry ---
+        Case(
+            name="asym_julien_henriblanc",
+            inputs="Lorsque Julien rencontre Henri Blanc en juin 1974, sait-il que c'est Benoit Laforge ?",
+            expected_output="Julien ne sait pas que Henri Blanc est Benoit Laforge lors de leur rencontre",
+            metadata={"category": "info_asymmetry", "difficulty": "medium"},
+            evaluators=[LLMJudge(
+                rubric="Response correctly states that Julien does not yet know Henri Blanc is Benoit Laforge at the time of their June 1974 meeting (evt-010 explicitly says he doesn't know yet).",
+                model=_judge_model,
+                include_input=True,
+            )],
+        ),
+        Case(
+            name="asym_marie_benoit_july42",
+            inputs="En juillet 1942, Marie sait-elle déjà que Benoit est un agent double ?",
+            expected_output="",
+            metadata={"category": "info_asymmetry", "difficulty": "hard"},
+            evaluators=[RefusesToFabricate()],
+        ),
+        Case(
+            name="asym_who_knows_june42",
+            inputs="En juin 1942, qui est au courant que Benoit transmet des informations à la Résistance ?",
+            expected_output="Pierre,Benoit",
+            metadata={"category": "info_asymmetry", "difficulty": "medium"},
+            evaluators=[ContainsExpectedFacts()],
+        ),
+        # --- alias resolution ---
+        Case(
+            name="alias_inspecteur_laforge",
+            inputs="Qui est l'Inspecteur Laforge ?",
+            expected_output="Benoit,Laforge,agent double",
+            metadata={"category": "alias_resolution", "difficulty": "medium"},
+            evaluators=[ContainsExpectedFacts()],
+        ),
+        Case(
+            name="alias_henri_blanc",
+            inputs="Qui est Henri Blanc ?",
+            expected_output="Benoit,1974,faux nom",
+            metadata={"category": "alias_resolution", "difficulty": "medium"},
+            evaluators=[ContainsExpectedFacts()],
+        ),
+        Case(
+            name="alias_le_fantome",
+            inputs="Qui est Le Fantôme ?",
+            expected_output="",
+            metadata={"category": "alias_resolution", "difficulty": "easy"},
+            evaluators=[RefusesToFabricate()],
+        ),
         # --- negative ---
         Case(
             name="negative_car_color",
@@ -561,6 +673,68 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
     ],
 )
 
+def _show_history(suite: str | None, *, diff: bool = False) -> None:
+    """Display past eval runs or diff the last two."""
+    entries = load_history(suite)
+    if not entries:
+        console.print("[dim]No history yet.[/dim]")
+        return
+
+    if diff:
+        if len(entries) < 2:
+            console.print("[dim]Need at least 2 runs to diff.[/dim]")
+            return
+        prev, curr = entries[-2], entries[-1]
+        table = Table(
+            title=f"Diff: {prev['ts']} → {curr['ts']}  ({curr['suite']})",
+            show_header=True,
+            header_style="bold magenta",
+        )
+        table.add_column("Case", style="cyan")
+        table.add_column("Before")
+        table.add_column("After")
+        table.add_column("Delta")
+        all_cases = dict.fromkeys([*prev["cases"], *curr["cases"]])
+        for name in all_cases:
+            was = prev["cases"].get(name)
+            now = curr["cases"].get(name)
+            before_s = "[green]PASS[/green]" if was else ("[red]FAIL[/red]" if was is not None else "[dim]—[/dim]")
+            after_s = "[green]PASS[/green]" if now else ("[red]FAIL[/red]" if now is not None else "[dim]—[/dim]")
+            if was == now:
+                delta = "[dim]=[/dim]"
+            elif now and not was:
+                delta = "[green]+[/green]"
+            elif was and not now:
+                delta = "[red]−[/red]"
+            else:
+                delta = "[yellow]new[/yellow]"
+            table.add_row(name, before_s, after_s, delta)
+        console.print(table)
+        console.print(
+            f"\n  {prev['passed']}/{prev['total']} → {curr['passed']}/{curr['total']}"
+        )
+        return
+
+    table = Table(title="Eval History", show_header=True, header_style="bold magenta")
+    table.add_column("Timestamp", style="cyan")
+    table.add_column("Suite", style="yellow")
+    table.add_column("Model", style="dim")
+    table.add_column("Result", justify="right")
+    table.add_column("Score", justify="right")
+    for e in entries:
+        p, t = e["passed"], e["total"]
+        pct = p / t * 100 if t else 0
+        color = "green" if p == t else "yellow" if pct >= 70 else "red"
+        table.add_row(
+            e["ts"],
+            e["suite"],
+            e["model"],
+            f"[{color}]{p}/{t}[/{color}]",
+            f"[{color}]{pct:.0f}%[/{color}]",
+        )
+    console.print(table)
+
+
 SUITES: dict[str, tuple[Dataset, Any, str]] = {
     "pipeline": (PIPELINE_DATASET, build_pipeline_task, "Pipeline Eval"),
     "ingest":   (INGEST_DATASET,   analyze_scene_task,   "Ingest Eval"),
@@ -584,8 +758,14 @@ def main(
     base_url: Annotated[str | None, typer.Option("--base-url", help="OpenAI-compatible base URL")] = None,
     list_cases: Annotated[bool, typer.Option("--list", help="List cases for the suite and exit")] = False,
     case: Annotated[str | None, typer.Option("--case", help="Run only this case (requires --suite)")] = None,
+    history: Annotated[bool, typer.Option("--history", help="Show past run results and exit")] = False,
+    diff: Annotated[bool, typer.Option("--diff", help="Compare the last two runs for the suite")] = False,
 ) -> None:
     """[bold cyan]Felix[/bold cyan] — eval runner."""
+    if history or diff:
+        _show_history(suite, diff=diff)
+        raise typer.Exit()
+
     if suite and suite not in SUITES:
         console.print(f"[red]Unknown suite '{suite}'.[/red] Available: {', '.join(SUITES)}")
         raise typer.Exit(1)
