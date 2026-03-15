@@ -35,13 +35,19 @@ from evals.ingest.evaluators import (
 )
 from evals.ingest.task import analyze_scene_task
 from evals.pipeline.evaluators import (
+    AllLocationsContainKeyword,
     BackgroundContainsKeywords,
     CharacterAbsent,
     CharacterIdsPresent,
+    ExactFragmentCount,
+    IssueDescriptionContains,
+    IssueTypePresent,
     LocationContainsKeyword,
+    MaxIssueSeverityCount,
     MinFragmentCount,
     MinIssueCount,
     MinRelationsCount,
+    RelationWithCharPresent,
 )
 from evals.pipeline.task import build_pipeline_task
 from evals.task import felix_task
@@ -141,6 +147,80 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
             expected_output="1",
             metadata={"category": "relations"},
             evaluators=[MinRelationsCount()],
+        ),
+        # --- character arc / profil cross-scène ---
+        Case(
+            name="irina_experience_in_profile",
+            inputs="profile:irina-voss",
+            expected_output="quinze,15,ans,observation",
+            metadata={"category": "character_arc", "difficulty": "medium"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="yuna_appears_exactly_once",
+            inputs="fragments:yuna-park",
+            expected_output="1",
+            metadata={"category": "character_arc", "difficulty": "easy"},
+            evaluators=[ExactFragmentCount()],
+        ),
+        Case(
+            name="chen_appears_in_scene2_only",
+            inputs="fragments:chen-wei",
+            expected_output="1",
+            metadata={"category": "character_arc", "difficulty": "medium"},
+            evaluators=[ExactFragmentCount()],
+        ),
+        # --- relations inter-personnages ---
+        Case(
+            name="relation_irina_chen",
+            inputs="relations:irina-voss",
+            expected_output="chen-wei",
+            metadata={"category": "relations", "difficulty": "medium"},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        Case(
+            name="relation_kofi_irina",
+            inputs="relations:kofi-adu",
+            expected_output="irina-voss",
+            metadata={"category": "relations", "difficulty": "medium"},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        Case(
+            name="relation_kofi_chen_indirect",
+            inputs="relations:kofi-adu",
+            expected_output="chen-wei",
+            metadata={"category": "relations", "difficulty": "hard"},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        # --- cohérence des issues ---
+        Case(
+            name="yuna_leak_in_issue_description",
+            inputs="issues:scene-03_intrusion",
+            expected_output="yuna",
+            metadata={"category": "issues", "difficulty": "medium"},
+            evaluators=[IssueDescriptionContains()],
+        ),
+        Case(
+            name="scene3_has_timeline_issue",
+            inputs="issues:scene-03_intrusion",
+            expected_output="timeline_inconsistency",
+            metadata={"category": "issues", "difficulty": "medium"},
+            evaluators=[IssueTypePresent()],
+        ),
+        Case(
+            name="no_error_severity",
+            inputs="all_issues",
+            expected_output="0",
+            metadata={"category": "issues", "difficulty": "hard"},
+            evaluators=[MaxIssueSeverityCount(severity="error")],
+        ),
+        # --- consistance spatiale ---
+        Case(
+            name="all_locations_at_helios",
+            inputs="locations",
+            expected_output="helios",
+            metadata={"category": "spatial", "difficulty": "hard"},
+            evaluators=[AllLocationsContainKeyword()],
         ),
     ],
 )

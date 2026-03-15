@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 
 from evals.pipeline.task import PipelineQueryResult
+
+
+def _normalize(text: str) -> str:
+    """Lowercase + strip accents for accent-insensitive comparison."""
+    return unicodedata.normalize("NFD", text.lower()).encode("ascii", "ignore").decode()
 
 
 @dataclass
@@ -140,3 +146,107 @@ class MinFragmentCount(Evaluator[str, PipelineQueryResult]):
         expected = int(ctx.expected_output or 1)
         count = ctx.output.fragment_count
         return {"fragments_ok": count >= expected, "fragments_got": count}
+
+
+@dataclass
+class ExactFragmentCount(Evaluator[str, PipelineQueryResult]):
+    """Check that fragment_count == expected (exact, not >=).
+
+    expected_output: exact count as a string.
+    Example: "1"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | int]:
+        expected = int(ctx.expected_output or 0)
+        count = ctx.output.fragment_count
+        return {"exact_fragments": count == expected, "fragments_got": count}
+
+
+@dataclass
+class RelationWithCharPresent(Evaluator[str, PipelineQueryResult]):
+    """Check that a relation involving expected_output exists for the queried character.
+
+    expected_output: slugified character ID to look for in relations.
+    Example: "chen-wei"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool]:
+        target = (ctx.expected_output or "").strip()
+        found = any(r["a"] == target or r["b"] == target for r in ctx.output.relations)
+        return {"relation_found": found}
+
+
+@dataclass
+class IssueDescriptionContains(Evaluator[str, PipelineQueryResult]):
+    """Check that at least one issue description contains the keyword (accent-insensitive).
+
+    expected_output: keyword to search for.
+    Example: "yuna"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool]:
+        kw = _normalize(ctx.expected_output or "")
+        found = any(kw in _normalize(i.get("description", "")) for i in ctx.output.issues)
+        return {"issue_desc_match": found}
+
+
+@dataclass
+class IssueTypePresent(Evaluator[str, PipelineQueryResult]):
+    """Check that at least one issue has the expected type (partial match).
+
+    expected_output: type substring to look for.
+    Example: "timeline_inconsistency"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool]:
+        kw = (ctx.expected_output or "").strip()
+        found = any(kw in i.get("type", "") for i in ctx.output.issues)
+        return {"issue_type_found": found}
+
+
+@dataclass
+class MaxIssueSeverityCount(Evaluator[str, PipelineQueryResult]):
+    """Check that the number of issues with the given severity is <= expected_output.
+
+    severity: the severity level to count (default "error").
+    expected_output: max allowed count as a string.
+    Example: "0"
+    """
+
+    severity: str = "error"
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | int]:
+        max_allowed = int(ctx.expected_output or 0)
+        count = sum(1 for i in ctx.output.issues if i.get("severity") == self.severity)
+        return {"severity_ok": count <= max_allowed, f"{self.severity}_count": count}
+
+
+@dataclass
+class AllLocationsContainKeyword(Evaluator[str, PipelineQueryResult]):
+    """Check that ALL locations contain the expected keyword (tests deduplication).
+
+    expected_output: keyword all location names must contain.
+    Example: "helios"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | str]:
+        kw = (ctx.expected_output or "").strip().lower()
+        names = ctx.output.location_names
+        all_match = all(kw in n.lower() for n in names) if names else False
+        failing = [n for n in names if kw not in n.lower()]
+        result: dict[str, bool | str] = {"all_locations_match": all_match}
+        if failing:
+            result["locations_not_matching"] = ", ".join(failing)
+        return result

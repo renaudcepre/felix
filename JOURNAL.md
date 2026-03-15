@@ -1,5 +1,24 @@
 # Journal de developpement — Felix
 
+## Pipeline eval — cas difficiles pré-graphe — 2026-03-15
+
+**Objectif :** Constituer un benchmark de départ avant la migration vers Kuzu (graphe). Les nouveaux cases *peuvent échouer* — c'est le but : révéler les trous du pipeline actuel.
+
+**Ajouts :**
+- `evals/pipeline/task.py` : 2 nouveaux query types — `all_issues` (toutes les issues), `relations:<char_id>` (relations d'un personnage spécifique)
+- `evals/pipeline/evaluators.py` : 6 nouveaux évaluateurs — `ExactFragmentCount`, `RelationWithCharPresent`, `IssueDescriptionContains`, `IssueTypePresent`, `MaxIssueSeverityCount`, `AllLocationsContainKeyword` + helper `_normalize` (accent-insensitif)
+- `evals/run_evals.py` : 10 nouveaux cases répartis en 4 catégories
+
+**10 nouveaux cases :**
+- character_arc (medium/easy) : `irina_experience_in_profile`, `yuna_appears_exactly_once`, `chen_appears_in_scene2_only`
+- relations (medium/hard) : `relation_irina_chen`, `relation_kofi_irina`, `relation_kofi_chen_indirect` (transitive — attendu ✗)
+- issues (medium/hard) : `yuna_leak_in_issue_description`, `scene3_has_timeline_issue`, `no_error_severity` (attendu ✗ si LLM escalade en "error")
+- spatial (hard) : `all_locations_at_helios` (attendu ✗ si les lieux ne contiennent pas "helios")
+
+**Résultat attendu :** ~5-6/10 passent. Les 4 cas "hard" servent de baseline pour mesurer les gains post-graphe.
+
+---
+
 ## Eval suite — refonte complète — 2026-03-15
 
 **Objectif :** Rendre les evals rapides, fiables et exploitables pour guider les améliorations.

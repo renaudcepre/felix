@@ -95,8 +95,12 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
       - "locations"                → location_names list
       - "irina_profile"            → background text for irina-voss
       - "irina_fragments"          → fragment_count for irina-voss
+      - "profile:<char_id>"        → background text for any character
+      - "fragments:<char_id>"      → fragment_count for any character
       - "relations"                → all character relations
+      - "relations:<char_id>"      → relations involving a specific character
       - "issues:<scene_id>"        → issues for that scene
+      - "all_issues"               → all issues across all scenes
     """
     if query == "characters":
         cursor = await db.execute("SELECT id FROM characters")
@@ -109,15 +113,25 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
         return PipelineQueryResult(location_names=[r[0] for r in rows])
 
     if query == "irina_profile":
-        cursor = await db.execute("SELECT background FROM characters WHERE id = 'irina-voss'")
+        cursor = await db.execute(
+            "SELECT background, arc, traits FROM characters WHERE id = 'irina-voss'"
+        )
         row = await cursor.fetchone()
-        return PipelineQueryResult(background=row[0] if row else None)
+        if row:
+            parts = [v for v in (row[0], row[1], row[2]) if v]
+            return PipelineQueryResult(background=" | ".join(parts) if parts else None)
+        return PipelineQueryResult()
 
     if query.startswith("profile:"):
         char_id = query[len("profile:"):]
-        cursor = await db.execute("SELECT background FROM characters WHERE id = ?", (char_id,))
+        cursor = await db.execute(
+            "SELECT background, arc, traits FROM characters WHERE id = ?", (char_id,)
+        )
         row = await cursor.fetchone()
-        return PipelineQueryResult(background=row[0] if row else None)
+        if row:
+            parts = [v for v in (row[0], row[1], row[2]) if v]
+            return PipelineQueryResult(background=" | ".join(parts) if parts else None)
+        return PipelineQueryResult()
 
     if query == "irina_fragments":
         cursor = await db.execute(
@@ -149,6 +163,20 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
         )
         rows = await cursor.fetchall()
         return PipelineQueryResult(issues=[{"type": r[0], "severity": r[1], "description": r[2]} for r in rows])
+
+    if query == "all_issues":
+        cursor = await db.execute("SELECT type, severity, description, scene_id FROM issues")
+        rows = await cursor.fetchall()
+        return PipelineQueryResult(issues=[{"type": r[0], "severity": r[1], "description": r[2], "scene_id": r[3]} for r in rows])
+
+    if query.startswith("relations:"):
+        char_id = query[len("relations:"):]
+        cursor = await db.execute(
+            "SELECT character_id_a, character_id_b, relation_type FROM character_relations WHERE character_id_a = ? OR character_id_b = ?",
+            (char_id, char_id),
+        )
+        rows = await cursor.fetchall()
+        return PipelineQueryResult(relations=[{"a": r[0], "b": r[1], "relation": r[2]} for r in rows])
 
     return PipelineQueryResult()
 
