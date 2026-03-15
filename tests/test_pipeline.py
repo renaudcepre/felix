@@ -121,8 +121,8 @@ def _mock_analyze_scene(analyses: list[SceneAnalysis]):
     return _analyze
 
 
-def _mock_check_consistency(report: ConsistencyReport):
-    async def _check(_agent, _summary):
+def _mock_check_scene_consistency(report: ConsistencyReport):
+    async def _check(_db, _collection, _scene_summary, _model_name, _base_url):
         return report
 
     return _check
@@ -144,6 +144,13 @@ def _mock_profile_character(profile: CharacterProfile):
     return _profile
 
 
+def _mock_patch_character_profile(profile: CharacterProfile):
+    async def _patch(_agent, _name, _existing, _text, _fragment):
+        return profile
+
+    return _patch
+
+
 def _pipeline_patches(analyses, report, profile=None):
     """Context manager with all standard pipeline mocks."""
     patches = [
@@ -152,11 +159,10 @@ def _pipeline_patches(analyses, report, profile=None):
             side_effect=_mock_analyze_scene(analyses),
         ),
         patch(
-            "felix.ingest.pipeline.check_consistency",
-            side_effect=_mock_check_consistency(report),
+            "felix.ingest.pipeline.check_scene_consistency",
+            side_effect=_mock_check_scene_consistency(report),
         ),
         patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
-        patch("felix.ingest.pipeline.create_checker_agent", return_value=None),
         patch("felix.ingest.pipeline.create_profiler_agent", return_value=None),
     ]
     if profile is not None:
@@ -166,9 +172,12 @@ def _pipeline_patches(analyses, report, profile=None):
                 side_effect=_mock_profile_character(profile),
             )
         )
-    else:
-        # Default: skip profiling by passing enrich_profiles=False
-        pass
+        patches.append(
+            patch(
+                "felix.ingest.pipeline.patch_character_profile",
+                side_effect=_mock_patch_character_profile(profile),
+            )
+        )
     import contextlib
     return contextlib.ExitStack(), patches
 

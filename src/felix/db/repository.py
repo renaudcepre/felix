@@ -167,6 +167,47 @@ async def delete_issues_for_scenes(
     await db.commit()
 
 
+async def get_scene_summaries_by_ids(
+    db: aiosqlite.Connection,
+    scene_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Retourne title, summary, era, date, location_id pour une liste de scene_ids."""
+    if not scene_ids:
+        return []
+    placeholders = ",".join("?" * len(scene_ids))
+    cursor = await db.execute(
+        f"SELECT id, title, summary, era, date, location_id FROM scenes WHERE id IN ({placeholders})",  # noqa: S608
+        scene_ids,
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def patch_character_profile_fields(
+    db: aiosqlite.Connection, char_id: str, profile: dict[str, str | None]
+) -> None:
+    """Met a jour les champs du profil en privilegiant les nouvelles valeurs non-null."""
+    await db.execute(
+        """
+        UPDATE characters SET
+            age        = COALESCE(:age, age),
+            physical   = COALESCE(:physical, physical),
+            background = COALESCE(:background, background),
+            arc        = COALESCE(:arc, arc),
+            traits     = COALESCE(:traits, traits)
+        WHERE id = :id
+        """,
+        {
+            "id": char_id,
+            "age": profile.get("age"),
+            "physical": profile.get("physical"),
+            "background": profile.get("background"),
+            "arc": profile.get("arc"),
+            "traits": profile.get("traits"),
+        },
+    )
+    await db.commit()
+
+
 async def list_scenes(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     cursor = await db.execute(
         "SELECT id, filename, title, era, date FROM scenes ORDER BY filename"

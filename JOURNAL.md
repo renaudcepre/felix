@@ -1,5 +1,19 @@
 # Journal de developpement — Felix
 
+## Pipeline incremental — 2026-03-15
+
+**Objectif :** Passer d'un pipeline batch (check + profiling en fin d'import) a un pipeline incremental (check + profiling apres chaque scene).
+
+**Changements :**
+- `repository.py` : ajout de `get_scene_summaries_by_ids()` et `patch_character_profile_fields()` (COALESCE new over existing)
+- `checker.py` : refonte complete avec 2 passes sequentielles (CHECKER_TIMELINE_PROMPT + CHECKER_NARRATIVE_PROMPT) + retrieval ChromaDB (K=10 scenes semantiquement proches)
+- `profiler.py` : ajout PROFILER_PATCH_PROMPT + `patch_character_profile()` pour enrichir un profil existant sans ecraser les donnees
+- `pipeline.py` : suppression de `_run_consistency_check` et `_run_character_profiling`, remplacement par `_check_scene()` et `_profile_scene_characters()` appeles dans la boucle principale. Issues ecrites en DB immediatement. Mode create vs patch selon presence de background/arc.
+
+**Resultat :** 69 tests passes. Les evenements SSE `check_started`, `check_complete`, `issue_found`, `profiling_character`, `character_profiled` sont emis apres chaque scene (plus en batch).
+
+---
+
 ## Phase 0 — Proof of Concept CLI
 
 ### 2026-03-14
