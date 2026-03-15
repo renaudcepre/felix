@@ -31,7 +31,12 @@ from felix.db.repository import (
 from felix.ingest.analyzer import analyze_scene, create_analyzer_agent
 from felix.ingest.checker import check_scene_consistency
 from felix.ingest.loader import load_scene
-from felix.ingest.profiler import create_profiler_agent, patch_character_profile, profile_character
+from felix.ingest.profiler import (
+    create_profiler_agent,
+    create_profiler_patch_agent,
+    patch_character_profile,
+    profile_character,
+)
 from felix.ingest.resolver import (
     AmbiguousMatch,
     ResolvedEntity,
@@ -578,6 +583,7 @@ async def _profile_scene_characters(
     scene_text: str,
     scene_title: str,
     profiler: Any,
+    profiler_patch: Any = None,
 ) -> None:
     ctx.progress.status = ImportStatus.PROFILING
     await _emit_status(ctx, ImportStatus.PROFILING)
@@ -612,7 +618,7 @@ async def _profile_scene_characters(
 
             if has_profile:
                 profile = await patch_character_profile(
-                    profiler, char_name, existing_profile, scene_text, fragment
+                    profiler_patch or profiler, char_name, existing_profile, scene_text, fragment
                 )
                 await patch_character_profile_fields(ctx.db, char_id, profile.model_dump())
             else:
@@ -720,6 +726,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
 
         analyzer = create_analyzer_agent(model_name, base_url)
         profiler = create_profiler_agent(model_name, base_url) if enrich_profiles else None
+        profiler_patch = create_profiler_patch_agent(model_name, base_url) if enrich_profiles else None
         scenes_processed = 0
 
         for scene_file in scene_files:
@@ -742,6 +749,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                         scene_text,
                         summary["title"],
                         profiler,
+                        profiler_patch,
                     )
             except Exception as e:
                 logger.exception("Scene processing failed: %s", scene_file.name)

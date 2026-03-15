@@ -86,6 +86,19 @@ def create_profiler_agent(
     )
 
 
+def create_profiler_patch_agent(
+    model_name: str | None = None, base_url: str | None = None
+) -> Agent[None, CharacterProfile]:
+    model: Model = _build_model(model_name, base_url)
+    return Agent(
+        model,
+        instructions=PROFILER_PATCH_PROMPT,
+        output_type=CharacterProfile,
+        model_settings=ModelSettings(temperature=0.1),
+        retries=2,
+    )
+
+
 async def patch_character_profile(
     agent: Agent[None, CharacterProfile],
     name: str,
