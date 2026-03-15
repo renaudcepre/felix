@@ -75,7 +75,9 @@ ignore = [
     "T201",     # print allowed in scripts
 ]
 "evals/**" = [
-    "T201",     # print allowed in eval scripts
+    "T201",      # print allowed in eval scripts
+    "PLR2004",   # magic values in comparisons
+    "S101",      # assert allowed
 ]
 "src/felix/agent/tools.py" = [
     "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
@@ -92,6 +94,9 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "eval: LLM judge eval tests (require a running model)",
+]
 
 [dependency-groups]
 dev = [
