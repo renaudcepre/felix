@@ -16,10 +16,9 @@ from rich.text import Text
 
 LMSTUDIO_URL = "http://localhost:1234/v1"
 LMSTUDIO_DEFAULT_MODEL = "qwen2.5-7b-instruct"
-OPENROUTER_URL = "https://openrouter.ai/api/v1"
-OPENROUTER_DEFAULT_MODEL = "qwen/qwen-2.5-7b-instruct"
 TOGETHER_URL = "https://api.together.xyz/v1"
 TOGETHER_DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct-Turbo"
+MISTRAL_DEFAULT_MODEL = "mistral-small-latest"
 
 
 def _lmstudio_available() -> bool:
@@ -33,24 +32,25 @@ def _lmstudio_available() -> bool:
 def setup_model_env(
     *,
     local: bool = False,
-    openrouter: bool = False,
     together: bool = False,
+    mistral: bool = False,
     model: str | None = None,
     base_url: str | None = None,
 ) -> tuple[str, str]:
     """Configure FLX_EVAL_MODEL / FLX_EVAL_BASE_URL and return (model_name, provider) for display."""
     from felix.config import settings
 
-    if not local and not openrouter and not together and not model and not base_url:
+    if not local and not together and not mistral and not model and not base_url:
         # Auto-detect: préfère LM Studio si disponible, sinon Together AI
         if _lmstudio_available():
             local = True
         else:
             together = True
 
-    if openrouter:
-        os.environ["FLX_EVAL_BASE_URL"] = base_url or OPENROUTER_URL
-        os.environ["FLX_EVAL_MODEL"] = model or OPENROUTER_DEFAULT_MODEL
+    if mistral:
+        os.environ["FLX_EVAL_MODEL"] = model or MISTRAL_DEFAULT_MODEL
+        os.environ.pop("FLX_EVAL_BASE_URL", None)
+        return os.environ["FLX_EVAL_MODEL"], "Mistral API"
     elif together:
         os.environ["FLX_EVAL_BASE_URL"] = base_url or TOGETHER_URL
         os.environ["FLX_EVAL_MODEL"] = model or TOGETHER_DEFAULT_MODEL
@@ -141,7 +141,7 @@ def _case_status_line(rc: Any) -> Text:
 
 
 async def _run_case(case: Any, dataset: Dataset, task_fn: Any) -> tuple[Any, list[Any]]:
-    single = dataset.__class__(cases=[case])
+    single = dataset.__class__(cases=[case], evaluators=dataset.evaluators)
     report = await single.evaluate(task_fn, progress=False)
     rc = report.cases[0] if report.cases else None
     if rc:

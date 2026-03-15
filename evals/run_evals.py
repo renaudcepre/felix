@@ -1,9 +1,9 @@
 """Felix eval runner — unified entry point for all eval suites.
 
 Usage:
-    uv run python -m evals.run_evals --suite pipeline --openrouter
+    uv run python -m evals.run_evals --suite pipeline --together
     uv run python -m evals.run_evals --suite ingest --local
-    uv run python -m evals.run_evals --suite chatbot --model mistral-small-latest
+    uv run python -m evals.run_evals --suite pipeline --mistral
     uv run python -m evals.run_evals --suite pipeline --list
     uv run python -m evals.run_evals --suite pipeline --case character_extraction
     uv run python -m evals.run_evals                          # toutes les suites
@@ -11,6 +11,7 @@ Usage:
 
 from __future__ import annotations
 
+import atexit
 import os
 from typing import Annotated, Any
 
@@ -49,6 +50,7 @@ from evals.pipeline.evaluators import (
     MinIssueCount,
     MinRelationsCount,
     RelationWithCharPresent,
+    SceneDateContainsKeywords,
 )
 from evals.pipeline.task import build_pipeline_task
 from evals.task import felix_task
@@ -251,7 +253,7 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
             inputs="scene_date:scene-06_flashback",
             expected_output="2157",
             metadata={"category": "timeline", "difficulty": "medium"},
-            evaluators=[BackgroundContainsKeywords(min_match=1)],
+            evaluators=[SceneDateContainsKeywords()],
         ),
         Case(
             name="flashback_no_false_timeline_issue",
@@ -298,7 +300,7 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
             inputs="scene_date:scene-07_reldate",
             expected_output="2157",
             metadata={"category": "relative_date", "difficulty": "easy"},
-            evaluators=[BackgroundContainsKeywords(min_match=1)],
+            evaluators=[SceneDateContainsKeywords()],
         ),
         Case(
             name="reldate_vingt_neuf_in_profile",
@@ -318,7 +320,7 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="amnesia_profile_survives_patching",
             inputs="profile:irina-voss",
-            expected_output="signal,avril",
+            expected_output="DR-7,Kepler",
             metadata={"category": "amnesia", "difficulty": "hard"},
             evaluators=[BackgroundContainsKeywords(min_match=2)],
         ),
@@ -752,8 +754,8 @@ app = typer.Typer(rich_markup_mode="rich")
 def main(
     suite: Annotated[str | None, typer.Option("--suite", help=f"Suite to run: {', '.join(SUITES)}")] = None,
     local: Annotated[bool, typer.Option("--local", help="Use LMStudio local model")] = False,
-    openrouter: Annotated[bool, typer.Option("--openrouter", help="Use OpenRouter (reads OPEN_ROUTER key)")] = False,
     together: Annotated[bool, typer.Option("--together", help="Use Together AI (reads TOGETHER_API_KEY)")] = False,
+    mistral: Annotated[bool, typer.Option("--mistral", help="Use Mistral API (reads FLX_API_KEY)")] = False,
     model: Annotated[str | None, typer.Option("--model", help="Model name override")] = None,
     base_url: Annotated[str | None, typer.Option("--base-url", help="OpenAI-compatible base URL")] = None,
     list_cases: Annotated[bool, typer.Option("--list", help="List cases for the suite and exit")] = False,
@@ -762,6 +764,11 @@ def main(
     diff: Annotated[bool, typer.Option("--diff", help="Compare the last two runs for the suite")] = False,
 ) -> None:
     """[bold cyan]Felix[/bold cyan] — eval runner."""
+    # Registered first → runs last (LIFO): all other atexit handlers execute
+    # before this, then os._exit prevents threading._shutdown from hanging
+    # on non-daemon threads left by chromadb / sentence-transformers.
+    atexit.register(os._exit, 0)
+
     if history or diff:
         _show_history(suite, diff=diff)
         raise typer.Exit()
@@ -785,7 +792,7 @@ def main(
         raise typer.Exit()
 
     model_name, provider = setup_model_env(
-        local=local, openrouter=openrouter, together=together, model=model, base_url=base_url
+        local=local, together=together, mistral=mistral, model=model, base_url=base_url
     )
     console.print(Panel(
         f"[bold]Model:[/bold] {model_name}\n[bold]Provider:[/bold] {provider}",
@@ -811,9 +818,7 @@ def main(
 
         run_with_spinners(active_ds, task_fn, report_name=suite_name)
 
-    # Force exit: chromadb/sentence-transformers leave non-daemon threads
-    # that block normal SystemExit cleanup in CLI eval context.
-    os._exit(0)
+    raise typer.Exit()
 
 
 if __name__ == "__main__":

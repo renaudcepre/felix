@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import unicodedata
 from dataclasses import dataclass
 
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 
+from evals._utils import normalize
 from felix.ingest.models import SceneAnalysis
-
-
-def _normalize(text: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 @dataclass
@@ -35,12 +30,12 @@ class CharacterRoleAccuracy(Evaluator[str, SceneAnalysis]):
             if ":" not in pair:
                 continue
             name, role = pair.rsplit(":", 1)
-            expected[_normalize(name.strip())] = role.strip().lower()
+            expected[normalize(name.strip())] = role.strip().lower()
 
         output = ctx.output
         extracted = {}
         for char in output.characters:
-            extracted[_normalize(char.name)] = _normalize(char.role)
+            extracted[normalize(char.name)] = normalize(char.role)
 
         correct = 0
         total = len(expected)
@@ -89,11 +84,11 @@ class ExtractsExpectedCharacters(Evaluator[str, SceneAnalysis]):
             return {}
 
         expected_names = [
-            _normalize(n.strip())
+            normalize(n.strip())
             for n in ctx.expected_output.split(",")
             if n.strip()
         ]
-        extracted_names = [_normalize(c.name) for c in ctx.output.characters]
+        extracted_names = [normalize(c.name) for c in ctx.output.characters]
 
         found = 0
         missing = []
@@ -136,8 +131,8 @@ class LocationAccuracy(Evaluator[str, SceneAnalysis]):
     ) -> dict[str, bool | str]:
         if not ctx.expected_output or not isinstance(ctx.expected_output, str):
             return {}
-        expected_kw = _normalize(ctx.expected_output.strip())
-        got = _normalize(ctx.output.location.name)
+        expected_kw = normalize(ctx.expected_output.strip())
+        got = normalize(ctx.output.location.name)
         return {
             "location_match": expected_kw in got or got in expected_kw,
             "location_got": ctx.output.location.name,

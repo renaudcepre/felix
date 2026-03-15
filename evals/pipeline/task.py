@@ -36,6 +36,7 @@ class PipelineQueryResult(BaseModel):
     location_names: list[str] = []
     issues: list[dict[str, Any]] = []
     background: str | None = None
+    scene_date: str | None = None
     relations: list[dict[str, Any]] = []
     fragment_count: int = 0
 
@@ -75,7 +76,7 @@ async def _run_pipeline() -> aiosqlite.Connection:
                 db=db,
                 collection=collection,
                 model_name=os.environ.get("FLX_EVAL_MODEL"),
-                base_url=os.environ.get("FLX_EVAL_BASE_URL"),
+                base_url=os.environ.get("FLX_EVAL_BASE_URL", ""),
                 progress=progress,
             )
         finally:
@@ -102,6 +103,7 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
       - "relations:<char_id>"      → relations involving a specific character
       - "issues:<scene_id>"        → issues for that scene
       - "all_issues"               → all issues across all scenes
+      - "scene_date:<scene_id>"    → scene_date text for that scene
     """
     if query == "characters":
         cursor = await db.execute("SELECT id FROM characters")
@@ -190,7 +192,7 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
         scene_id = query[len("scene_date:"):]
         cursor = await db.execute("SELECT date FROM scenes WHERE id = ?", (scene_id,))
         row = await cursor.fetchone()
-        return PipelineQueryResult(background=row[0] if row else None)
+        return PipelineQueryResult(scene_date=row[0] if row else None)
 
     if query == "all_issues":
         cursor = await db.execute("SELECT type, severity, description, scene_id FROM issues")

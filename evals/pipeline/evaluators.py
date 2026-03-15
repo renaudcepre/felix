@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import unicodedata
 from dataclasses import dataclass
 
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 
+from evals._utils import normalize
 from evals.pipeline.task import PipelineQueryResult
-
-
-def _normalize(text: str) -> str:
-    """Lowercase + strip accents for accent-insensitive comparison."""
-    return unicodedata.normalize("NFD", text.lower()).encode("ascii", "ignore").decode()
 
 
 @dataclass
@@ -97,6 +92,32 @@ class BackgroundContainsKeywords(Evaluator[str, PipelineQueryResult]):
             "bg_score": score,
             "bg_ok": len(matched) >= self.min_match,
             "bg_matched": ", ".join(matched) if matched else "none",
+        }
+
+
+@dataclass
+class SceneDateContainsKeywords(Evaluator[str, PipelineQueryResult]):
+    """Check that the scene date contains expected keywords.
+
+    expected_output: comma-separated keywords (partial match, lowercased).
+    Example: "2157"
+    """
+
+    min_match: int = 1
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, float | str | bool]:
+        if not ctx.expected_output:
+            return {}
+        keywords = [k.strip() for k in ctx.expected_output.split(",") if k.strip()]
+        date_str = (ctx.output.scene_date or "").lower()
+        matched = [k for k in keywords if k.lower() in date_str]
+        score = len(matched) / len(keywords) if keywords else 1.0
+        return {
+            "date_score": score,
+            "date_ok": len(matched) >= self.min_match,
+            "date_matched": ", ".join(matched) if matched else "none",
         }
 
 
@@ -191,8 +212,8 @@ class IssueDescriptionContains(Evaluator[str, PipelineQueryResult]):
     def evaluate(
         self, ctx: EvaluatorContext[str, PipelineQueryResult]
     ) -> dict[str, bool]:
-        kw = _normalize(ctx.expected_output or "")
-        found = any(kw in _normalize(i.get("description", "")) for i in ctx.output.issues)
+        kw = normalize(ctx.expected_output or "")
+        found = any(kw in normalize(i.get("description", "")) for i in ctx.output.issues)
         return {"issue_desc_match": found}
 
 

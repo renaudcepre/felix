@@ -51,7 +51,7 @@ def _build_model(
     api_key: str | None = None,
 ) -> Model:
     name = model_name or settings.llm_model
-    url = base_url or settings.llm_base_url
+    url = base_url if base_url is not None else settings.llm_base_url
 
     if url:
         is_together = "together" in url

@@ -185,24 +185,39 @@ async def get_scene_summaries_by_ids(
 async def patch_character_profile_fields(
     db: aiosqlite.Connection, char_id: str, profile: dict[str, str | None]
 ) -> None:
-    """Met a jour les champs du profil en privilegiant les nouvelles valeurs non-null."""
+    """Met a jour les champs du profil en concatenant les nouvelles valeurs non-null."""
+    def _nullify_empty(v: str | None) -> str | None:
+        return v if v and v.strip() else None
+
     await db.execute(
         """
         UPDATE characters SET
             age        = COALESCE(:age, age),
             physical   = COALESCE(:physical, physical),
-            background = COALESCE(:background, background),
-            arc        = COALESCE(:arc, arc),
-            traits     = COALESCE(:traits, traits)
+            background = CASE
+                WHEN :background IS NULL THEN background
+                WHEN background IS NULL THEN :background
+                ELSE background || ' | ' || :background
+            END,
+            arc        = CASE
+                WHEN :arc IS NULL THEN arc
+                WHEN arc IS NULL THEN :arc
+                ELSE arc || ' | ' || :arc
+            END,
+            traits     = CASE
+                WHEN :traits IS NULL THEN traits
+                WHEN traits IS NULL THEN :traits
+                ELSE traits || ' | ' || :traits
+            END
         WHERE id = :id
         """,
         {
             "id": char_id,
-            "age": profile.get("age"),
-            "physical": profile.get("physical"),
-            "background": profile.get("background"),
-            "arc": profile.get("arc"),
-            "traits": profile.get("traits"),
+            "age": _nullify_empty(profile.get("age")),
+            "physical": _nullify_empty(profile.get("physical")),
+            "background": _nullify_empty(profile.get("background")),
+            "arc": _nullify_empty(profile.get("arc")),
+            "traits": _nullify_empty(profile.get("traits")),
         },
     )
     await db.commit()

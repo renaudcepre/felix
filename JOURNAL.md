@@ -1,5 +1,24 @@
 # Journal de developpement — Felix
 
+## Remplacement `os._exit(0)` par `atexit` dans `run_evals.py` — 2026-03-16
+
+**Objectif :** Éliminer le `os._exit(0)` brutal qui empêchait tout cleanup (atexit handlers, flush fichiers, fermeture DB).
+
+**Changement :** Enregistrement de `atexit.register(os._exit, 0)` en début de `main()` — s'exécute en dernier (LIFO) après tous les autres handlers de cleanup, puis empêche `threading._shutdown()` de bloquer sur les threads non-daemon de chromadb/sentence-transformers. La sortie normale se fait via `raise typer.Exit()`.
+
+---
+
+## Refactoring `_normalize` → `evals/_utils.py` — 2026-03-16
+
+**Objectif :** Éliminer les 3 implémentations dupliquées de `_normalize` dans les suites d'évals.
+
+**Changements :**
+- `evals/_utils.py` (nouveau) : fonction `normalize()` partagée — NFKD + strip combining marks
+- `evals/evaluators.py`, `evals/ingest/evaluators.py`, `evals/pipeline/evaluators.py` : suppression des définitions locales, import de `normalize` depuis `evals._utils`
+- Unification de comportement : `pipeline/evaluators.py` utilisait NFD + ASCII encode, aligné sur NFKD + combining (plus correct pour l'Unicode)
+
+**TODO review_incremental_pipeline.md :** item "Extraire `_normalize`" coché.
+
 ## Pipeline eval — cas difficiles pré-graphe — 2026-03-15
 
 **Objectif :** Constituer un benchmark de départ avant la migration vers Kuzu (graphe). Les nouveaux cases *peuvent échouer* — c'est le but : révéler les trous du pipeline actuel.
