@@ -20,6 +20,7 @@ dependencies = [
     "rich>=14.3.3",
     "fastapi[standard]>=0.115",
     "rapidfuzz>=3.0",
+    "sentence-transformers>=3.0",
 ]
 
 [project.scripts]

@@ -421,3 +421,33 @@ Le prompt v2 resout completement le probleme — score parfait sur tous les eval
 **Resultats :**
 - 69/69 tests passent
 - Pour "qui est au poste de relais ?", Felix peut enchainer `find_location` + `get_timeline(location="poste de relais")`
+
+---
+
+### 2026-03-15 (2) — Tentative streaming visuel des tool calls (revert)
+
+**Idee :** Differencer visuellement la "pensee" du modele (texte emis avant un tool call) de la reponse finale, et afficher les tool calls en live avec `agent.iter()`.
+
+**Implementation tentee :**
+- Remplacement de `agent.run()` par `agent.iter()` dans `cli.py`
+- Iteration sur les noeuds `ModelRequestNode` et `CallToolsNode`
+- `CallToolsNode` avec `ToolCallPart` → texte intermédiaire en dim italique + `🔧 tool_name(args)` en dim
+- Reponse finale via `agent_run.result.output`
+
+**Probleme :** pydantic-ai avec `iter()` ne stream pas les evenements *pendant* l'execution d'un noeud — chaque noeud n'est yielde qu'une fois termine. L'UX etait donc identique a `agent.run()`, aucune difference visuelle en pratique.
+
+**Revert.** Pour vraiment afficher les tool calls en live, il faudrait soit du streaming token-par-token (hooks dans les tools), soit un callback custom.
+
+---
+
+### 2026-03-15 (3) — Passage à bge-m3 (embedding multilingue)
+
+**Probleme :** Le modele d'embedding par defaut de ChromaDB (`all-MiniLM-L6-v2`) est anglophone. Le contenu de Felix etant principalement en francais, la qualite de la recherche semantique etait degradee.
+
+**Modifications :**
+- `pyproject.toml` : ajout de `sentence-transformers>=3.0`
+- `vectorstore/store.py` : `SentenceTransformerEmbeddingFunction(model_name="BAAI/bge-m3")` passe a `get_or_create_collection()`
+
+**Notes :**
+- bge-m3 produit des vecteurs 1024 dimensions (vs 384 pour MiniLM) — incompatible avec une collection existante, necessite de vider `chroma_data/` et re-indexer
+- Modele telecharge automatiquement via HuggingFace (~2.27GB), mis en cache dans `~/.cache/huggingface/hub/`

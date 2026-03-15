@@ -3,8 +3,15 @@ from __future__ import annotations
 from typing import Any
 
 import chromadb
+from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
 from felix.config import settings
+
+_EMBEDDING_MODEL = "BAAI/bge-m3"
+
+
+def _get_embedding_function() -> SentenceTransformerEmbeddingFunction:
+    return SentenceTransformerEmbeddingFunction(model_name=_EMBEDDING_MODEL)
 
 
 def get_chroma_client() -> chromadb.ClientAPI:
@@ -16,7 +23,10 @@ def get_collection(
 ) -> chromadb.Collection:
     if client is None:
         client = get_chroma_client()
-    return client.get_or_create_collection(name="scenes")
+    return client.get_or_create_collection(
+        name="scenes",
+        embedding_function=_get_embedding_function(),
+    )
 
 
 def search_scenes_in_chroma(
