@@ -295,6 +295,19 @@ async def update_character_profile(
     await db.commit()
 
 
+async def get_relation_types_for_pair(
+    db: aiosqlite.Connection,
+    char_id_a: str,
+    char_id_b: str,
+) -> list[str]:
+    a, b = sorted([char_id_a, char_id_b])
+    cursor = await db.execute(
+        "SELECT relation_type FROM character_relations WHERE character_id_a = ? AND character_id_b = ?",
+        (a, b),
+    )
+    return [row[0] for row in await cursor.fetchall()]
+
+
 async def upsert_character_relation(  # noqa: PLR0913
     db: aiosqlite.Connection,
     char_id_a: str,

@@ -17,10 +17,13 @@ if TYPE_CHECKING:
     from felix.ingest.models import SceneAnalysis
 
 from felix.config import SCENE_FILE_EXTENSIONS
+from rapidfuzz import fuzz
+
 from felix.db.repository import (
     create_issue,
     delete_issues_for_scenes,
     get_character_fragments,
+    get_relation_types_for_pair,
     update_character_profile,
     upsert_character_relation,
 )
@@ -637,13 +640,19 @@ async def _run_character_profiling(
                     other_name = other_match.name
                 if other_id != char_id:
                     a, b = sorted([char_id, other_id])
-                    await upsert_character_relation(
-                        ctx.db, a, b, rel.relation, era=char.get("era")
+                    existing = await get_relation_types_for_pair(ctx.db, a, b)
+                    is_duplicate = any(
+                        fuzz.ratio(rel.relation.lower(), ex.lower()) >= 75
+                        for ex in existing
                     )
-                    stored_relations.append({
-                        "other_name": other_name,
-                        "relation": rel.relation,
-                    })
+                    if not is_duplicate:
+                        await upsert_character_relation(
+                            ctx.db, a, b, rel.relation, era=char.get("era")
+                        )
+                        stored_relations.append({
+                            "other_name": other_name,
+                            "relation": rel.relation,
+                        })
 
             # Summary of filled fields
             filled = [

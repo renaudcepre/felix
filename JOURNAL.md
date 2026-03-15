@@ -451,3 +451,17 @@ Le prompt v2 resout completement le probleme — score parfait sur tous les eval
 **Notes :**
 - bge-m3 produit des vecteurs 1024 dimensions (vs 384 pour MiniLM) — incompatible avec une collection existante, necessite de vider `chroma_data/` et re-indexer
 - Modele telecharge automatiquement via HuggingFace (~2.27GB), mis en cache dans `~/.cache/huggingface/hub/`
+
+---
+
+### 2026-03-15 (4) — Déduplication fuzzy des relations personnages
+
+**Probleme :** Le profiler tourne une fois par personnage. Pour une paire (A, B), A génère `"collaborateur"` et B génère `"collaborateur sur l'interpretation..."` — deux `relation_type` différents → deux lignes en DB alors qu'il s'agit de la même relation.
+
+**Cause racine :** La PK de `character_relations` inclut `relation_type`, permettant plusieurs lignes par paire avec des libellés légèrement différents.
+
+**Modifications :**
+- `db/repository.py` : ajout de `get_relation_types_for_pair(db, a, b)` — retourne les `relation_type` existants pour une paire normalisée
+- `ingest/pipeline.py` : avant chaque `upsert_character_relation`, vérification fuzzy (`fuzz.ratio >= 75`) contre les relations existantes pour la paire — skip si trop similaire, insert sinon
+
+**Choix du seuil 75 :** bloque "collaborateur" vs "collaborateur sur l'interpretation..." (~60-70), laisse passer "père" vs "rival" (~30).
