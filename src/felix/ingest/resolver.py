@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from rapidfuzz import fuzz
+
+logger = logging.getLogger(__name__)
 
 THRESHOLD_AUTO = 0.85
 THRESHOLD_FUZZY = 0.60
@@ -130,9 +133,17 @@ def fuzzy_match_entity(
     best_id, best_name, best_score = candidates[0]
 
     if best_score >= THRESHOLD_AUTO:
+        logger.debug("fuzzy auto: %r → %r (score=%.2f)", name, best_name, best_score)
         return ResolvedEntity(id=best_id, name=best_name, score=best_score)
 
     # Ambiguous
+    logger.debug(
+        "fuzzy ambiguous: %r → %r (score=%.2f, candidates=%s)",
+        name,
+        best_name,
+        best_score,
+        [(n, round(s, 2)) for _, n, s in candidates],
+    )
     return AmbiguousMatch(
         best_id=best_id,
         best_name=best_name,
