@@ -29,7 +29,7 @@ from felix.db.repository import (
     upsert_character_relation,
 )
 from felix.ingest.analyzer import analyze_scene, create_analyzer_agent
-from felix.ingest.checker import check_scene_consistency
+from felix.ingest.checker import check_scene_consistency, create_checker_agents
 from felix.ingest.loader import load_scene
 from felix.ingest.profiler import (
     create_profiler_agent,
@@ -526,8 +526,8 @@ async def _process_scene(
 async def _check_scene(
     ctx: _PipelineContext,
     scene_summary: dict,
-    model_name: str | None,
-    base_url: str | None,
+    timeline_agent: Any,
+    narrative_agent: Any,
 ) -> None:
     ctx.progress.status = ImportStatus.CHECKING
     await _emit_status(ctx, ImportStatus.CHECKING)
@@ -542,7 +542,7 @@ async def _check_scene(
 
     try:
         report = await check_scene_consistency(
-            ctx.db, ctx.collection, scene_summary, model_name, base_url
+            ctx.db, ctx.collection, scene_summary, timeline_agent, narrative_agent
         )
     except Exception as e:
         logger.exception("Consistency check failed for scene: %s", scene_summary["scene_id"])
@@ -725,6 +725,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         await delete_issues_for_scenes(db, [f"scene-{f.stem}" for f in scene_files])
 
         analyzer = create_analyzer_agent(model_name, base_url)
+        timeline_checker, narrative_checker = create_checker_agents(model_name, base_url)
         profiler = create_profiler_agent(model_name, base_url) if enrich_profiles else None
         profiler_patch = create_profiler_patch_agent(model_name, base_url) if enrich_profiles else None
         scenes_processed = 0
@@ -739,7 +740,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 progress.issues_found += len(scene_issues)
                 scenes_processed += 1
 
-                await _check_scene(ctx, summary, model_name, base_url)
+                await _check_scene(ctx, summary, timeline_checker, narrative_checker)
 
                 if enrich_profiles:
                     await _profile_scene_characters(

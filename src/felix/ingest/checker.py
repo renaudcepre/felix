@@ -98,12 +98,23 @@ def _create_checker_agent(
     )
 
 
+def create_checker_agents(
+    model_name: str | None = None,
+    base_url: str | None = None,
+) -> tuple[Agent[None, ConsistencyReport], Agent[None, ConsistencyReport]]:
+    """Create timeline and narrative checker agents (one-time, reusable)."""
+    return (
+        _create_checker_agent(CHECKER_TIMELINE_PROMPT, model_name, base_url),
+        _create_checker_agent(CHECKER_NARRATIVE_PROMPT, model_name, base_url),
+    )
+
+
 async def check_scene_consistency(
     db: aiosqlite.Connection,
     collection: chromadb.Collection,
     scene_summary: dict[str, Any],
-    model_name: str | None,
-    base_url: str | None,
+    timeline_agent: Agent[None, ConsistencyReport],
+    narrative_agent: Agent[None, ConsistencyReport],
 ) -> ConsistencyReport:
     current_scene_id = scene_summary["scene_id"]
 
@@ -119,8 +130,8 @@ async def check_scene_consistency(
         if n > 0:
             results = collection.query(query_texts=[query_text], n_results=n)
             metadatas = results.get("metadatas") or [[]]
-            relevant_ids = [
-                m["scene_id"]
+            relevant_ids: list[str] = [
+                str(m["scene_id"])
                 for m in metadatas[0]
                 if m.get("scene_id") and m["scene_id"] != current_scene_id
             ][:10]
@@ -148,7 +159,6 @@ async def check_scene_consistency(
     ]
     timeline_scenes.sort(key=lambda s: (s["date"] is None, s["date"] or ""))
 
-    timeline_agent = _create_checker_agent(CHECKER_TIMELINE_PROMPT, model_name, base_url)
     timeline_result = await timeline_agent.run(
         json.dumps(timeline_scenes, ensure_ascii=False, indent=2)
     )
@@ -173,7 +183,6 @@ async def check_scene_consistency(
         ],
     }
 
-    narrative_agent = _create_checker_agent(CHECKER_NARRATIVE_PROMPT, model_name, base_url)
     narrative_result = await narrative_agent.run(
         json.dumps(narrative_input, ensure_ascii=False, indent=2)
     )

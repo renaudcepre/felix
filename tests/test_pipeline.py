@@ -122,7 +122,7 @@ def _mock_analyze_scene(analyses: list[SceneAnalysis]):
 
 
 def _mock_check_scene_consistency(report: ConsistencyReport):
-    async def _check(_db, _collection, _scene_summary, _model_name, _base_url):
+    async def _check(_db, _collection, _scene_summary, _timeline_agent, _narrative_agent):
         return report
 
     return _check
@@ -163,6 +163,7 @@ def _pipeline_patches(analyses, report, profile=None):
             side_effect=_mock_check_scene_consistency(report),
         ),
         patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
+        patch("felix.ingest.pipeline.create_checker_agents", return_value=(None, None)),
         patch("felix.ingest.pipeline.create_profiler_agent", return_value=None),
     ]
     if profile is not None:
