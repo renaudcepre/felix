@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
 class ExtractedCharacter(BaseModel):
     name: str
-    role: str  # "participant" | "witness" | "mentioned"
+    role: Literal["participant", "witness", "mentioned"]
     description: str | None = None
 
 

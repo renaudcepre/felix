@@ -22,15 +22,21 @@ from rapidfuzz import fuzz
 from felix.db.repository import (
     create_issue,
     delete_issues_for_scenes,
-    get_character_fragments,
+    get_character_profile,
     get_relation_types_for_pair,
+    patch_character_profile_fields,
     update_character_profile,
     upsert_character_relation,
 )
 from felix.ingest.analyzer import analyze_scene, create_analyzer_agent
-from felix.ingest.checker import check_consistency, create_checker_agent
+from felix.ingest.checker import check_scene_consistency, create_checker_agents
 from felix.ingest.loader import load_scene
-from felix.ingest.profiler import create_profiler_agent, profile_character
+from felix.ingest.profiler import (
+    create_profiler_agent,
+    create_profiler_patch_agent,
+    patch_character_profile,
+    profile_character,
+)
 from felix.ingest.resolver import (
     AmbiguousMatch,
     ResolvedEntity,
@@ -429,7 +435,7 @@ async def _process_scene(
     ctx: _PipelineContext,
     scene_file: Path,
     analyzer: Any,
-) -> tuple[list[dict], dict]:
+) -> tuple[list[dict], dict, list[tuple[Any, str, str | None]], str]:
     scene_id = f"scene-{scene_file.stem}"
     ctx.progress.current_scene = scene_file.name
     ctx.progress.status = ImportStatus.ANALYZING
@@ -514,30 +520,37 @@ async def _process_scene(
     }
 
     ctx.progress.processed_scenes += 1
-    return scene_issues, summary
+    return scene_issues, summary, resolved_chars, scene_text
 
 
-async def _run_consistency_check(
+async def _check_scene(
     ctx: _PipelineContext,
-    scenes_summary: list[dict],
-    model_name: str | None,
-    base_url: str | None,
-) -> list[dict]:
+    scene_summary: dict,
+    timeline_agent: Any,
+    narrative_agent: Any,
+) -> None:
     ctx.progress.status = ImportStatus.CHECKING
-    ctx.progress.current_scene = ""
     await _emit_status(ctx, ImportStatus.CHECKING)
 
     if ctx.queue:
         await _emit(
             ctx.queue,
             "check_started",
-            scene_count=len(scenes_summary),
+            scene_id=scene_summary["scene_id"],
+            scene_title=scene_summary.get("title"),
         )
 
-    checker = create_checker_agent(model_name, base_url)
-    report = await check_consistency(checker, scenes_summary)
+    try:
+        report = await check_scene_consistency(
+            ctx.db, ctx.collection, scene_summary, timeline_agent, narrative_agent
+        )
+    except Exception as e:
+        logger.exception("Consistency check failed for scene: %s", scene_summary["scene_id"])
+        if ctx.queue:
+            await _emit(ctx.queue, "consistency_error", error=str(e))
+            await _emit(ctx.queue, "check_complete", issue_count=0)
+        return
 
-    issues: list[dict] = []
     for ci in report.issues:
         issue = {
             "id": str(uuid.uuid4()),
@@ -548,7 +561,8 @@ async def _run_consistency_check(
             "description": ci.description,
             "suggestion": ci.suggestion,
         }
-        issues.append(issue)
+        await create_issue(ctx.db, issue)
+        ctx.progress.issues_found += 1
         if ctx.queue:
             await _emit(
                 ctx.queue,
@@ -559,70 +573,59 @@ async def _run_consistency_check(
             )
 
     if ctx.queue:
-        await _emit(
-            ctx.queue,
-            "check_complete",
-            issue_count=len(issues),
-        )
-
-    return issues
+        await _emit(ctx.queue, "check_complete", issue_count=len(report.issues))
 
 
-async def _run_character_profiling(
+async def _profile_scene_characters(
     ctx: _PipelineContext,
-    model_name: str | None,
-    base_url: str | None,
+    resolved_chars: list[tuple[Any, str, str | None]],
+    scene_id: str,
+    scene_text: str,
+    scene_title: str,
+    profiler: Any,
+    profiler_patch: Any = None,
 ) -> None:
     ctx.progress.status = ImportStatus.PROFILING
-    ctx.progress.current_scene = ""
     await _emit_status(ctx, ImportStatus.PROFILING)
 
-    # Find characters with at least 1 fragment
-    cursor = await ctx.db.execute(
-        """
-        SELECT DISTINCT c.id, c.name, c.era
-        FROM characters c
-        JOIN character_fragments cf ON c.id = cf.character_id
-        ORDER BY c.name
-        """
-    )
-    chars = [dict(row) for row in await cursor.fetchall()]
-    if not chars:
-        return
+    known_names = list(ctx.char_registry.values())
 
-    profiler = create_profiler_agent(model_name, base_url)
+    for rc, role, desc in resolved_chars:
+        if role == "mentioned":
+            continue
 
-    for char in chars:
-        char_id = char["id"]
-        char_name = char["name"]
+        char_id = rc.id
+        char_name = rc.name
 
         try:
-            # Fetch fragments
-            fragments = await get_character_fragments(ctx.db, char_id)
-
-            # Fetch scene texts from ChromaDB
-            scene_ids = [f["scene_id"] for f in fragments]
-            scene_texts: list[str] = []
-            if scene_ids:
-                results = ctx.collection.get(ids=scene_ids)
-                scene_texts = results.get("documents") or []
-
-            if ctx.queue:
-                await _emit(
-                    ctx.queue,
-                    "profiling_character",
-                    name=char_name,
-                    id=char_id,
-                    fragment_count=len(fragments),
-                    scene_count=len(scene_texts),
-                )
-
-            known_names = [c["name"] for c in chars if c["id"] != char_id]
-            profile = await profile_character(
-                profiler, char_name, scene_texts, fragments, known_names
+            existing_row = await get_character_profile(ctx.db, char_id)
+            existing_profile = dict(existing_row) if existing_row else {}
+            has_profile = bool(
+                existing_profile.get("background") or existing_profile.get("arc")
             )
 
-            await update_character_profile(ctx.db, char_id, profile.model_dump())
+            fragment = {
+                "scene_title": scene_title,
+                "scene_id": scene_id,
+                "role": role,
+                "description": desc,
+            }
+
+            if ctx.queue:
+                await _emit(ctx.queue, "profiling_character", name=char_name, id=char_id, scene_title=scene_title)
+
+            char_known_names = [n for n in known_names if n != char_name]
+
+            if has_profile:
+                profile = await patch_character_profile(
+                    profiler_patch or profiler, char_name, existing_profile, scene_text, fragment
+                )
+                await patch_character_profile_fields(ctx.db, char_id, profile.model_dump())
+            else:
+                profile = await profile_character(
+                    profiler, char_name, [scene_text], [fragment], char_known_names
+                )
+                await update_character_profile(ctx.db, char_id, profile.model_dump())
 
             # Resolve and store relations
             stored_relations: list[dict[str, str]] = []
@@ -635,26 +638,21 @@ async def _run_character_profiling(
                     other_name = other_match.best_name
                 else:
                     if other_match.is_new:
-                        continue  # skip unknown characters
+                        continue
                     other_id = other_match.id
                     other_name = other_match.name
                 if other_id != char_id:
                     a, b = sorted([char_id, other_id])
-                    existing = await get_relation_types_for_pair(ctx.db, a, b)
+                    existing_rels = await get_relation_types_for_pair(ctx.db, a, b)
                     is_duplicate = any(
                         fuzz.ratio(rel.relation.lower(), ex.lower()) >= 75
-                        for ex in existing
+                        for ex in existing_rels
                     )
                     if not is_duplicate:
-                        await upsert_character_relation(
-                            ctx.db, a, b, rel.relation, era=char.get("era")
-                        )
-                        stored_relations.append({
-                            "other_name": other_name,
-                            "relation": rel.relation,
-                        })
+                        era = existing_profile.get("era") or ctx.char_details.get(char_id, {}).get("era")
+                        await upsert_character_relation(ctx.db, a, b, rel.relation, era=era)
+                        stored_relations.append({"other_name": other_name, "relation": rel.relation})
 
-            # Summary of filled fields
             filled = [
                 k for k in ("age", "physical", "background", "arc", "traits")
                 if getattr(profile, k)
@@ -727,16 +725,35 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         await delete_issues_for_scenes(db, [f"scene-{f.stem}" for f in scene_files])
 
         analyzer = create_analyzer_agent(model_name, base_url)
-        all_issues: list[dict] = []
-        scenes_summary: list[dict] = []
+        timeline_checker, narrative_checker = create_checker_agents(model_name, base_url)
+        profiler = create_profiler_agent(model_name, base_url) if enrich_profiles else None
+        profiler_patch = create_profiler_patch_agent(model_name, base_url) if enrich_profiles else None
+        scenes_processed = 0
 
         for scene_file in scene_files:
             try:
-                scene_issues, summary = await _process_scene(ctx, scene_file, analyzer)
-                all_issues.extend(scene_issues)
-                scenes_summary.append(summary)
+                scene_issues, summary, resolved_chars, scene_text = await _process_scene(
+                    ctx, scene_file, analyzer
+                )
+                for issue in scene_issues:
+                    await create_issue(db, issue)
+                progress.issues_found += len(scene_issues)
+                scenes_processed += 1
+
+                await _check_scene(ctx, summary, timeline_checker, narrative_checker)
+
+                if enrich_profiles:
+                    await _profile_scene_characters(
+                        ctx,
+                        resolved_chars,
+                        summary["scene_id"],
+                        scene_text,
+                        summary["title"],
+                        profiler,
+                        profiler_patch,
+                    )
             except Exception as e:
-                logger.exception("Scene analysis failed: %s", scene_file.name)
+                logger.exception("Scene processing failed: %s", scene_file.name)
                 progress.failed_scenes += 1
                 progress.processed_scenes += 1
                 if queue:
@@ -748,37 +765,19 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                         error=str(e),
                     )
 
-        if not scenes_summary:
+        if scenes_processed == 0:
             progress.error = f"Toutes les scenes ont echoue ({progress.failed_scenes}/{progress.total_scenes})"
             progress.status = ImportStatus.ERROR
             if queue:
                 await _emit(queue, "error", message=progress.error)
             return
 
-        try:
-            check_issues = await _run_consistency_check(
-                ctx, scenes_summary, model_name, base_url
-            )
-            all_issues.extend(check_issues)
-        except Exception as e:
-            logger.exception("Consistency check failed")
-            if queue:
-                await _emit(queue, "consistency_error", error=str(e))
-
-        for issue in all_issues:
-            await create_issue(db, issue)
-
-        progress.issues_found = len(all_issues)
-
-        if enrich_profiles:
-            await _run_character_profiling(ctx, model_name, base_url)
-
         progress.status = ImportStatus.DONE
         if queue:
             await _emit(
                 queue,
                 "done",
-                total_issues=len(all_issues),
+                total_issues=progress.issues_found,
                 new_characters=progress.new_characters,
                 new_locations=progress.new_locations,
             )

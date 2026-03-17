@@ -1,5 +1,94 @@
 # Journal de developpement — Felix
 
+## Remplacement `os._exit(0)` par `atexit` dans `run_evals.py` — 2026-03-16
+
+**Objectif :** Éliminer le `os._exit(0)` brutal qui empêchait tout cleanup (atexit handlers, flush fichiers, fermeture DB).
+
+**Changement :** Enregistrement de `atexit.register(os._exit, 0)` en début de `main()` — s'exécute en dernier (LIFO) après tous les autres handlers de cleanup, puis empêche `threading._shutdown()` de bloquer sur les threads non-daemon de chromadb/sentence-transformers. La sortie normale se fait via `raise typer.Exit()`.
+
+---
+
+## Refactoring `_normalize` → `evals/_utils.py` — 2026-03-16
+
+**Objectif :** Éliminer les 3 implémentations dupliquées de `_normalize` dans les suites d'évals.
+
+**Changements :**
+- `evals/_utils.py` (nouveau) : fonction `normalize()` partagée — NFKD + strip combining marks
+- `evals/evaluators.py`, `evals/ingest/evaluators.py`, `evals/pipeline/evaluators.py` : suppression des définitions locales, import de `normalize` depuis `evals._utils`
+- Unification de comportement : `pipeline/evaluators.py` utilisait NFD + ASCII encode, aligné sur NFKD + combining (plus correct pour l'Unicode)
+
+**TODO review_incremental_pipeline.md :** item "Extraire `_normalize`" coché.
+
+## Pipeline eval — cas difficiles pré-graphe — 2026-03-15
+
+**Objectif :** Constituer un benchmark de départ avant la migration vers Kuzu (graphe). Les nouveaux cases *peuvent échouer* — c'est le but : révéler les trous du pipeline actuel.
+
+**Ajouts :**
+- `evals/pipeline/task.py` : 2 nouveaux query types — `all_issues` (toutes les issues), `relations:<char_id>` (relations d'un personnage spécifique)
+- `evals/pipeline/evaluators.py` : 6 nouveaux évaluateurs — `ExactFragmentCount`, `RelationWithCharPresent`, `IssueDescriptionContains`, `IssueTypePresent`, `MaxIssueSeverityCount`, `AllLocationsContainKeyword` + helper `_normalize` (accent-insensitif)
+- `evals/run_evals.py` : 10 nouveaux cases répartis en 4 catégories
+
+**10 nouveaux cases :**
+- character_arc (medium/easy) : `irina_experience_in_profile`, `yuna_appears_exactly_once`, `chen_appears_in_scene2_only`
+- relations (medium/hard) : `relation_irina_chen`, `relation_kofi_irina`, `relation_kofi_chen_indirect` (transitive — attendu ✗)
+- issues (medium/hard) : `yuna_leak_in_issue_description`, `scene3_has_timeline_issue`, `no_error_severity` (attendu ✗ si LLM escalade en "error")
+- spatial (hard) : `all_locations_at_helios` (attendu ✗ si les lieux ne contiennent pas "helios")
+
+**Résultat attendu :** ~5-6/10 passent. Les 4 cas "hard" servent de baseline pour mesurer les gains post-graphe.
+
+---
+
+## Eval suite — refonte complète — 2026-03-15
+
+**Objectif :** Rendre les evals rapides, fiables et exploitables pour guider les améliorations.
+
+**Infra :**
+- `evals/_runner.py` : exécution parallèle via `asyncio.gather`, auto-detect LM Studio → Together AI, output compact (✔/✗ par case + `N/M passed`), résultats détaillés en fichiers `evals/results/<suite>_<ts>/<case>.md`
+- `evals/run_evals.py` : unified entry point, 3 suites (pipeline/ingest/chatbot), CLI `--suite`, `--case`, `--list`, `--together`, `--local`
+- `justfile` : commande `just evals [options...]`
+- Provider Together AI (`Qwen/Qwen2.5-7B-Instruct-Turbo`) comme fallback cloud rapide
+
+**Datasets :**
+- Pipeline : 11 cases (extraction, apparitions, profiling, consistency, relations)
+- Ingest : 16 cases sur scènes réelles + fixtures test (supprimable, redondant avec pipeline)
+- Chatbot : 17 cases — lookup, coherence, semantic, cross-era, causal (4 nouveaux), négatifs
+
+**Évaluateurs :**
+- `ContainsExpectedFacts` : ajout assertion `facts_ok` (bool) avec `min_score=0.5` — les cas sans réponse tombent maintenant en ✗
+- `CharacterRoleAccuracy` : fix normalisation Unicode sur les rôles extraits (`_normalize` au lieu de `.lower()`)
+- Cas causaux → `LLMJudge` avec rubric sémantique (résiste aux synonymes/paraphrases)
+- Cas à données absentes → `RefusesToFabricate`
+- Dataset-level evaluators ne créent pas d'assertions per-case → tous les cas non-négatifs ont `ContainsExpectedFacts()` en case-level
+
+**Résultats actuels :** pipeline 10/11, ingest 15/16, chatbot 16/17
+- `yuna_profile_background` : profil vide en DB → bug pipeline
+- `scene2_no_jakes_participant` : Jakes extrait dans scène 002 → comportement LLM à investiguer
+- `semantic_archives` : bot rate les requêtes par lieu/contexte (vs personnage) → gap fonctionnel à corriger
+
+---
+
+## Fix SSE breaking changes — 2026-03-15
+
+`check_started` et `profiling_character` avaient des champs renommés après la refonte incrémentale,
+cassant l'affichage dans le journal d'import. Fix : ajout de `scene_title` aux deux events côté pipeline,
+mise à jour frontend (`import.vue` + `types/index.ts`).
+
+---
+
+## Pipeline incremental — 2026-03-15
+
+**Objectif :** Passer d'un pipeline batch (check + profiling en fin d'import) a un pipeline incremental (check + profiling apres chaque scene).
+
+**Changements :**
+- `repository.py` : ajout de `get_scene_summaries_by_ids()` et `patch_character_profile_fields()` (COALESCE new over existing)
+- `checker.py` : refonte complete avec 2 passes sequentielles (CHECKER_TIMELINE_PROMPT + CHECKER_NARRATIVE_PROMPT) + retrieval ChromaDB (K=10 scenes semantiquement proches)
+- `profiler.py` : ajout PROFILER_PATCH_PROMPT + `patch_character_profile()` pour enrichir un profil existant sans ecraser les donnees
+- `pipeline.py` : suppression de `_run_consistency_check` et `_run_character_profiling`, remplacement par `_check_scene()` et `_profile_scene_characters()` appeles dans la boucle principale. Issues ecrites en DB immediatement. Mode create vs patch selon presence de background/arc.
+
+**Resultat :** 69 tests passes. Les evenements SSE `check_started`, `check_complete`, `issue_found`, `profiling_character`, `character_profiled` sont emis apres chaque scene (plus en batch).
+
+---
+
 ## Phase 0 — Proof of Concept CLI
 
 ### 2026-03-14
@@ -84,7 +173,7 @@ MODEL_BASE_URL=http://localhost:1234/v1 MISTRAL_MODEL=qwen2.5-7b-instruct-1m fel
 
 **Usage evals local :**
 ```bash
-FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:1234/v1 uv run python -m evals.run_evals
+FELIX_EVAL_MODEL=qwen/qwen2.5-7b-instruct FELIX_EVAL_BASE_URL=http://localhost:1234/v1 uv run python -m evals.run_evals
 ```
 
 **Modeles locaux disponibles (LMStudio) :** Qwen2.5 7B, Llama 3.1 8B, Ministral 3B, Gemma 2 9B.
@@ -104,7 +193,7 @@ FELIX_EVAL_MODEL=qwen2.5-7b-instruct-1m FELIX_EVAL_BASE_URL=http://localhost:123
 - facts_score : 0.810, assertions : 94.4%, duree moyenne : 118s/case
 - Refuse proprement de fabriquer, cite les scenes par numero (042, 088), repond en francais, concis
 
-**Evals Qwen 2.5 7B local (LMStudio, qwen2.5-7b-instruct-1m) :**
+**Evals Qwen 2.5 7B local (LMStudio, qwen/qwen2.5-7b-instruct) :**
 - facts_score : **0.857**, assertions : **100%**, duree moyenne : 89.8s/case
 - Meilleur modele teste : 100% assertions, cross-era 0.75 (meilleur score), refuse proprement, plus rapide que Gemma 2 9B
 - Seul 7B a atteindre 100% assertions — excellent tool-calling et raisonnement cross-era

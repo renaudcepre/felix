@@ -128,6 +128,7 @@ export interface ImportEvent {
   score?: number
   // check_started / check_complete
   scene_count?: number
+  scene_title?: string
   issue_count?: number
   // issue_found
   type?: string

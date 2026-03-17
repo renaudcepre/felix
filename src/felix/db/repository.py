@@ -167,6 +167,62 @@ async def delete_issues_for_scenes(
     await db.commit()
 
 
+async def get_scene_summaries_by_ids(
+    db: aiosqlite.Connection,
+    scene_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Retourne title, summary, era, date, location_id pour une liste de scene_ids."""
+    if not scene_ids:
+        return []
+    placeholders = ",".join("?" * len(scene_ids))
+    cursor = await db.execute(
+        f"SELECT id, title, summary, era, date, location_id FROM scenes WHERE id IN ({placeholders})",  # noqa: S608
+        scene_ids,
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def patch_character_profile_fields(
+    db: aiosqlite.Connection, char_id: str, profile: dict[str, str | None]
+) -> None:
+    """Met a jour les champs du profil en concatenant les nouvelles valeurs non-null."""
+    def _nullify_empty(v: str | None) -> str | None:
+        return v if v and v.strip() else None
+
+    await db.execute(
+        """
+        UPDATE characters SET
+            age        = COALESCE(:age, age),
+            physical   = COALESCE(:physical, physical),
+            background = CASE
+                WHEN :background IS NULL THEN background
+                WHEN background IS NULL THEN :background
+                ELSE background || ' | ' || :background
+            END,
+            arc        = CASE
+                WHEN :arc IS NULL THEN arc
+                WHEN arc IS NULL THEN :arc
+                ELSE arc || ' | ' || :arc
+            END,
+            traits     = CASE
+                WHEN :traits IS NULL THEN traits
+                WHEN traits IS NULL THEN :traits
+                ELSE traits || ' | ' || :traits
+            END
+        WHERE id = :id
+        """,
+        {
+            "id": char_id,
+            "age": _nullify_empty(profile.get("age")),
+            "physical": _nullify_empty(profile.get("physical")),
+            "background": _nullify_empty(profile.get("background")),
+            "arc": _nullify_empty(profile.get("arc")),
+            "traits": _nullify_empty(profile.get("traits")),
+        },
+    )
+    await db.commit()
+
+
 async def list_scenes(db: aiosqlite.Connection) -> list[dict[str, Any]]:
     cursor = await db.execute(
         "SELECT id, filename, title, era, date FROM scenes ORDER BY filename"

@@ -100,7 +100,7 @@ function formatEvent(ev: ImportEvent): { icon: string, text: string, color: stri
     case 'scene_loaded':
       return { icon: 'i-lucide-check', text: `Charge : ${ev.scene_id}`, color: 'text-green-600' }
     case 'check_started':
-      return { icon: 'i-lucide-shield', text: `Verification coherence (${ev.scene_count} scenes)...`, color: 'text-purple-400' }
+      return { icon: 'i-lucide-shield', text: `Verification coherence : ${ev.scene_title ?? ev.scene_id}...`, color: 'text-purple-400' }
     case 'check_complete':
       return { icon: 'i-lucide-shield-check', text: `Verification terminee — ${ev.issue_count} issue${(ev.issue_count as number) > 1 ? 's' : ''} trouvee${(ev.issue_count as number) > 1 ? 's' : ''}`, color: 'text-purple-500' }
     case 'issue_found':
@@ -108,7 +108,7 @@ function formatEvent(ev: ImportEvent): { icon: string, text: string, color: stri
     case 'profiling_character':
       return {
         icon: 'i-lucide-user',
-        text: `Profiling : ${ev.name} (${ev.fragment_count ?? 0} fragments, ${ev.scene_count ?? 0} scenes)...`,
+        text: `Profiling : ${ev.name} — ${ev.scene_title ?? ''}...`,
         color: 'text-blue-400',
       }
     case 'character_profiled': {

@@ -24,6 +24,10 @@ api:
 web:
     cd web && pnpm dev
 
+# Evals (auto-detect LM Studio ou Together AI) — options: --suite, --case, --list, --together, --local
+evals *args:
+    uv run python -m evals.run_evals {{ args }}
+
 # Remove database and vector store
 db-clean:
     rm -f {{ db_path }}

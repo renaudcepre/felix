@@ -974,6 +974,7 @@ dependencies = [
     { name = "rapidfuzz" },
     { name = "rich" },
     { name = "sentence-transformers" },
+    { name = "typer" },
 ]
 
 [package.dev-dependencies]
@@ -995,6 +996,7 @@ requires-dist = [
     { name = "rapidfuzz", specifier = ">=3.0" },
     { name = "rich", specifier = ">=14.3.3" },
     { name = "sentence-transformers", specifier = ">=3.0" },
+    { name = "typer", specifier = ">=0.24.1" },
 ]
 
 [package.metadata.requires-dev]

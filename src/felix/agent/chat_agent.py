@@ -46,15 +46,19 @@ EXAMPLE: "Qui est au poste de relais ?"
 
 
 def _build_model(
-    model_name: str | None = None, base_url: str | None = None
+    model_name: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
 ) -> Model:
     name = model_name or settings.llm_model
-    url = base_url or settings.llm_base_url
+    url = base_url if base_url is not None else settings.llm_base_url
 
     if url:
+        is_together = "together" in url
+        key = api_key or (settings.together_key if is_together else settings.llm_api_key) or "lm-studio"
         return OpenAIModel(
             name,
-            provider=OpenAIProvider(base_url=url, api_key="lm-studio"),
+            provider=OpenAIProvider(base_url=url, api_key=key),
         )
     return MistralModel(
         name,

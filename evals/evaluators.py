@@ -1,78 +1,62 @@
-"""Custom evaluators for Felix evals."""
+"""Evaluators for the Felix chat agent eval suite."""
 
 from __future__ import annotations
 
-import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 
-
-def _normalize(text: str) -> str:
-    """Lowercase and strip accents for fuzzy keyword matching."""
-    nfkd = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
+from evals._utils import normalize
 
 
 @dataclass
 class ContainsExpectedFacts(Evaluator[str, str]):
-    """Check that expected facts (keywords) appear in the agent response.
+    """Check that the response contains at least min_score fraction of expected keywords.
 
-    expected_output on the Case must be a comma-separated string of keywords.
-    Matching is case-insensitive and accent-insensitive.
+    expected_output: comma-separated keywords (partial match, accent-insensitive).
+    Example: "Marie, Resistance, 1940s, coursiere"
     """
 
-    threshold: float = 0.5
+    min_score: float = 0.5
 
-    def evaluate(
-        self, ctx: EvaluatorContext[str, str]
-    ) -> dict[str, float | bool | str]:
+    def evaluate(self, ctx: EvaluatorContext[str, str]) -> dict[str, float | str | bool]:
         if not ctx.expected_output:
             return {}
-
-        expected_facts = [
-            f.strip() for f in ctx.expected_output.split(",") if f.strip()
-        ]
-        if not expected_facts:
-            return {}
-
-        output_norm = _normalize(ctx.output)
-        found = {fact: _normalize(fact) in output_norm for fact in expected_facts}
-        score = sum(found.values()) / len(found)
-        missing = [f for f, present in found.items() if not present]
-
-        return {
+        keywords = [k.strip() for k in ctx.expected_output.split(",") if k.strip()]
+        output = normalize(ctx.output)
+        matched = [k for k in keywords if normalize(k) in output]
+        score = len(matched) / len(keywords) if keywords else 1.0
+        result: dict[str, float | str | bool] = {
             "facts_score": score,
-            "facts_pass": score >= self.threshold,
-            "missing_facts": ", ".join(missing) if missing else "none",
+            "facts_ok": score >= self.min_score,
         }
+        missing = [k for k in keywords if normalize(k) not in output]
+        if missing:
+            result["missing_facts"] = ", ".join(missing)
+        return result
 
 
 @dataclass
 class RefusesToFabricate(Evaluator[str, str]):
-    """Check that the agent refuses to answer when info is absent from the bible."""
+    """Check that the response admits not knowing rather than fabricating.
 
-    refusal_markers: list[str] = field(
-        default_factory=lambda: [
-            "pas dans la bible",
-            "pas d'information",
-            "je ne trouve pas",
-            "aucune information",
-            "not found",
-            "no information",
-            "don't have",
-            "ne sais pas",
-            "ne dispose pas",
-            "n'est pas mentionn",
-            "no mention",
-            "not mention",
-            "isn't mention",
-            "no data",
-            "aucune donnee",
-            "pas de donnee",
-        ]
-    )
+    Used for negative tests where expected_output is empty.
+    Passes if the response contains a refusal marker.
+    """
 
-    def evaluate(self, ctx: EvaluatorContext[str, str]) -> bool:
-        output_lower = ctx.output.lower()
-        return any(marker in output_lower for marker in self.refusal_markers)
+    _REFUSAL_MARKERS = [
+        "je ne trouve pas",
+        "je n'ai pas",
+        "pas d'information",
+        "aucune information",
+        "n'est pas mentionn",
+        "introuvable",
+        "ne figure pas",
+        "pas dans",
+        "aucune mention",
+    ]
+
+    def evaluate(self, ctx: EvaluatorContext[str, str]) -> dict[str, bool]:
+        output = normalize(ctx.output)
+        refused = any(marker in output for marker in self._REFUSAL_MARKERS)
+        return {"refused_to_fabricate": refused}

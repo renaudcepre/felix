@@ -14,6 +14,32 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("felix.ingest.profiler")
 
+PROFILER_PATCH_PROMPT = """\
+Tu es un assistant specialise dans l'enrichissement de profils de personnages de scenario.
+
+On te donne :
+1. Le profil actuel valide d'un personnage (issu des scenes precedentes)
+2. Une nouvelle scene ou ce personnage apparait
+
+Ta mission : enrichir le profil UNIQUEMENT avec ce que cette nouvelle scene apporte de nouveau.
+
+REGLE ABSOLUE :
+- Ne modifie, n'efface, ne reformule rien de ce qui existe deja dans le profil.
+- N'invente rien : chaque information ajoutee doit pouvoir etre pointee dans le texte de la scene.
+- Si la scene n'apporte rien de nouveau pour un champ, retourne null pour ce champ.
+- Un champ null signifie "inchange", pas "vide".
+
+Champs a enrichir (null si pas de nouvelle information) :
+- age : si la scene precise ou confirme l'age (nouveaux details uniquement)
+- physical : si la scene decrit l'apparence physique (nouveaux details uniquement)
+- background : si la scene revele de nouveaux elements du passe du personnage
+- arc : si la scene fait evoluer le personnage (actions concretes nouvelles)
+- traits : si la scene demontre de nouveaux traits de caractere
+- relations : nouvelles relations observees dans CETTE scene uniquement
+
+Reponds en francais. Sois concis et factuel.
+"""
+
 PROFILER_PROMPT = """\
 Tu es un assistant specialise dans la synthese de profils de personnages de scenario.
 
@@ -58,6 +84,46 @@ def create_profiler_agent(
         model_settings=ModelSettings(temperature=0.1),
         retries=2,
     )
+
+
+def create_profiler_patch_agent(
+    model_name: str | None = None, base_url: str | None = None
+) -> Agent[None, CharacterProfile]:
+    model: Model = _build_model(model_name, base_url)
+    return Agent(
+        model,
+        instructions=PROFILER_PATCH_PROMPT,
+        output_type=CharacterProfile,
+        model_settings=ModelSettings(temperature=0.1),
+        retries=2,
+    )
+
+
+async def patch_character_profile(
+    agent: Agent[None, CharacterProfile],
+    name: str,
+    existing_profile: dict,
+    new_scene_text: str,
+    new_scene_fragment: dict,
+) -> CharacterProfile:
+    parts = [f"Personnage : {name}\n"]
+    parts.append("=== Profil actuel ===")
+    for field in ("age", "physical", "background", "arc", "traits"):
+        val = existing_profile.get(field)
+        if val:
+            parts.append(f"- {field} : {val}")
+
+    role = new_scene_fragment.get("role", "")
+    desc = new_scene_fragment.get("description", "")
+    title = new_scene_fragment.get("scene_title") or new_scene_fragment.get("scene_id", "?")
+    parts.append(f"\n=== Nouvelle scene : '{title}' (role: {role}) ===")
+    if desc:
+        parts.append(f"Fragment : {desc}")
+    parts.append(f"\n--- Texte de la scene ---\n{new_scene_text}")
+
+    input_text = "\n".join(parts)
+    result = await agent.run(input_text)
+    return result.output
 
 
 async def profile_character(
