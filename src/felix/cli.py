@@ -11,11 +11,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from felix.telemetry import setup_logfire
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
 from felix.config import settings
-from felix.db import repository as db_queries
-from felix.db.schema import init_db
+from felix.graph import repository as graph_queries
+from felix.graph.driver import close_driver, get_driver, setup_constraints
 from felix.vectorstore.store import get_collection
 
 console = Console()
@@ -27,7 +28,7 @@ def _print_header(model: str, base_url: str | None) -> None:
     table.add_column(style="bold")
     table.add_row("Model", model)
     table.add_row("Provider", base_url or "Mistral API")
-    table.add_row("DB", str(settings.db_path))
+    table.add_row("Neo4j", settings.neo4j_uri)
     table.add_row("ChromaDB", settings.chroma_path)
 
     header = Text("Felix", style="bold magenta")
@@ -39,9 +40,10 @@ def _print_header(model: str, base_url: str | None) -> None:
 
 
 async def chat_loop(model: str, base_url: str | None) -> None:
-    db = await init_db(str(settings.db_path))
+    driver = get_driver()
+    await setup_constraints(driver)
     collection = get_collection()
-    deps = FelixDeps(db=db, chroma_collection=collection)
+    deps = FelixDeps(driver=driver, chroma_collection=collection)
 
     agent = create_agent(model, base_url)
 
@@ -76,31 +78,32 @@ async def chat_loop(model: str, base_url: str | None) -> None:
             console.print(f"\n[bold magenta]Felix:[/bold magenta] {result.output}\n")
             message_history = result.all_messages()
     finally:
-        await db.close()
+        await close_driver(driver)
 
 
-async def _export_db() -> dict:
-    db = await init_db(str(settings.db_path))
+async def _export_graph() -> dict:
+    driver = get_driver()
+    await setup_constraints(driver)
     try:
         return {
             "exported_at": datetime.now().isoformat(),
-            "characters": await db_queries.list_all_characters_full(db),
-            "locations": await db_queries.list_all_locations(db),
-            "scenes": await db_queries.list_all_scenes_full(db),
-            "timeline_events": await db_queries.list_all_timeline_events(db),
-            "character_events": await db_queries.list_all_character_events(db),
-            "character_relations": await db_queries.list_all_character_relations(db),
-            "character_fragments": await db_queries.list_all_character_fragments(db),
-            "issues": await db_queries.list_issues(db),
+            "characters": await graph_queries.list_all_characters_full(driver),
+            "locations": await graph_queries.list_all_locations(driver),
+            "scenes": await graph_queries.list_all_scenes_full(driver),
+            "timeline_events": await graph_queries.list_all_timeline_events(driver),
+            "character_events": await graph_queries.list_all_character_events(driver),
+            "character_relations": await graph_queries.list_all_character_relations(driver),
+            "character_fragments": await graph_queries.list_all_character_fragments(driver),
+            "issues": await graph_queries.list_issues(driver),
         }
     finally:
-        await db.close()
+        await close_driver(driver)
 
 
 def export() -> None:
-    """Export DB directly to exports/<timestamp>.json."""
+    """Export graph DB directly to exports/<timestamp>.json."""
     console = Console()
-    data = asyncio.run(_export_db())
+    data = asyncio.run(_export_graph())
     exports_dir = Path("exports")
     exports_dir.mkdir(exist_ok=True)
     filename = exports_dir / f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -109,6 +112,7 @@ def export() -> None:
 
 
 def main() -> None:
+    setup_logfire()
     parser = argparse.ArgumentParser(description="Felix — Screenplay Continuity Assistant")
     parser.add_argument("--model", type=str, default=None, help="Model name (e.g. qwen2.5-7b-instruct-1m)")
     parser.add_argument("--base-url", type=str, default=None, help="OpenAI-compatible API base URL")

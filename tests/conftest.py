@@ -6,16 +6,23 @@ import pytest
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+    from neo4j import AsyncDriver
 
-    import aiosqlite
-
-from felix.db.schema import init_db
-from felix.db.seed import seed_db
+from felix.graph.driver import get_driver, setup_constraints
+from felix.graph.seed import seed_graph
 
 
 @pytest.fixture
-async def seeded_db() -> AsyncGenerator[aiosqlite.Connection]:
-    db = await init_db(":memory:")
-    await seed_db(db)
-    yield db
-    await db.close()
+async def driver() -> AsyncGenerator[AsyncDriver]:
+    drv = get_driver()
+    await setup_constraints(drv)
+    yield drv
+    await drv.close()
+
+
+@pytest.fixture
+async def seeded_driver(driver: AsyncDriver) -> AsyncGenerator[AsyncDriver]:
+    await seed_graph(driver)
+    yield driver
+    async with driver.session() as session:
+        await session.run("MATCH (n) DETACH DELETE n")

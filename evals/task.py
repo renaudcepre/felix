@@ -8,8 +8,8 @@ import chromadb
 
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
-from felix.db.schema import init_db
-from felix.db.seed import seed_db
+from felix.graph.driver import get_driver, setup_constraints
+from felix.graph.seed import seed_graph
 from felix.vectorstore.seed import seed_scenes
 
 _deps: FelixDeps | None = None
@@ -20,14 +20,15 @@ async def _get_deps() -> FelixDeps:
     if _deps is not None:
         return _deps
 
-    db = await init_db(":memory:")
-    await seed_db(db)
+    driver = get_driver()
+    await setup_constraints(driver)
+    await seed_graph(driver)
 
     client = chromadb.EphemeralClient()
     collection = client.get_or_create_collection(name="scenes_eval")
     seed_scenes(collection)
 
-    _deps = FelixDeps(db=db, chroma_collection=collection)
+    _deps = FelixDeps(driver=driver, chroma_collection=collection)
     return _deps
 
 

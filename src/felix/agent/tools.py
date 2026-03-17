@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic_ai import RunContext
 
 from felix.agent.deps import FelixDeps
-from felix.db import formatters
+from felix.graph import formatters
 from felix.vectorstore.store import search_scenes_in_chroma
 
 
@@ -13,7 +13,7 @@ async def find_character(ctx: RunContext[FelixDeps], name: str) -> str:
     Args:
         name: Full or partial character name (e.g. 'Marie', 'Renard', 'La Louve').
     """
-    return await formatters.find_character(ctx.deps.db, name)
+    return await formatters.find_character(ctx.deps.driver, name)
 
 
 async def find_location(ctx: RunContext[FelixDeps], name: str) -> str:
@@ -22,7 +22,7 @@ async def find_location(ctx: RunContext[FelixDeps], name: str) -> str:
     Args:
         name: Full or partial location name (e.g. 'Lyon', 'planque', 'Tribune').
     """
-    return await formatters.find_location(ctx.deps.db, name)
+    return await formatters.find_location(ctx.deps.driver, name)
 
 
 async def get_timeline(
@@ -44,7 +44,7 @@ async def get_timeline(
         location: Filter by location name (partial match, e.g. 'poste de relais', 'Lyon'). Optional.
     """
     return await formatters.get_timeline(
-        ctx.deps.db, era=era, date_from=date_from, date_to=date_to, location=location
+        ctx.deps.driver, era=era, date_from=date_from, date_to=date_to, location=location
     )
 
 

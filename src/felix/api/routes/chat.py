@@ -9,7 +9,7 @@ from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from felix.agent.deps import FelixDeps
-from felix.api.deps import ChatAgent, Collection, DB
+from felix.api.deps import ChatAgent, Collection, Neo4jDriver
 from felix.api.models import ChatRequest, ChatResponse, UsageInfo
 
 if TYPE_CHECKING:
@@ -19,8 +19,8 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 @router.post("")
-async def chat(body: ChatRequest, agent: ChatAgent, db: DB, collection: Collection) -> ChatResponse:
-    deps = FelixDeps(db=db, chroma_collection=collection)
+async def chat(body: ChatRequest, agent: ChatAgent, driver: Neo4jDriver, collection: Collection) -> ChatResponse:
+    deps = FelixDeps(driver=driver, chroma_collection=collection)
 
     message_history = None
     if body.message_history:
@@ -51,8 +51,8 @@ async def chat(body: ChatRequest, agent: ChatAgent, db: DB, collection: Collecti
 
 
 @router.post("/stream")
-async def chat_stream(body: ChatRequest, agent: ChatAgent, db: DB, collection: Collection) -> EventSourceResponse:
-    deps = FelixDeps(db=db, chroma_collection=collection)
+async def chat_stream(body: ChatRequest, agent: ChatAgent, driver: Neo4jDriver, collection: Collection) -> EventSourceResponse:
+    deps = FelixDeps(driver=driver, chroma_collection=collection)
 
     message_history = None
     if body.message_history:

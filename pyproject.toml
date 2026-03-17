@@ -12,17 +12,17 @@ authors = [
     { name = "Renaud Cepre", email = "renaudcepre@protonmail.com" }
 ]
 dependencies = [
-    "pydantic-ai[mistral]",
+    "pydantic-ai[logfire,mistral]",
+    "logfire",
     "mistralai>=1.9.11,<2.0",
     "pydantic-settings>=2.0",
     "chromadb>=1.0",
-    "aiosqlite>=0.20",
+    "neo4j>=5.0",
     "rich>=14.3.3",
     "fastapi[standard]>=0.115",
     "rapidfuzz>=3.0",
     "sentence-transformers>=3.0",
     "typer>=0.24.1",
-    "kuzu>=0.8",
 ]
 
 [project.scripts]

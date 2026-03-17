@@ -33,6 +33,7 @@ from evals.ingest.evaluators import (
     ExtractsExpectedCharacters,
     LocationAccuracy,
     NoCharacterPresent,
+    NoEphemeralPhysicalDescription,
 )
 from evals.ingest.task import analyze_scene_task
 from evals.pipeline.evaluators import (
@@ -41,6 +42,7 @@ from evals.pipeline.evaluators import (
     CharacterAbsent,
     CharacterIdsPresent,
     ExactFragmentCount,
+    ExactIssueCountByType,
     IssueDescriptionContains,
     IssueTypeAbsent,
     IssueTypePresent,
@@ -49,10 +51,11 @@ from evals.pipeline.evaluators import (
     MinFragmentCount,
     MinIssueCount,
     MinRelationsCount,
+    NoIssueDescriptionContains,
     RelationWithCharPresent,
     SceneDateContainsKeywords,
 )
-from evals.pipeline.task import build_pipeline_task
+from evals.pipeline.task import make_pipeline_task
 from evals.task import felix_task
 from felix.config import settings
 
@@ -327,6 +330,101 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
     ],
 )
 
+CONVOI_DATASET: Dataset[str, Any] = Dataset(
+    cases=[
+        # --- extraction ---
+        Case(
+            name="convoi_character_extraction",
+            inputs="characters",
+            expected_output="marco-ruiz,lena-voss",
+            metadata={"category": "extraction"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+        Case(
+            name="convoi_pixel_extracted",
+            inputs="characters",
+            expected_output="pixel",
+            metadata={"category": "extraction"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+        # --- appearances ---
+        Case(
+            name="convoi_lena_in_three_scenes",
+            inputs="fragments:lena-voss",
+            expected_output="3",
+            metadata={"category": "appearances"},
+            evaluators=[MinFragmentCount()],
+        ),
+        Case(
+            name="convoi_lena_active_three",
+            inputs="active_fragments:lena-voss",
+            expected_output="3",
+            metadata={"category": "appearances"},
+            evaluators=[ExactFragmentCount()],
+        ),
+        Case(
+            name="convoi_marco_appears_once",
+            inputs="fragments:marco-ruiz",
+            expected_output="1",
+            metadata={"category": "appearances"},
+            evaluators=[ExactFragmentCount()],
+        ),
+        # --- timeline ---
+        Case(
+            name="convoi_scene1_date",
+            inputs="scene_date:scene-test-001-le-signal",
+            expected_output="2061",
+            metadata={"category": "timeline"},
+            evaluators=[SceneDateContainsKeywords()],
+        ),
+        # --- locations ---
+        Case(
+            name="convoi_helios_location",
+            inputs="locations",
+            expected_output="helios",
+            metadata={"category": "extraction"},
+            evaluators=[LocationContainsKeyword()],
+        ),
+        Case(
+            name="convoi_neosantiago_location",
+            inputs="locations",
+            expected_output="neo",
+            metadata={"category": "extraction"},
+            evaluators=[LocationContainsKeyword()],
+        ),
+        # --- consistency (regression tests) ---
+        Case(
+            name="convoi_bilocalization_exact_count",
+            inputs="all_issues",
+            expected_output="3",
+            metadata={"category": "consistency", "difficulty": "hard"},
+            evaluators=[ExactIssueCountByType(issue_type="bilocalization")],
+        ),
+        Case(
+            name="convoi_no_anachronique_issue",
+            inputs="all_issues",
+            expected_output="anachronique",
+            metadata={"category": "consistency", "difficulty": "hard"},
+            evaluators=[NoIssueDescriptionContains()],
+        ),
+        Case(
+            name="convoi_lena_in_biloc_desc",
+            inputs="all_issues",
+            expected_output="lena",
+            metadata={"category": "consistency"},
+            evaluators=[IssueDescriptionContains()],
+        ),
+        # --- relations ---
+        Case(
+            name="convoi_marco_lena_related",
+            inputs="relations:lena-voss",
+            expected_output="marco-ruiz",
+            metadata={"category": "relations"},
+            evaluators=[RelationWithCharPresent()],
+        ),
+    ],
+)
+
 INGEST_DATASET: Dataset[str, Any] = Dataset(
     cases=[
         # --- scene 001 ---
@@ -436,6 +534,13 @@ INGEST_DATASET: Dataset[str, Any] = Dataset(
             expected_output="Pixel",
             metadata={"category": "negative", "scene": "test-002"},
             evaluators=[NoCharacterPresent()],
+        ),
+        Case(
+            name="test2_marco_no_ephemeral_physical",
+            inputs="test-002-le-convoi.txt",
+            expected_output="",
+            metadata={"category": "physical_description", "scene": "test-002", "difficulty": "medium"},
+            evaluators=[NoEphemeralPhysicalDescription(character="Marco Ruiz")],
         ),
         Case(
             name="test3_all_characters",
@@ -738,9 +843,10 @@ def _show_history(suite: str | None, *, diff: bool = False) -> None:
 
 
 SUITES: dict[str, tuple[Dataset, Any, str]] = {
-    "pipeline": (PIPELINE_DATASET, build_pipeline_task, "Pipeline Eval"),
-    "ingest":   (INGEST_DATASET,   analyze_scene_task,   "Ingest Eval"),
-    "chatbot":  (CHATBOT_DATASET,  felix_task,           "Chat Agent Eval"),
+    "pipeline":        (PIPELINE_DATASET, make_pipeline_task("helios"),  "Pipeline Eval (Helios)"),
+    "pipeline-convoi": (CONVOI_DATASET,   make_pipeline_task("convoi"),  "Pipeline Eval (Convoi)"),
+    "ingest":          (INGEST_DATASET,   analyze_scene_task,            "Ingest Eval"),
+    "chatbot":         (CHATBOT_DATASET,  felix_task,                    "Chat Agent Eval"),
 }
 
 # ---------------------------------------------------------------------------

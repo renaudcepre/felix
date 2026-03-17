@@ -152,3 +152,56 @@ class NoCharacterPresent(Evaluator[str, SceneAnalysis]):
         extracted = [c.name.lower() for c in ctx.output.characters]
         found = any(target in name or name in target for name in extracted)
         return {"absent_pass": not found}
+
+
+# Termes indiquant un état physique éphémère (pas une caractéristique permanente).
+_EPHEMERAL_PHYSICAL_TERMS = [
+    "yeux rouges",
+    "fatigue",
+    "une main sur",
+    "main sur le",
+    "tient",
+    "conduit depuis",
+    "assis",
+    "debout",
+    "se leve",
+    "transpire",
+    "saigne",
+    "blesse",
+]
+
+
+@dataclass
+class NoEphemeralPhysicalDescription(Evaluator[str, SceneAnalysis]):
+    """Check that a character's description contains no ephemeral physical state.
+
+    A physical description must describe permanent traits (height, build, scars…),
+    not momentary states (tired, red eyes, hand on the wheel…).
+
+    character: name of the character to check.
+    """
+
+    character: str = ""
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, SceneAnalysis]
+    ) -> dict[str, bool | str]:
+        target_name = normalize(self.character)
+        matched = next(
+            (
+                c
+                for c in ctx.output.characters
+                if target_name in normalize(c.name) or normalize(c.name) in target_name
+            ),
+            None,
+        )
+        if matched is None:
+            return {"no_ephemeral_physical": False, "reason": f"{self.character} not found"}
+
+        desc = normalize(matched.description or "")
+        flagged = [t for t in _EPHEMERAL_PHYSICAL_TERMS if t in desc]
+        return {
+            "no_ephemeral_physical": not flagged,
+            "flagged_terms": ", ".join(flagged) if flagged else "none",
+            "description_got": matched.description or "(none)",
+        }

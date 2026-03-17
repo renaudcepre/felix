@@ -32,18 +32,12 @@ evals *args:
 db-clean:
     rm -f {{ db_path }}
     rm -rf {{ chroma_path }}
-    @echo "DB and ChromaDB cleaned."
+    docker compose exec neo4j cypher-shell -u neo4j -p felixpassword "MATCH (n) DETACH DELETE n"
+    @echo "DB, ChromaDB and Neo4j cleaned."
 
 # Archive database then clean
 db-archive:
     mkdir -p {{ archive_dir }}
-    @if [ -f {{ db_path }} ]; then \
-        ts=$(date +%Y%m%d-%H%M%S); \
-        cp {{ db_path }} {{ archive_dir }}/felix-${ts}.db; \
-        echo "Archived to {{ archive_dir }}/felix-${ts}.db"; \
-    else \
-        echo "No DB to archive."; \
-    fi
     @if [ -d {{ chroma_path }} ]; then \
         ts=$(date +%Y%m%d-%H%M%S); \
         tar -czf {{ archive_dir }}/chroma-${ts}.tar.gz {{ chroma_path }}; \
@@ -51,4 +45,5 @@ db-archive:
     fi
     rm -f {{ db_path }}
     rm -rf {{ chroma_path }}
+    docker compose exec neo4j cypher-shell -u neo4j -p felixpassword "MATCH (n) DETACH DELETE n"
     @echo "Cleaned."

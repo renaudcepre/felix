@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from neo4j import AsyncDriver
 
 import chromadb
 
-from felix.db.repository import get_character_fragments, get_character_profile, get_character_relations, list_issues, list_scenes
-from felix.db.schema import init_db
-from felix.db.seed import seed_db
+from felix.graph.repository import (
+    get_character_fragments,
+    get_character_profile,
+    get_character_relations,
+    list_issues,
+    list_scenes,
+)
 from felix.ingest.models import (
     CharacterProfile,
     ConsistencyIssue,
@@ -88,14 +93,6 @@ CONSISTENCY_REPORT = ConsistencyReport(
 
 
 @pytest.fixture
-async def db() -> aiosqlite.Connection:
-    conn = await init_db(":memory:")
-    await seed_db(conn)
-    yield conn  # type: ignore[misc]
-    await conn.close()
-
-
-@pytest.fixture
 def collection() -> chromadb.Collection:
     client = chromadb.Client()
     return client.get_or_create_collection("test_scenes")
@@ -122,7 +119,7 @@ def _mock_analyze_scene(analyses: list[SceneAnalysis]):
 
 
 def _mock_check_scene_consistency(report: ConsistencyReport):
-    async def _check(_db, _collection, _scene_summary, _timeline_agent, _narrative_agent):
+    async def _check(_driver, _collection, _scene_summary, _timeline_agent, _narrative_agent):
         return report
 
     return _check
@@ -152,7 +149,6 @@ def _mock_patch_character_profile(profile: CharacterProfile):
 
 
 def _pipeline_patches(analyses, report, profile=None):
-    """Context manager with all standard pipeline mocks."""
     patches = [
         patch(
             "felix.ingest.pipeline.analyze_scene",
@@ -164,7 +160,6 @@ def _pipeline_patches(analyses, report, profile=None):
         ),
         patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
         patch("felix.ingest.pipeline.create_checker_agents", return_value=(None, None)),
-        patch("felix.ingest.pipeline.init_graph", return_value=None),
         patch("felix.ingest.pipeline.create_profiler_agent", return_value=None),
     ]
     if profile is not None:
@@ -180,148 +175,128 @@ def _pipeline_patches(analyses, report, profile=None):
                 side_effect=_mock_patch_character_profile(profile),
             )
         )
-    import contextlib
-    return contextlib.ExitStack(), patches
+    return patches
 
 
-async def _run_with_patches(analyses, report, scenes_dir, db, collection, progress, *, enrich_profiles=False, profile=None):
-    """Helper to run pipeline with all mocks applied."""
-    _, patches = _pipeline_patches(analyses, report, profile)
-    if profile is not None:
-        # profile mock already in patches
-        pass
+async def _run_with_patches(analyses, report, scenes_dir, driver, collection, progress, *, enrich_profiles=False, profile=None):
+    patches = _pipeline_patches(analyses, report, profile)
     with contextlib.ExitStack() as stack:
         for p in patches:
             stack.enter_context(p)
         await run_import_pipeline(
-            scenes_dir, db, collection, None, None, progress,
+            scenes_dir, driver, collection, None, None, progress,
             enrich_profiles=enrich_profiles,
         )
 
 
-import contextlib
-
-
 async def test_pipeline_full(
-    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress,
+        scenes_dir, seeded_driver, collection, progress,
     )
 
     assert progress.status == ImportStatus.DONE
     assert progress.processed_scenes == 3
     assert progress.total_scenes == 3
 
-    # Scenes in DB
-    scenes = await list_scenes(db)
+    scenes = await list_scenes(seeded_driver)
     assert len(scenes) == 3
     ids = {s["id"] for s in scenes}
     assert "scene-001" in ids
     assert "scene-002" in ids
     assert "scene-003" in ids
 
-    # Issues in DB (1 from consistency check + possible resolver issues)
-    issues = await list_issues(db)
+    issues = await list_issues(seeded_driver)
     assert any(i["type"] == "missing_info" for i in issues)
 
-    # New entities tracked
     assert "Jacques Martin" in progress.new_characters
     assert "Gare de Lyon-Perrache" in progress.new_locations
 
-    # ChromaDB
     results = collection.get(ids=["scene-001"])
     assert len(results["ids"]) == 1
 
 
 async def test_pipeline_empty_dir(
-    db: aiosqlite.Connection, collection: chromadb.Collection, tmp_path
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, tmp_path
 ) -> None:
     progress = ImportProgress()
-    await run_import_pipeline(str(tmp_path), db, collection, None, None, progress)
+    await run_import_pipeline(str(tmp_path), seeded_driver, collection, None, None, progress)
     assert progress.status == ImportStatus.ERROR
     assert "Aucun fichier" in progress.error
 
 
 async def test_pipeline_idempotent(
-    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress,
+        scenes_dir, seeded_driver, collection, progress,
     )
 
-    # Run again
     progress2 = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress2,
+        scenes_dir, seeded_driver, collection, progress2,
     )
 
     assert progress2.status == ImportStatus.DONE
-    # Scenes should not duplicate
-    scenes = await list_scenes(db)
+    scenes = await list_scenes(seeded_driver)
     assert len(scenes) == 3
 
 
 async def test_fragments_stored(
-    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
-    """Phase A: character_fragments populated after import."""
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress,
+        scenes_dir, seeded_driver, collection, progress,
     )
 
-    # Marie Dupont should have a fragment for scene-001
-    fragments = await get_character_fragments(db, "marie-dupont")
+    fragments = await get_character_fragments(seeded_driver, "marie-dupont")
     assert len(fragments) >= 1
     frag = fragments[0]
     assert frag["role"] == "participant"
     assert "quarantaine" in (frag["description"] or "")
 
-    # Jacques Martin (new character) should also have fragments
-    fragments_jm = await get_character_fragments(db, "jacques-martin")
+    fragments_jm = await get_character_fragments(seeded_driver, "jacques-martin")
     assert len(fragments_jm) == 1
     assert "accent du sud" in (fragments_jm[0]["description"] or "")
 
 
 async def test_format_profile_includes_fragments(
-    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
-    """Phase A: _format_character_profile includes fragments section."""
-    from felix.db.formatters import _format_character_profile
+    from felix.graph.formatters import _format_character_profile
 
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress,
+        scenes_dir, seeded_driver, collection, progress,
     )
 
-    row = await get_character_profile(db, "marie-dupont")
+    row = await get_character_profile(seeded_driver, "marie-dupont")
     assert row is not None
-    profile_text = await _format_character_profile(db, row)
+    profile_text = await _format_character_profile(seeded_driver, row)
     assert "Observations par scene" in profile_text
     assert "quarantaine" in profile_text
 
 
 async def test_profiling_enriches_characters(
-    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
-    """Phase B: profiling fills character profile fields on new characters."""
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress,
+        scenes_dir, seeded_driver, collection, progress,
         enrich_profiles=True, profile=MOCK_PROFILE,
     )
 
-    # Jacques Martin is a new character (not in seed) — all fields should be filled
-    row = await get_character_profile(db, "jacques-martin")
+    row = await get_character_profile(seeded_driver, "jacques-martin")
     assert row is not None
     assert row["age"] == "40 ans"
     assert row["physical"] == "Cheveux bruns, taille moyenne"
@@ -331,53 +306,47 @@ async def test_profiling_enriches_characters(
 
 
 async def test_no_profiling_when_disabled(
-    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
-    """Phase B: enrich_profiles=False keeps profile fields NULL."""
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress,
+        scenes_dir, seeded_driver, collection, progress,
         enrich_profiles=False,
     )
 
-    row = await get_character_profile(db, "jacques-martin")
+    row = await get_character_profile(seeded_driver, "jacques-martin")
     assert row is not None
-    assert row["age"] is None
-    assert row["physical"] is None
-    assert row["background"] is None
+    assert row.get("age") is None
+    assert row.get("physical") is None
+    assert row.get("background") is None
 
 
 async def test_coalesce_preserves_existing_data(
-    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
-    """Phase B: COALESCE doesn't overwrite non-null fields."""
-    # First run without profiling to create Jacques Martin with NULL fields
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress,
+        scenes_dir, seeded_driver, collection, progress,
     )
 
     # Manually set age on Jacques Martin
-    await db.execute(
-        "UPDATE characters SET age = '35 ans' WHERE id = 'jacques-martin'"
-    )
-    await db.commit()
+    async with seeded_driver.session() as session:
+        await session.run(
+            "MATCH (c:Character {id: 'jacques-martin'}) SET c.age = '35 ans'"
+        )
 
-    # Now run again with profiling
     progress2 = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress2,
+        scenes_dir, seeded_driver, collection, progress2,
         enrich_profiles=True, profile=MOCK_PROFILE,
     )
 
-    row = await get_character_profile(db, "jacques-martin")
+    row = await get_character_profile(seeded_driver, "jacques-martin")
     assert row is not None
-    # age should keep the manually set value, not be overwritten by profiler
     assert row["age"] == "35 ans"
-    # background was NULL, so profiler fills it
     assert row["background"] == "Resistante lyonnaise"
 
 
@@ -394,18 +363,16 @@ MOCK_PROFILE_WITH_RELATIONS = CharacterProfile(
 
 
 async def test_profiling_stores_relations(
-    db: aiosqlite.Connection, collection: chromadb.Collection, scenes_dir: str
+    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
-    """Phase B: profiler-extracted relations are stored in character_relations."""
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, db, collection, progress,
+        scenes_dir, seeded_driver, collection, progress,
         enrich_profiles=True, profile=MOCK_PROFILE_WITH_RELATIONS,
     )
 
-    # Jacques Martin should have a relation with Marie Dupont
-    rels = await get_character_relations(db, "jacques-martin")
+    rels = await get_character_relations(seeded_driver, "jacques-martin")
     assert len(rels) >= 1
     rel_names = [r["other_name"] for r in rels]
     assert "Marie Dupont" in rel_names
