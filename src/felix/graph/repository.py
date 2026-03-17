@@ -239,8 +239,8 @@ async def upsert_character_fragment(
         await tx.run(
             """
             MATCH (c:Character {id: $cid}), (s:Scene {id: $sid})
-            MERGE (c)-[r:PRESENT_IN {role: $role}]->(s)
-            SET r.description = $description
+            MERGE (c)-[r:PRESENT_IN]->(s)
+            SET r.role = $role, r.description = $description
             """,
             cid=character_id,
             sid=scene_id,
@@ -369,6 +369,10 @@ async def upsert_scene(driver: AsyncDriver, scene: dict[str, Any]) -> None:
             date=scene["date"],
             raw_text=scene["raw_text"],
         )
+        await tx.run(
+            "MATCH (s:Scene {id: $sid})-[r:AT_LOCATION]->() DELETE r",
+            sid=scene["id"],
+        )
         if scene.get("location_id"):
             await tx.run(
                 """
@@ -485,7 +489,8 @@ async def upsert_character_event(
         await tx.run(
             """
             MATCH (c:Character {id: $cid}), (e:TimelineEvent {id: $eid})
-            MERGE (c)-[r:PARTICIPATES_IN {role: $role}]->(e)
+            MERGE (c)-[r:PARTICIPATES_IN]->(e)
+            SET r.role = $role
             """,
             cid=character_id,
             eid=event_id,
@@ -597,7 +602,7 @@ async def list_issues(
               AND ($resolved IS NULL OR i.resolved = $resolved)
             OPTIONAL MATCH (s:Scene)-[:HAS_ISSUE]->(i)
             RETURN i, s.id AS scene_id
-            ORDER BY i.id DESC
+            ORDER BY i.created_at DESC
             """,
             type=type,
             severity=severity,
@@ -646,6 +651,7 @@ async def create_issue(driver: AsyncDriver, issue: dict[str, Any]) -> None:
         await tx.run(
             """
             MERGE (i:Issue {id: $id})
+            ON CREATE SET i.created_at = datetime()
             SET i.type = $type, i.severity = $severity,
                 i.entity_id = $entity_id, i.description = $description,
                 i.suggestion = $suggestion, i.resolved = $resolved

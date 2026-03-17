@@ -239,7 +239,7 @@ uv run pytest               # all tests
 uv run pytest tests/test_pipeline.py -v
 ```
 
-Tests spin up a real Neo4j instance via testcontainers — no mocking.
+Tests connect to a real Neo4j instance at `bolt://localhost:7687` (the same Docker instance used for development) — no mocking.
 
 ### Linting
 
