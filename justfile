@@ -35,6 +35,10 @@ db-clean:
     docker compose exec neo4j cypher-shell -u neo4j -p felixpassword "MATCH (n) DETACH DELETE n"
     @echo "DB, ChromaDB and Neo4j cleaned."
 
+# Export graph DB vers exports/<timestamp>.json
+export:
+    uv run felix-export
+
 # Archive database then clean
 db-archive:
     mkdir -p {{ archive_dir }}
