@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
     from felix.ingest.models import SceneAnalysis
 
+from pydantic_ai.exceptions import ModelHTTPError
+
 from felix.config import SCENE_FILE_EXTENSIONS
 from felix.graph.checks import check_bilocalization
 from felix.graph.repository import (
@@ -720,18 +722,18 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                         profiler,
                         profiler_patch,
                     )
+            except ModelHTTPError as e:
+                logger.error("Scene processing failed: %s — HTTP %s: %s", scene_file.name, e.status_code, e)
+                progress.failed_scenes += 1
+                progress.processed_scenes += 1
+                if queue:
+                    await _emit(queue, "scene_error", scene_id=f"scene-{scene_file.stem}", filename=scene_file.name, error=str(e))
             except Exception as e:
                 logger.exception("Scene processing failed: %s", scene_file.name)
                 progress.failed_scenes += 1
                 progress.processed_scenes += 1
                 if queue:
-                    await _emit(
-                        queue,
-                        "scene_error",
-                        scene_id=f"scene-{scene_file.stem}",
-                        filename=scene_file.name,
-                        error=str(e),
-                    )
+                    await _emit(queue, "scene_error", scene_id=f"scene-{scene_file.stem}", filename=scene_file.name, error=str(e))
 
         if scenes_processed == 0:
             progress.error = f"Toutes les scenes ont echoue ({progress.failed_scenes}/{progress.total_scenes})"

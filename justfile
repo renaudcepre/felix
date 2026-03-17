@@ -24,6 +24,10 @@ api:
 web:
     cd web && pnpm dev
 
+# Lance les tests pytest
+test *args:
+    uv run pytest {{ args }}
+
 # Evals (auto-detect LM Studio ou Together AI) — options: --suite, --case, --list, --together, --local
 evals *args:
     uv run python -m evals.run_evals {{ args }}

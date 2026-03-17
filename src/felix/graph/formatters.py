@@ -58,22 +58,25 @@ async def find_character(driver: AsyncDriver, name: str) -> str:
             WHERE toLower(c.name) CONTAINS toLower($name)
                OR any(a IN c.aliases WHERE toLower(a) CONTAINS toLower($name))
             WITH c ORDER BY c.era, c.name
-            OPTIONAL MATCH (c)-[rel:RELATED_TO]-(other:Character)
-            WITH c, collect(DISTINCT CASE WHEN rel IS NOT NULL THEN {
-                relation_type: rel.relation_type,
-                other_name: other.name,
-                era: rel.era,
-                description: rel.description
-            } END) AS relations
-            OPTIONAL MATCH (c)-[r:PRESENT_IN]->(s:Scene)
-            RETURN c,
-                   relations,
-                   collect(DISTINCT CASE WHEN r IS NOT NULL THEN {
-                       scene_id: s.id,
-                       scene_title: s.title,
-                       role: r.role,
-                       description: r.description
-                   } END) AS fragments
+            CALL (c) {
+                MATCH (c)-[rel:RELATED_TO]-(other:Character)
+                RETURN collect({
+                    relation_type: rel.relation_type,
+                    other_name: other.name,
+                    era: rel.era,
+                    description: rel.description
+                }) AS relations
+            }
+            CALL (c) {
+                MATCH (c)-[r:PRESENT_IN]->(s:Scene)
+                RETURN collect({
+                    scene_id: s.id,
+                    scene_title: s.title,
+                    role: r.role,
+                    description: r.description
+                }) AS fragments
+            }
+            RETURN c, relations, fragments
             """,
             name=name,
         )
@@ -95,10 +98,7 @@ async def find_character(driver: AsyncDriver, name: str) -> str:
 
     profiles = []
     for row in rows:
-        char_data = dict(row["c"])
-        relations = [r for r in row["relations"] if r is not None]
-        fragments = [f for f in row["fragments"] if f is not None]
-        profiles.append(_format_character_profile(char_data, relations, fragments))
+        profiles.append(_format_character_profile(dict(row["c"]), row["relations"], row["fragments"]))
 
     return "\n---\n".join(profiles)
 
