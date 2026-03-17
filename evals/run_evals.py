@@ -25,7 +25,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 
-from evals._runner import load_history, run_with_spinners, setup_model_env
+from evals._runner import load_history, run_suite_async, setup_model_env
 from evals.evaluators import ContainsExpectedFacts, RefusesToFabricate
 from evals.ingest.evaluators import (
     CharacterRoleAccuracy,
@@ -906,24 +906,28 @@ def main(
         border_style="cyan",
     ))
 
-    for suite_name, (ds, task_fn, title) in suites_to_run.items():
-        if len(suites_to_run) > 1:
-            console.print(Rule(f"[bold]{title}[/bold]"))
+    import asyncio
 
-        if case:
-            if not suite:
-                console.print("[red]--case requires --suite[/red]")
-                raise typer.Exit(1)
-            cases = [c for c in ds.cases if c.name == case]
-            if not cases:
-                console.print(f"[red]Case '{case}' not found.[/red] Use [cyan]--list[/cyan] to see available cases.")
-                raise typer.Exit(1)
-            active_ds = ds.__class__(cases=cases)
-        else:
-            active_ds = ds
+    async def _run_all() -> None:
+        for suite_name, (ds, task_fn, title) in suites_to_run.items():
+            if len(suites_to_run) > 1:
+                console.print(Rule(f"[bold]{title}[/bold]"))
 
-        run_with_spinners(active_ds, task_fn, report_name=suite_name)
+            if case:
+                if not suite:
+                    console.print("[red]--case requires --suite[/red]")
+                    raise typer.Exit(1)
+                cases = [c for c in ds.cases if c.name == case]
+                if not cases:
+                    console.print(f"[red]Case '{case}' not found.[/red] Use [cyan]--list[/cyan] to see available cases.")
+                    raise typer.Exit(1)
+                active_ds = ds.__class__(cases=cases)
+            else:
+                active_ds = ds
 
+            await run_suite_async(active_ds, task_fn, report_name=suite_name)
+
+    asyncio.run(_run_all())
     raise typer.Exit()
 
 
