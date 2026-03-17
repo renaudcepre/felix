@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     db_path: Path = Path("data/felix.db")
     chroma_path: str = "chroma_data"
+    kuzu_path: str = "kuzu_data"
 
 
 settings = Settings()  # type: ignore[call-arg]

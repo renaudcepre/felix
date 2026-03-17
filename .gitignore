@@ -12,6 +12,7 @@ build/
 # Runtime data
 data/felix.db
 chroma_data/
+kuzu_data
 
 # IDE
 .idea/

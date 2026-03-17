@@ -17,7 +17,7 @@ from felix.api.models import (
     SceneSummary,
 )
 from felix.db.repository import list_issues, list_scenes, update_issue_resolved
-from felix.config import SCENE_FILE_EXTENSIONS
+from felix.config import SCENE_FILE_EXTENSIONS, settings
 from felix.ingest.pipeline import (
     ClarificationSlot,
     EventQueue,
@@ -76,6 +76,7 @@ async def start_import(
         run_import_pipeline(
             tmp_dir, db, collection, model_name, base_url, new_progress,
             enrich_profiles=enrich,
+            kuzu_path=settings.kuzu_path,
         )
     )
 
@@ -131,6 +132,7 @@ async def import_stream(
             queue,
             pending,
             enrich_profiles=enrich,
+            kuzu_path=settings.kuzu_path,
         )
     )
     request.app.state.import_task = task

@@ -13,10 +13,14 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     import aiosqlite
     import chromadb
+    import kuzu
 
     from felix.ingest.models import SceneAnalysis
 
 from felix.config import SCENE_FILE_EXTENSIONS
+from felix.graph.checks import check_bilocalization
+from felix.graph.schema import init_graph
+from felix.graph.writer import delete_scenes, write_scene
 from rapidfuzz import fuzz
 
 from felix.db.repository import (
@@ -413,6 +417,7 @@ class _PipelineContext:
     progress: ImportProgress
     queue: EventQueue | None
     pending_clarifications: dict[str, ClarificationSlot] | None
+    graph: kuzu.Database | None = None
     char_registry: dict[str, str] = field(default_factory=dict)
     char_aliases: dict[str, list[str]] = field(default_factory=dict)
     loc_registry: dict[str, str] = field(default_factory=dict)
@@ -689,6 +694,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
     queue: EventQueue | None = None,
     pending_clarifications: dict[str, ClarificationSlot] | None = None,
     enrich_profiles: bool = True,
+    kuzu_path: str | None = None,
 ) -> None:
     ctx = _PipelineContext(
         db=db,
@@ -722,7 +728,11 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.char_details = await _load_registries(
             db
         )
-        await delete_issues_for_scenes(db, [f"scene-{f.stem}" for f in scene_files])
+        scene_ids = [f"scene-{f.stem}" for f in scene_files]
+        await delete_issues_for_scenes(db, scene_ids)
+        ctx.graph = init_graph(kuzu_path)
+        if ctx.graph is not None:
+            delete_scenes(ctx.graph, scene_ids)
 
         analyzer = create_analyzer_agent(model_name, base_url)
         timeline_checker, narrative_checker = create_checker_agents(model_name, base_url)
@@ -741,6 +751,13 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 scenes_processed += 1
 
                 await _check_scene(ctx, summary, timeline_checker, narrative_checker)
+
+                if ctx.graph is not None:
+                    write_scene(ctx.graph, summary)
+                    graph_issues = check_bilocalization(ctx.graph, summary["scene_id"])
+                    for issue in graph_issues:
+                        await create_issue(db, issue)
+                    progress.issues_found += len(graph_issues)
 
                 if enrich_profiles:
                     await _profile_scene_characters(

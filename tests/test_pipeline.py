@@ -164,6 +164,7 @@ def _pipeline_patches(analyses, report, profile=None):
         ),
         patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
         patch("felix.ingest.pipeline.create_checker_agents", return_value=(None, None)),
+        patch("felix.ingest.pipeline.init_graph", return_value=None),
         patch("felix.ingest.pipeline.create_profiler_agent", return_value=None),
     ]
     if profile is not None:
