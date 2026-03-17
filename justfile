@@ -4,7 +4,6 @@
 # just api      → API seule
 # just web      → frontend seul
 
-db_path := "data/felix.db"
 chroma_path := "chroma_data"
 archive_dir := "data/archives"
 
@@ -34,10 +33,9 @@ evals *args:
 
 # Remove database and vector store
 db-clean:
-    rm -f {{ db_path }}
     rm -rf {{ chroma_path }}
     docker compose exec neo4j cypher-shell -u neo4j -p felixpassword "MATCH (n) DETACH DELETE n"
-    @echo "DB, ChromaDB and Neo4j cleaned."
+    @echo "ChromaDB and Neo4j cleaned."
 
 # Export graph DB vers exports/<timestamp>.json
 export:
@@ -51,7 +49,6 @@ db-archive:
         tar -czf {{ archive_dir }}/chroma-${ts}.tar.gz {{ chroma_path }}; \
         echo "Archived to {{ archive_dir }}/chroma-${ts}.tar.gz"; \
     fi
-    rm -f {{ db_path }}
     rm -rf {{ chroma_path }}
     docker compose exec neo4j cypher-shell -u neo4j -p felixpassword "MATCH (n) DETACH DELETE n"
     @echo "Cleaned."
