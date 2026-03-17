@@ -188,16 +188,6 @@ async def run_suite_async(
     return EvaluationReport(name=report_name, cases=all_report_cases, failures=all_failures)
 
 
-def run_with_spinners(
-    active_dataset: Dataset,
-    task_fn: Callable[[Any], Awaitable[Any]] | Callable[[Any], Any],
-    report_name: str = "eval",
-) -> EvaluationReport:
-    """Sync wrapper around run_suite_async — use run_suite_async directly when already inside an event loop."""
-    import asyncio
-    return asyncio.run(run_suite_async(active_dataset, task_fn, report_name))
-
-
 HISTORY_FILE = RESULTS_DIR / "history.jsonl"
 
 

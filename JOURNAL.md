@@ -1,5 +1,24 @@
 # Journal de developpement — Felix
 
+## Code review fixes — 2026-03-17
+
+**Objectif :** Résoudre 7 issues remontées lors de la code review post-migration Neo4j.
+
+**Changements :**
+- `src/felix/graph/writer.py` : `write_scene` → transaction atomique `execute_write()` (était plusieurs `session.run()` auto-commit)
+- `src/felix/config.py` + `.env.example` : documenter le password dev-only, créer fichier d'exemple complet
+- `src/felix/graph/repository.py` : migration complète vers `execute_read/execute_write()` avec `AsyncManagedTransaction` ; fix N+1 dans `get_timeline_rows` (COLLECT en Cypher) et `get_location_detail` ; ajout `get_issue_by_id()`
+- `src/felix/graph/checks.py` : `check_bilocalization` → `execute_read()`
+- `src/felix/graph/formatters.py` : `find_character` consolidée en une seule requête Cypher (OPTIONAL MATCH relations + fragments) — de N+2 sessions à 1 session par appel ; `_format_character_profile` devient synchrone
+- `src/felix/api/routes/ingest.py` : `patch_issue` utilise `get_issue_by_id()` au lieu de `list_issues()` + scan linéaire
+- `src/felix/ingest/pipeline.py` : `read_text` et `glob` via `asyncio.to_thread` (plus de blocage I/O sur l'event loop)
+- `src/felix/api/main.py` : commentaire explicatif sur l'ordre de `setup_logfire()` (instrumenter avant pydantic-ai)
+- `evals/_runner.py` : suppression de `run_with_spinners` (dead code depuis l'unification en `asyncio.run()` unique)
+
+**Tests :** 86/86 passent. `test_format_profile_includes_fragments` mis à jour pour utiliser l'API publique `find_character`.
+
+---
+
 ## Isolation evals par récit + fix bilocalization dedup — 2026-03-17
 
 **Objectif :** Isoler les fixtures d'evals par récit (un sous-dossier par histoire), corriger le bug de déduplication bilocalization (IDs aléatoires → MERGE ne dédupliquait pas), et ajouter un dataset Convoi avec 12 cas d'évaluation dont 2 tests de régression directs.

@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from neo4j import AsyncDriver
+    from neo4j import AsyncDriver, AsyncManagedTransaction
 
 
 # ---------------------------------------------------------------------------
@@ -13,34 +13,38 @@ if TYPE_CHECKING:
 
 
 async def list_all_characters(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             "MATCH (c:Character) RETURN c.id AS id, c.name AS name, c.era AS era"
             " ORDER BY c.era, c.name"
         )
         return [dict(r) for r in await result.data()]
 
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
 
 async def get_character_profile(
     driver: AsyncDriver, char_id: str
 ) -> dict[str, Any] | None:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> dict[str, Any] | None:
+        result = await tx.run(
             "MATCH (c:Character {id: $id}) RETURN c", id=char_id
         )
         record = await result.single()
         if not record:
             return None
-        node = dict(record["c"])
-        # aliases is stored natively as LIST<STRING>; keep as-is
-        return node
+        return dict(record["c"])
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 async def get_character_relations(
     driver: AsyncDriver, char_id: str
 ) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (c:Character {id: $id})-[r:RELATED_TO]-(other:Character)
             RETURN r.relation_type AS relation_type,
@@ -52,20 +56,26 @@ async def get_character_relations(
         )
         return [dict(r) for r in await result.data()]
 
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
 
 async def list_all_characters_full(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             "MATCH (c:Character) RETURN c ORDER BY c.era, c.name"
         )
         return [dict(r["c"]) for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 async def upsert_character_minimal(
     driver: AsyncDriver, char: dict[str, Any]
 ) -> None:
-    async with driver.session() as session:
-        await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MERGE (c:Character {id: $id})
             ON CREATE SET c.name = $name, c.era = $era
@@ -75,12 +85,15 @@ async def upsert_character_minimal(
             era=char.get("era"),
         )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 async def update_character_profile(
     driver: AsyncDriver, char_id: str, profile: dict[str, str | None]
 ) -> None:
-    async with driver.session() as session:
-        await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MATCH (c:Character {id: $id})
             SET c.age        = CASE WHEN c.age IS NULL THEN $age ELSE c.age END,
@@ -97,6 +110,9 @@ async def update_character_profile(
             traits=profile.get("traits"),
         )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 def _nullify_empty(v: str | None) -> str | None:
     return v if v and v.strip() else None
@@ -105,8 +121,8 @@ def _nullify_empty(v: str | None) -> str | None:
 async def patch_character_profile_fields(
     driver: AsyncDriver, char_id: str, profile: dict[str, str | None]
 ) -> None:
-    async with driver.session() as session:
-        await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MATCH (c:Character {id: $id})
             SET c.age      = CASE WHEN $age IS NOT NULL THEN $age ELSE c.age END,
@@ -132,6 +148,9 @@ async def patch_character_profile_fields(
             traits=_nullify_empty(profile.get("traits")),
         )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 # ---------------------------------------------------------------------------
 # Character relations
@@ -144,8 +163,9 @@ async def get_relation_types_for_pair(
     char_id_b: str,
 ) -> list[str]:
     a, b = sorted([char_id_a, char_id_b])
-    async with driver.session() as session:
-        result = await session.run(
+
+    async def _read(tx: AsyncManagedTransaction) -> list[str]:
+        result = await tx.run(
             """
             MATCH (a:Character {id: $a})-[r:RELATED_TO]-(b:Character {id: $b})
             RETURN r.relation_type AS relation_type
@@ -154,6 +174,9 @@ async def get_relation_types_for_pair(
             b=b,
         )
         return [r["relation_type"] for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 async def upsert_character_relation(
@@ -165,8 +188,9 @@ async def upsert_character_relation(
     era: str | None = None,
 ) -> None:
     a, b = sorted([char_id_a, char_id_b])
-    async with driver.session() as session:
-        await session.run(
+
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MATCH (a:Character {id: $a}), (b:Character {id: $b})
             MERGE (a)-[r:RELATED_TO {relation_type: $relation_type}]-(b)
@@ -179,10 +203,13 @@ async def upsert_character_relation(
             era=era,
         )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 async def list_all_character_relations(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (a:Character)-[r:RELATED_TO]->(b:Character)
             RETURN a.id AS character_id_a, b.id AS character_id_b,
@@ -191,6 +218,9 @@ async def list_all_character_relations(driver: AsyncDriver) -> list[dict[str, An
             """
         )
         return [dict(r) for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 # ---------------------------------------------------------------------------
@@ -205,8 +235,8 @@ async def upsert_character_fragment(
     role: str | None,
     description: str | None,
 ) -> None:
-    async with driver.session() as session:
-        await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MATCH (c:Character {id: $cid}), (s:Scene {id: $sid})
             MERGE (c)-[r:PRESENT_IN {role: $role}]->(s)
@@ -218,12 +248,15 @@ async def upsert_character_fragment(
             description=description,
         )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 async def get_character_fragments(
     driver: AsyncDriver, character_id: str
 ) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (c:Character {id: $cid})-[r:PRESENT_IN]->(s:Scene)
             RETURN s.id AS scene_id, r.role AS role, r.description AS description,
@@ -234,10 +267,13 @@ async def get_character_fragments(
         )
         return [dict(r) for r in await result.data()]
 
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
 
 async def list_all_character_fragments(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (c:Character)-[r:PRESENT_IN]->(s:Scene)
             RETURN c.id AS character_id, s.id AS scene_id,
@@ -245,6 +281,9 @@ async def list_all_character_fragments(driver: AsyncDriver) -> list[dict[str, An
             """
         )
         return [dict(r) for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 # ---------------------------------------------------------------------------
@@ -255,8 +294,8 @@ async def list_all_character_fragments(driver: AsyncDriver) -> list[dict[str, An
 async def upsert_location_minimal(
     driver: AsyncDriver, loc: dict[str, Any]
 ) -> None:
-    async with driver.session() as session:
-        await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MERGE (l:Location {id: $id})
             ON CREATE SET l.name = $name, l.description = $description
@@ -266,20 +305,26 @@ async def upsert_location_minimal(
             description=loc.get("description"),
         )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 async def list_all_locations(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             "MATCH (l:Location) RETURN l ORDER BY l.era, l.name"
         )
         return [dict(r["l"]) for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 async def get_location_detail(
     driver: AsyncDriver, loc_id: str
 ) -> dict[str, Any] | None:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> dict[str, Any] | None:
+        result = await tx.run(
             "MATCH (l:Location {id: $id}) RETURN l", id=loc_id
         )
         record = await result.single()
@@ -287,7 +332,7 @@ async def get_location_detail(
             return None
         data = dict(record["l"])
 
-        scenes_result = await session.run(
+        scenes_result = await tx.run(
             """
             MATCH (s:Scene)-[:AT_LOCATION]->(l:Location {id: $id})
             RETURN s.id AS id, s.filename AS filename, s.title AS title,
@@ -299,6 +344,9 @@ async def get_location_detail(
         data["scenes"] = [dict(r) for r in await scenes_result.data()]
         return data
 
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
 
 # ---------------------------------------------------------------------------
 # Scenes
@@ -306,8 +354,8 @@ async def get_location_detail(
 
 
 async def upsert_scene(driver: AsyncDriver, scene: dict[str, Any]) -> None:
-    async with driver.session() as session:
-        await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MERGE (s:Scene {id: $id})
             SET s.filename = $filename, s.title = $title, s.summary = $summary,
@@ -322,7 +370,7 @@ async def upsert_scene(driver: AsyncDriver, scene: dict[str, Any]) -> None:
             raw_text=scene["raw_text"],
         )
         if scene.get("location_id"):
-            await session.run(
+            await tx.run(
                 """
                 MATCH (s:Scene {id: $sid}), (l:Location {id: $lid})
                 MERGE (s)-[:AT_LOCATION]->(l)
@@ -331,10 +379,13 @@ async def upsert_scene(driver: AsyncDriver, scene: dict[str, Any]) -> None:
                 lid=scene["location_id"],
             )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 async def list_scenes(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (s:Scene)
             RETURN s.id AS id, s.filename AS filename, s.title AS title,
@@ -344,6 +395,9 @@ async def list_scenes(driver: AsyncDriver) -> list[dict[str, Any]]:
         )
         return [dict(r) for r in await result.data()]
 
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
 
 async def get_scene_summaries_by_ids(
     driver: AsyncDriver,
@@ -351,8 +405,9 @@ async def get_scene_summaries_by_ids(
 ) -> list[dict[str, Any]]:
     if not scene_ids:
         return []
-    async with driver.session() as session:
-        result = await session.run(
+
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (s:Scene)
             WHERE s.id IN $ids
@@ -364,13 +419,19 @@ async def get_scene_summaries_by_ids(
         )
         return [dict(r) for r in await result.data()]
 
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
 
 async def list_all_scenes_full(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             "MATCH (s:Scene) RETURN s ORDER BY s.filename"
         )
         return [dict(r["s"]) for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 # ---------------------------------------------------------------------------
@@ -381,8 +442,8 @@ async def list_all_scenes_full(driver: AsyncDriver) -> list[dict[str, Any]]:
 async def upsert_timeline_event(
     driver: AsyncDriver, evt: dict[str, Any]
 ) -> None:
-    async with driver.session() as session:
-        await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MERGE (e:TimelineEvent {id: $id})
             SET e.date = $date, e.era = $era, e.title = $title,
@@ -395,7 +456,7 @@ async def upsert_timeline_event(
             description=evt.get("description"),
         )
         if evt.get("location_id"):
-            await session.run(
+            await tx.run(
                 """
                 MATCH (e:TimelineEvent {id: $eid}), (l:Location {id: $lid})
                 MERGE (e)-[:AT_LOCATION]->(l)
@@ -404,7 +465,7 @@ async def upsert_timeline_event(
                 lid=evt["location_id"],
             )
         if evt.get("scene_id"):
-            await session.run(
+            await tx.run(
                 """
                 MATCH (e:TimelineEvent {id: $eid}), (s:Scene {id: $sid})
                 MERGE (e)-[:FROM_SCENE]->(s)
@@ -413,12 +474,15 @@ async def upsert_timeline_event(
                 sid=evt["scene_id"],
             )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 async def upsert_character_event(
     driver: AsyncDriver, character_id: str, event_id: str, role: str
 ) -> None:
-    async with driver.session() as session:
-        await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MATCH (c:Character {id: $cid}), (e:TimelineEvent {id: $eid})
             MERGE (c)-[r:PARTICIPATES_IN {role: $role}]->(e)
@@ -427,6 +491,9 @@ async def upsert_character_event(
             eid=event_id,
             role=role,
         )
+
+    async with driver.session() as session:
+        await session.execute_write(_write)
 
 
 async def get_timeline_rows(
@@ -437,8 +504,8 @@ async def get_timeline_rows(
     date_to: str | None = None,
     location: str | None = None,
 ) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (e:TimelineEvent)
             WHERE ($era IS NULL OR e.era = $era)
@@ -446,10 +513,13 @@ async def get_timeline_rows(
               AND ($date_to   IS NULL OR e.date <= $date_to)
             OPTIONAL MATCH (e)-[:AT_LOCATION]->(l:Location)
             WITH e, l
-            WHERE $location IS NULL OR (l IS NOT NULL AND toLower(l.name) CONTAINS toLower($location))
+            WHERE $location IS NULL
+               OR (l IS NOT NULL AND toLower(l.name) CONTAINS toLower($location))
+            OPTIONAL MATCH (c:Character)-[:PARTICIPATES_IN]->(e)
             RETURN e.id AS id, e.date AS date, e.era AS era,
                    e.title AS title, e.description AS description,
-                   l.id AS location_id, l.name AS location_name
+                   l.id AS location_id, l.name AS location_name,
+                   collect({id: c.id, name: c.name}) AS characters
             ORDER BY e.date
             """,
             era=era,
@@ -457,53 +527,53 @@ async def get_timeline_rows(
             date_to=date_to,
             location=location,
         )
-        events = await result.data()
+        rows = []
+        for evt in await result.data():
+            characters_detail = [
+                {"id": c["id"], "name": c["name"]}
+                for c in evt["characters"]
+                if c["id"] is not None
+            ]
+            rows.append({
+                "id": evt["id"],
+                "date": evt["date"],
+                "era": evt["era"],
+                "title": evt["title"],
+                "description": evt["description"] or "",
+                "location": evt["location_name"] or "",
+                "location_id": evt["location_id"],
+                "characters": ", ".join(c["name"] for c in characters_detail),
+                "characters_detail": characters_detail,
+            })
+        return rows
 
-    rows: list[dict[str, Any]] = []
-    for evt in events:
-        async with driver.session() as session:
-            chars_result = await session.run(
-                """
-                MATCH (c:Character)-[r:PARTICIPATES_IN]->(e:TimelineEvent {id: $eid})
-                RETURN c.id AS character_id, c.name AS name
-                """,
-                eid=evt["id"],
-            )
-            chars = await chars_result.data()
-
-        characters_detail = [{"id": c["character_id"], "name": c["name"]} for c in chars]
-        rows.append({
-            "id": evt["id"],
-            "date": evt["date"],
-            "era": evt["era"],
-            "title": evt["title"],
-            "description": evt["description"] or "",
-            "location": evt["location_name"] or "",
-            "location_id": evt["location_id"],
-            "characters": ", ".join(c["name"] for c in characters_detail),
-            "characters_detail": characters_detail,
-        })
-
-    return rows
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 async def list_all_timeline_events(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             "MATCH (e:TimelineEvent) RETURN e ORDER BY e.date"
         )
         return [dict(r["e"]) for r in await result.data()]
 
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
 
 async def list_all_character_events(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (c:Character)-[r:PARTICIPATES_IN]->(e:TimelineEvent)
             RETURN c.id AS character_id, e.id AS event_id, r.role AS role
             """
         )
         return [dict(r) for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
 
 
 # ---------------------------------------------------------------------------
@@ -518,8 +588,8 @@ async def list_issues(
     severity: str | None = None,
     resolved: bool | None = None,
 ) -> list[dict[str, Any]]:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
             """
             MATCH (i:Issue)
             WHERE ($type IS NULL OR i.type = $type)
@@ -541,11 +611,39 @@ async def list_issues(
             rows.append(d)
         return rows
 
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
+
+async def get_issue_by_id(
+    driver: AsyncDriver, issue_id: str
+) -> dict[str, Any] | None:
+    async def _read(tx: AsyncManagedTransaction) -> dict[str, Any] | None:
+        result = await tx.run(
+            """
+            MATCH (i:Issue {id: $id})
+            OPTIONAL MATCH (s:Scene)-[:HAS_ISSUE]->(i)
+            RETURN i, s.id AS scene_id
+            """,
+            id=issue_id,
+        )
+        record = await result.single()
+        if not record:
+            return None
+        d = dict(record["i"])
+        d["scene_id"] = record["scene_id"]
+        d["resolved"] = bool(d.get("resolved", False))
+        return d
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
 
 async def create_issue(driver: AsyncDriver, issue: dict[str, Any]) -> None:
     scene_id = issue.get("scene_id")
-    async with driver.session() as session:
-        await session.run(
+
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MERGE (i:Issue {id: $id})
             SET i.type = $type, i.severity = $severity,
@@ -561,7 +659,7 @@ async def create_issue(driver: AsyncDriver, issue: dict[str, Any]) -> None:
             resolved=bool(issue.get("resolved", False)),
         )
         if scene_id:
-            await session.run(
+            await tx.run(
                 """
                 MATCH (s:Scene {id: $sid}), (i:Issue {id: $iid})
                 MERGE (s)-[:HAS_ISSUE]->(i)
@@ -570,12 +668,15 @@ async def create_issue(driver: AsyncDriver, issue: dict[str, Any]) -> None:
                 iid=issue["id"],
             )
 
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
 
 async def update_issue_resolved(
     driver: AsyncDriver, issue_id: str, resolved: bool
 ) -> bool:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _write(tx: AsyncManagedTransaction) -> bool:
+        result = await tx.run(
             """
             MATCH (i:Issue {id: $id})
             SET i.resolved = $resolved
@@ -587,14 +688,18 @@ async def update_issue_resolved(
         record = await result.single()
         return record is not None
 
+    async with driver.session() as session:
+        return await session.execute_write(_write)
+
 
 async def delete_issues_for_scenes(
     driver: AsyncDriver, scene_ids: list[str]
 ) -> None:
     if not scene_ids:
         return
-    async with driver.session() as session:
-        await session.run(
+
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
             """
             MATCH (s:Scene)-[:HAS_ISSUE]->(i:Issue)
             WHERE s.id IN $ids
@@ -602,3 +707,6 @@ async def delete_issues_for_scenes(
             """,
             ids=scene_ids,
         )
+
+    async with driver.session() as session:
+        await session.execute_write(_write)

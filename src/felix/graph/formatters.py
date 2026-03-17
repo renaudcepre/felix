@@ -4,12 +4,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from neo4j import AsyncDriver
+    from neo4j import AsyncDriver, AsyncManagedTransaction
 
 from felix.graph import repository
 
 
-async def _format_character_profile(driver: AsyncDriver, row: dict) -> str:
+def _format_character_profile(row: dict, relations: list[dict], fragments: list[dict]) -> str:
     lines = [
         f"Name: {row['name']}",
         f"Era: {row['era']}",
@@ -30,18 +30,15 @@ async def _format_character_profile(driver: AsyncDriver, row: dict) -> str:
     if row.get("status"):
         lines.append(f"Status: {row['status']}")
 
-    char_id = row["id"]
-    relations = await repository.get_character_relations(driver, char_id)
     if relations:
         lines.append("Relations:")
         for rel in relations:
-            desc = f" — {rel['description']}" if rel["description"] else ""
-            era = f" ({rel['era']})" if rel["era"] else ""
+            desc = f" — {rel['description']}" if rel.get("description") else ""
+            era = f" ({rel['era']})" if rel.get("era") else ""
             lines.append(
                 f"  - {rel['relation_type']} with {rel['other_name']}{era}{desc}"
             )
 
-    fragments = await repository.get_character_fragments(driver, char_id)
     if fragments:
         lines.append("Observations par scene:")
         for frag in fragments:
@@ -54,37 +51,61 @@ async def _format_character_profile(driver: AsyncDriver, row: dict) -> str:
 
 
 async def find_character(driver: AsyncDriver, name: str) -> str:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict]:
+        result = await tx.run(
             """
             MATCH (c:Character)
             WHERE toLower(c.name) CONTAINS toLower($name)
                OR any(a IN c.aliases WHERE toLower(a) CONTAINS toLower($name))
-            RETURN c
-            ORDER BY c.era, c.name
+            WITH c ORDER BY c.era, c.name
+            OPTIONAL MATCH (c)-[rel:RELATED_TO]-(other:Character)
+            WITH c, collect(DISTINCT CASE WHEN rel IS NOT NULL THEN {
+                relation_type: rel.relation_type,
+                other_name: other.name,
+                era: rel.era,
+                description: rel.description
+            } END) AS relations
+            OPTIONAL MATCH (c)-[r:PRESENT_IN]->(s:Scene)
+            RETURN c,
+                   relations,
+                   collect(DISTINCT CASE WHEN r IS NOT NULL THEN {
+                       scene_id: s.id,
+                       scene_title: s.title,
+                       role: r.role,
+                       description: r.description
+                   } END) AS fragments
             """,
             name=name,
         )
-        rows = [dict(r["c"]) for r in await result.data()]
+        return await result.data()
+
+    async with driver.session() as session:
+        rows = await session.execute_read(_read)
 
     if not rows:
-        async with driver.session() as session:
-            result = await session.run(
+        async def _fallback(tx: AsyncManagedTransaction) -> list[dict]:
+            result = await tx.run(
                 "MATCH (c:Character) RETURN c.name AS name ORDER BY c.era, c.name"
             )
-            names = ", ".join(r["name"] for r in await result.data())
+            return await result.data()
+
+        async with driver.session() as session:
+            names = ", ".join(r["name"] for r in await session.execute_read(_fallback))
         return f"Aucun personnage correspondant a '{name}'. Disponibles : {names}"
 
     profiles = []
     for row in rows:
-        profiles.append(await _format_character_profile(driver, row))
+        char_data = dict(row["c"])
+        relations = [r for r in row["relations"] if r is not None]
+        fragments = [f for f in row["fragments"] if f is not None]
+        profiles.append(_format_character_profile(char_data, relations, fragments))
 
     return "\n---\n".join(profiles)
 
 
 async def find_location(driver: AsyncDriver, name: str) -> str:
-    async with driver.session() as session:
-        result = await session.run(
+    async def _read(tx: AsyncManagedTransaction) -> list[dict]:
+        result = await tx.run(
             """
             MATCH (l:Location)
             WHERE toLower(l.name) CONTAINS toLower($name)
@@ -93,14 +114,20 @@ async def find_location(driver: AsyncDriver, name: str) -> str:
             """,
             name=name,
         )
-        rows = [dict(r["l"]) for r in await result.data()]
+        return [dict(r["l"]) for r in await result.data()]
+
+    async with driver.session() as session:
+        rows = await session.execute_read(_read)
 
     if not rows:
-        async with driver.session() as session:
-            result = await session.run(
+        async def _fallback(tx: AsyncManagedTransaction) -> list[dict]:
+            result = await tx.run(
                 "MATCH (l:Location) RETURN l.name AS name ORDER BY l.era, l.name"
             )
-            names = ", ".join(r["name"] for r in await result.data())
+            return await result.data()
+
+        async with driver.session() as session:
+            names = ", ".join(r["name"] for r in await session.execute_read(_fallback))
         return f"Aucun lieu correspondant a '{name}'. Disponibles : {names}"
 
     profiles = []

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from felix.telemetry import setup_logfire
 
+# Must be called before pydantic-ai imports so logfire can instrument the models.
 setup_logfire()
 
 from felix.agent.chat_agent import create_agent

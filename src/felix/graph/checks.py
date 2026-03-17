@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from neo4j import AsyncDriver
+    from neo4j import AsyncDriver, AsyncManagedTransaction
 
 _BILOCALIZATION_QUERY = """
 MATCH (c:Character)-[r1:PRESENT_IN]->(s1:Scene)-[:AT_LOCATION]->(l1:Location),
@@ -26,9 +26,12 @@ async def check_bilocalization(
     driver: AsyncDriver, scene_id: str
 ) -> list[dict[str, Any]]:
     """Detect characters present in two different locations on the same date."""
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(_BILOCALIZATION_QUERY, scene_id=scene_id)
+        return await result.data()
+
     async with driver.session() as session:
-        result = await session.run(_BILOCALIZATION_QUERY, scene_id=scene_id)
-        rows = await result.data()
+        rows = await session.execute_read(_read)
 
     issues = []
     for row in rows:

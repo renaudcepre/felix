@@ -16,7 +16,7 @@ from felix.api.models import (
     IssueUpdate,
     SceneSummary,
 )
-from felix.graph.repository import list_issues, list_scenes, update_issue_resolved
+from felix.graph.repository import get_issue_by_id, list_issues, list_scenes, update_issue_resolved
 from felix.config import SCENE_FILE_EXTENSIONS
 from felix.ingest.pipeline import (
     ClarificationSlot,
@@ -207,8 +207,7 @@ async def patch_issue(issue_id: str, body: IssueUpdate, driver: Neo4jDriver) -> 
     ok = await update_issue_resolved(driver, issue_id, body.resolved)
     if not ok:
         raise HTTPException(status_code=404, detail="Issue not found")
-    rows = await list_issues(driver)
-    row = next((r for r in rows if r["id"] == issue_id), None)
+    row = await get_issue_by_id(driver, issue_id)
     if not row:
         raise HTTPException(status_code=404, detail="Issue not found")
     return Issue(**row)

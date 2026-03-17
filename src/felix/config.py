@@ -27,6 +27,7 @@ class Settings(BaseSettings):
 
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
+    # DEV-ONLY default — override via FLX_NEO4J_PASSWORD in .env for any shared environment
     neo4j_password: str = "felixpassword"
     chroma_path: str = "chroma_data"
 

@@ -271,7 +271,7 @@ async def test_fragments_stored(
 async def test_format_profile_includes_fragments(
     seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
 ) -> None:
-    from felix.graph.formatters import _format_character_profile
+    from felix.graph.formatters import find_character
 
     progress = ImportProgress()
     await _run_with_patches(
@@ -279,9 +279,7 @@ async def test_format_profile_includes_fragments(
         scenes_dir, seeded_driver, collection, progress,
     )
 
-    row = await get_character_profile(seeded_driver, "marie-dupont")
-    assert row is not None
-    profile_text = await _format_character_profile(seeded_driver, row)
+    profile_text = await find_character(seeded_driver, "marie")
     assert "Observations par scene" in profile_text
     assert "quarantaine" in profile_text
 

@@ -409,7 +409,7 @@ async def _process_scene(
     ctx.progress.status = ImportStatus.ANALYZING
     await _emit_status(ctx, ImportStatus.ANALYZING)
 
-    scene_text = scene_file.read_text(encoding="utf-8")  # noqa: ASYNC240
+    scene_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
     analysis = await analyze_scene(analyzer, scene_text)
 
     if ctx.queue:
@@ -657,9 +657,12 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         pending_clarifications=pending_clarifications,
     )
     try:
-        scene_files = sorted(
-            f for ext in SCENE_FILE_EXTENSIONS for f in Path(scenes_dir).glob(f"*{ext}")  # noqa: ASYNC240
-        )
+        def _collect_scene_files() -> list[Path]:
+            return sorted(
+                f for ext in SCENE_FILE_EXTENSIONS for f in Path(scenes_dir).glob(f"*{ext}")
+            )
+
+        scene_files = await asyncio.to_thread(_collect_scene_files)
         if not scene_files:
             progress.error = f"Aucun fichier texte dans {scenes_dir}"
             progress.status = ImportStatus.ERROR
