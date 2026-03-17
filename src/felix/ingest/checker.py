@@ -8,12 +8,12 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
 from felix.agent.chat_agent import _build_model
-from felix.db.repository import get_scene_summaries_by_ids
+from felix.graph.repository import get_scene_summaries_by_ids
 from felix.ingest.models import ConsistencyReport
 
 if TYPE_CHECKING:
-    import aiosqlite
     import chromadb
+    from neo4j import AsyncDriver
     from pydantic_ai.models import Model
 
 logger = logging.getLogger("felix.ingest.checker")
@@ -110,7 +110,7 @@ def create_checker_agents(
 
 
 async def check_scene_consistency(
-    db: aiosqlite.Connection,
+    driver: AsyncDriver,
     collection: chromadb.Collection,
     scene_summary: dict[str, Any],
     timeline_agent: Agent[None, ConsistencyReport],
@@ -136,7 +136,7 @@ async def check_scene_consistency(
                 if m.get("scene_id") and m["scene_id"] != current_scene_id
             ][:10]
             if relevant_ids:
-                relevant_summaries = await get_scene_summaries_by_ids(db, relevant_ids)
+                relevant_summaries = await get_scene_summaries_by_ids(driver, relevant_ids)
 
     # 2. Pass 1 — Timeline
     timeline_scenes = [

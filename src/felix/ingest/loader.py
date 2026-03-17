@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import aiosqlite
     import chromadb
+    from neo4j import AsyncDriver
 
     from felix.ingest.resolver import ResolvedEntity
 
-from felix.db.repository import (
+from felix.graph.repository import (
     upsert_character_event,
     upsert_character_fragment,
     upsert_character_minimal,
@@ -19,7 +19,7 @@ from felix.db.repository import (
 
 
 async def load_scene(  # noqa: PLR0913
-    db: aiosqlite.Connection,
+    driver: AsyncDriver,
     collection: chromadb.Collection,
     scene_id: str,
     filename: str,
@@ -28,8 +28,15 @@ async def load_scene(  # noqa: PLR0913
     resolved_chars: list[tuple[ResolvedEntity, str, str | None]],
     resolved_location: ResolvedEntity,
 ) -> None:
-    # 1. Upsert scene
-    await upsert_scene(db, {
+    # 1. Upsert location (MERGE — must exist before scene AT_LOCATION)
+    await upsert_location_minimal(driver, {
+        "id": resolved_location.id,
+        "name": resolved_location.name,
+        "description": analysis.location.description,
+    })
+
+    # 2. Upsert scene
+    await upsert_scene(driver, {
         "id": scene_id,
         "filename": filename,
         "title": analysis.title,
@@ -40,32 +47,24 @@ async def load_scene(  # noqa: PLR0913
         "raw_text": scene_text,
     })
 
-    # 2. Upsert location (INSERT OR IGNORE)
-    await upsert_location_minimal(db, {
-        "id": resolved_location.id,
-        "name": resolved_location.name,
-        "description": analysis.location.description,
-    })
-
-    # 3. Upsert characters (INSERT OR IGNORE) + fragments
+    # 3. Upsert characters (MERGE) + fragments (PRESENT_IN)
     for resolved_char, role, description in resolved_chars:
-        await upsert_character_minimal(db, {
+        await upsert_character_minimal(driver, {
             "id": resolved_char.id,
             "name": resolved_char.name,
             "era": analysis.era,
         })
         await upsert_character_fragment(
-            db, resolved_char.id, scene_id, role, description
+            driver, resolved_char.id, scene_id, role, description
         )
 
     # 4. Upsert timeline event
     date = analysis.approximate_date
     if not date and analysis.era:
-        # Fallback: extract year from era like "1940s" → "1940-01-01"
         era_digits = "".join(c for c in analysis.era if c.isdigit())
         if era_digits:
             date = f"{era_digits[:4]}-01-01"
-    await upsert_timeline_event(db, {
+    await upsert_timeline_event(driver, {
         "id": f"evt-{scene_id}",
         "date": date or "unknown",
         "era": analysis.era,
@@ -78,7 +77,7 @@ async def load_scene(  # noqa: PLR0913
     # 5. Upsert character events
     for resolved_char, role, _desc in resolved_chars:
         await upsert_character_event(
-            db, resolved_char.id, f"evt-{scene_id}", role
+            driver, resolved_char.id, f"evt-{scene_id}", role
         )
 
     # 6. ChromaDB upsert

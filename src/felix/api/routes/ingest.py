@@ -6,7 +6,7 @@ import tempfile
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile
-from felix.api.deps import BaseUrl, Collection, DB, ModelName
+from felix.api.deps import BaseUrl, Collection, ModelName, Neo4jDriver
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
@@ -16,7 +16,7 @@ from felix.api.models import (
     IssueUpdate,
     SceneSummary,
 )
-from felix.db.repository import list_issues, list_scenes, update_issue_resolved
+from felix.graph.repository import get_issue_by_id, list_issues, list_scenes, update_issue_resolved
 from felix.config import SCENE_FILE_EXTENSIONS
 from felix.ingest.pipeline import (
     ClarificationSlot,
@@ -41,7 +41,7 @@ class ClarifyRequest(BaseModel):
 @router.post("/import", status_code=202)
 async def start_import(
     request: Request,
-    db: DB,
+    driver: Neo4jDriver,
     collection: Collection,
     model_name: ModelName,
     base_url: BaseUrl,
@@ -62,7 +62,6 @@ async def start_import(
     if not txt_files:
         raise HTTPException(status_code=400, detail="Aucun fichier texte recu")
 
-    # Write uploaded files to a temp directory
     tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
     for upload in txt_files:
         content = await upload.read()
@@ -74,7 +73,7 @@ async def start_import(
 
     request.app.state.import_task = asyncio.create_task(
         run_import_pipeline(
-            tmp_dir, db, collection, model_name, base_url, new_progress,
+            tmp_dir, driver, collection, model_name, base_url, new_progress,
             enrich_profiles=enrich,
         )
     )
@@ -85,7 +84,7 @@ async def start_import(
 @router.post("/import/stream")
 async def import_stream(
     request: Request,
-    db: DB,
+    driver: Neo4jDriver,
     collection: Collection,
     model_name: ModelName,
     base_url: BaseUrl,
@@ -106,7 +105,6 @@ async def import_stream(
     if not txt_files:
         raise HTTPException(status_code=400, detail="Aucun fichier texte recu")
 
-    # Write uploaded files to a temp directory
     tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
     for upload in txt_files:
         content = await upload.read()
@@ -123,7 +121,7 @@ async def import_stream(
     task = asyncio.create_task(
         run_import_pipeline(
             tmp_dir,
-            db,
+            driver,
             collection,
             model_name,
             base_url,
@@ -141,9 +139,7 @@ async def import_stream(
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=1.0)
                 except TimeoutError:
-                    # Check if pipeline task is done
                     if task.done():
-                        # Drain remaining events
                         while not queue.empty():
                             event = queue.get_nowait()
                             yield ServerSentEvent(
@@ -161,7 +157,7 @@ async def import_stream(
                 if event["event"] in ("done", "error"):
                     break
         except asyncio.CancelledError:
-            pass  # Let the pipeline continue running independently
+            pass
 
     return EventSourceResponse(
         event_generator(),
@@ -197,30 +193,29 @@ async def get_import_status(request: Request) -> ImportProgressResponse:
 
 @router.get("/issues")
 async def get_issues(
-    db: DB,
+    driver: Neo4jDriver,
     type: str | None = None,
     severity: str | None = None,
     resolved: bool | None = None,
 ) -> list[Issue]:
-    rows = await list_issues(db, type=type, severity=severity, resolved=resolved)
+    rows = await list_issues(driver, type=type, severity=severity, resolved=resolved)
     return [Issue(**row) for row in rows]
 
 
 @router.patch("/issues/{issue_id}")
-async def patch_issue(issue_id: str, body: IssueUpdate, db: DB) -> Issue:
-    ok = await update_issue_resolved(db, issue_id, body.resolved)
+async def patch_issue(issue_id: str, body: IssueUpdate, driver: Neo4jDriver) -> Issue:
+    ok = await update_issue_resolved(driver, issue_id, body.resolved)
     if not ok:
         raise HTTPException(status_code=404, detail="Issue not found")
-    rows = await list_issues(db)
-    row = next((r for r in rows if r["id"] == issue_id), None)
+    row = await get_issue_by_id(driver, issue_id)
     if not row:
         raise HTTPException(status_code=404, detail="Issue not found")
     return Issue(**row)
 
 
 @router.get("/scenes")
-async def get_scenes(db: DB) -> list[SceneSummary]:
-    rows = await list_scenes(db)
+async def get_scenes(driver: Neo4jDriver) -> list[SceneSummary]:
+    rows = await list_scenes(driver)
     return [SceneSummary(**row) for row in rows]
 
 

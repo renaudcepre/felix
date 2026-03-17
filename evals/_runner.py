@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import os
@@ -149,28 +150,23 @@ async def _run_case(case: Any, dataset: Dataset, task_fn: Any) -> tuple[Any, lis
     return rc, report.failures
 
 
-def run_with_spinners(
+async def run_suite_async(
     active_dataset: Dataset,
     task_fn: Callable[[Any], Awaitable[Any]] | Callable[[Any], Any],
     report_name: str = "eval",
 ) -> EvaluationReport:
-    """Run all cases in parallel, print result lines as they complete."""
-    import asyncio
+    """Run all cases in parallel within the current event loop."""
+    import inspect
 
-    async def _run_all() -> tuple[list[Any], list[Any]]:
-        import inspect
-        resolved_task_fn = task_fn
-        if inspect.iscoroutinefunction(task_fn) and not inspect.signature(task_fn).parameters:
-            console.print("[dim]Initializing pipeline...[/dim]")
-            resolved_task_fn = await task_fn()
-        console.print(f"\n[bold cyan]Starting {len(active_dataset.cases)} cases in parallel[/bold cyan]")
-        tasks = [_run_case(c, active_dataset, resolved_task_fn) for c in active_dataset.cases]
-        results = await asyncio.gather(*tasks)
-        all_cases = [rc for rc, _ in results if rc]
-        all_failures = [f for _, failures in results for f in failures]
-        return all_cases, all_failures
-
-    all_report_cases, all_failures = asyncio.run(_run_all())
+    resolved_task_fn = task_fn
+    if inspect.iscoroutinefunction(task_fn) and not inspect.signature(task_fn).parameters:
+        console.print("[dim]Initializing pipeline...[/dim]")
+        resolved_task_fn = await task_fn()
+    console.print(f"\n[bold cyan]Starting {len(active_dataset.cases)} cases in parallel[/bold cyan]")
+    tasks = [_run_case(c, active_dataset, resolved_task_fn) for c in active_dataset.cases]
+    results = await asyncio.gather(*tasks)
+    all_report_cases = [rc for rc, _ in results if rc]
+    all_failures = [f for _, failures in results for f in failures]
 
     # Write per-case markdown files
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -187,15 +183,9 @@ def run_with_spinners(
     color = "green" if passed == total else "yellow" if passed >= total * 0.8 else "red"
     console.print(f"\n[{color}]{passed}/{total} passed[/{color}]  [dim]→ {suite_dir}[/dim]")
 
-    # Persist run to history
     _append_history(report_name, ts, all_report_cases)
 
-    report = EvaluationReport(
-        name=report_name,
-        cases=all_report_cases,
-        failures=all_failures,
-    )
-    return report
+    return EvaluationReport(name=report_name, cases=all_report_cases, failures=all_failures)
 
 
 HISTORY_FILE = RESULTS_DIR / "history.jsonl"

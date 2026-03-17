@@ -269,6 +269,42 @@ class IssueTypeAbsent(Evaluator[str, PipelineQueryResult]):
 
 
 @dataclass
+class ExactIssueCountByType(Evaluator[str, PipelineQueryResult]):
+    """Vérifie que le nombre d'issues d'un type donné est exactement N.
+
+    expected_output: count exact en string. Ex: "3"
+    """
+
+    issue_type: str = "bilocalization"
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | int]:
+        expected = int(ctx.expected_output or 0)
+        count = sum(1 for i in ctx.output.issues if i.get("type") == self.issue_type)
+        return {"exact_type_count": count == expected, "type_count_got": count}
+
+
+@dataclass
+class NoIssueDescriptionContains(Evaluator[str, PipelineQueryResult]):
+    """Vérifie qu'AUCUNE description d'issue ne contient le mot-clé (insensible accents).
+
+    expected_output: mot-clé interdit. Ex: "anachronique"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | str]:
+        kw = normalize(ctx.expected_output or "")
+        failing = [i.get("description", "") for i in ctx.output.issues
+                   if kw in normalize(i.get("description", ""))]
+        result: dict[str, bool | str] = {"no_desc_match": not failing}
+        if failing:
+            result["offending_desc"] = failing[0][:80]
+        return result
+
+
+@dataclass
 class AllLocationsContainKeyword(Evaluator[str, PipelineQueryResult]):
     """Check that ALL locations contain the expected keyword (tests deduplication).
 

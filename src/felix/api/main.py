@@ -6,11 +6,16 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from felix.telemetry import setup_logfire
+
+# Must be called before pydantic-ai imports so logfire can instrument the models.
+setup_logfire()
+
 from felix.agent.chat_agent import create_agent
 from felix.api.deps import BaseUrl, ModelName
 from felix.api.routes import characters, chat, export, ingest, locations, timeline
 from felix.config import settings
-from felix.db.schema import init_db
+from felix.graph.driver import close_driver, get_driver, setup_constraints
 from felix.vectorstore.store import get_collection
 
 if TYPE_CHECKING:
@@ -19,11 +24,12 @@ if TYPE_CHECKING:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    db = await init_db(str(settings.db_path))
+    driver = get_driver()
+    await setup_constraints(driver)
     collection = get_collection()
     agent = create_agent(settings.llm_model, settings.llm_base_url)
 
-    app.state.db = db
+    app.state.driver = driver
     app.state.collection = collection
     app.state.agent = agent
     app.state.model_name = settings.llm_model
@@ -32,7 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     print(f"Felix API started — model={settings.llm_model}, base_url={settings.llm_base_url}")
     yield
 
-    await db.close()
+    await close_driver(driver)
 
 
 app = FastAPI(title="Felix API", lifespan=lifespan)

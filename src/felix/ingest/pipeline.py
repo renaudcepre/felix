@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -11,23 +9,29 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import aiosqlite
     import chromadb
+    from neo4j import AsyncDriver
 
     from felix.ingest.models import SceneAnalysis
 
-from felix.config import SCENE_FILE_EXTENSIONS
-from rapidfuzz import fuzz
+from pydantic_ai.exceptions import ModelHTTPError
 
-from felix.db.repository import (
+from felix.config import SCENE_FILE_EXTENSIONS
+from felix.graph.checks import check_bilocalization
+from felix.graph.repository import (
     create_issue,
     delete_issues_for_scenes,
     get_character_profile,
     get_relation_types_for_pair,
+    list_all_characters_full,
+    list_all_locations,
     patch_character_profile_fields,
     update_character_profile,
     upsert_character_relation,
 )
+from felix.graph.writer import delete_scenes, write_scene
+from rapidfuzz import fuzz
+
 from felix.ingest.analyzer import analyze_scene, create_analyzer_agent
 from felix.ingest.checker import check_scene_consistency, create_checker_agents
 from felix.ingest.loader import load_scene
@@ -95,9 +99,8 @@ def _build_registry(
     for c in db_chars:
         char_registry[c["id"]] = c["name"]
         aliases_raw = c.get("aliases")
-        if aliases_raw:
-            with contextlib.suppress(json.JSONDecodeError, TypeError):
-                char_aliases[c["id"]] = json.loads(aliases_raw)
+        if aliases_raw and isinstance(aliases_raw, list):
+            char_aliases[c["id"]] = aliases_raw
 
     for loc in db_locs:
         loc_registry[loc["id"]] = loc["name"]
@@ -106,13 +109,10 @@ def _build_registry(
 
 
 async def _load_registries(
-    db: aiosqlite.Connection,
+    driver: AsyncDriver,
 ) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str], dict[str, dict]]:
-    cursor = await db.execute("SELECT id, name, aliases, era, background, status FROM characters")
-    chars = [dict(row) for row in await cursor.fetchall()]
-
-    cursor = await db.execute("SELECT id, name FROM locations")
-    locs = [dict(row) for row in await cursor.fetchall()]
+    chars = await list_all_characters_full(driver)
+    locs = await list_all_locations(driver)
 
     char_details: dict[str, dict] = {
         c["id"]: {
@@ -195,7 +195,6 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
     pending_clarifications: dict[str, ClarificationSlot] | None,
     char_registry: dict[str, str],
 ) -> ResolvedEntity:
-    # If we have a queue and clarification support, ask the user
     if queue and pending_clarifications is not None:
         clarification_id = str(uuid.uuid4())
         slot = ClarificationSlot()
@@ -220,7 +219,7 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
         try:
             await asyncio.wait_for(slot.event.wait(), timeout=CLARIFICATION_TIMEOUT)
         except TimeoutError:
-            slot.answer = "link"  # auto-resolve on timeout
+            slot.answer = "link"
         finally:
             pending_clarifications.pop(clarification_id, None)
 
@@ -228,52 +227,38 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
             new_id = slugify(name)
             resolved = ResolvedEntity(id=new_id, name=name, is_new=True)
             char_registry[new_id] = name
-            issues.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "type": "duplicate_suspect",
-                    "severity": "info",
-                    "scene_id": scene_id,
-                    "entity_id": new_id,
-                    "description": (
-                        f"Personnage '{name}' confirme comme distinct de '{match.best_name}' "
-                        f"(score {match.score:.2f}). Nouvelle entite creee."
-                    ),
-                    "suggestion": None,
-                }
-            )
-            await _emit(
-                queue,
-                "entity_resolved",
-                name=name,
-                action="created",
-            )
-            return resolved
-
-        # link (explicit or timeout)
-        was_timeout = slot.answer == "link" and not slot.event.is_set()
-        issues.append(
-            {
+            issues.append({
                 "id": str(uuid.uuid4()),
                 "type": "duplicate_suspect",
-                "severity": "warning",
+                "severity": "info",
                 "scene_id": scene_id,
-                "entity_id": match.best_id,
+                "entity_id": new_id,
                 "description": (
-                    f"Personnage '{name}' ressemble a '{match.best_name}' "
-                    f"(score {match.score:.2f}). Lien "
-                    + (
-                        "automatique (timeout)"
-                        if was_timeout
-                        else "confirme par l'utilisateur"
-                    )
-                    + "."
+                    f"Personnage '{name}' confirme comme distinct de '{match.best_name}' "
+                    f"(score {match.score:.2f}). Nouvelle entite creee."
                 ),
-                "suggestion": f"Verifier si '{name}' est bien '{match.best_name}'."
-                if was_timeout
-                else None,
-            }
-        )
+                "suggestion": None,
+            })
+            await _emit(queue, "entity_resolved", name=name, action="created")
+            return resolved
+
+        was_timeout = slot.answer == "link" and not slot.event.is_set()
+        issues.append({
+            "id": str(uuid.uuid4()),
+            "type": "duplicate_suspect",
+            "severity": "warning",
+            "scene_id": scene_id,
+            "entity_id": match.best_id,
+            "description": (
+                f"Personnage '{name}' ressemble a '{match.best_name}' "
+                f"(score {match.score:.2f}). Lien "
+                + ("automatique (timeout)" if was_timeout else "confirme par l'utilisateur")
+                + "."
+            ),
+            "suggestion": f"Verifier si '{name}' est bien '{match.best_name}'."
+            if was_timeout
+            else None,
+        })
         await _emit(
             queue,
             "entity_resolved",
@@ -284,21 +269,19 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
         )
         return ResolvedEntity(id=match.best_id, name=match.best_name)
 
-    # Fallback: no queue, auto-link like before
-    issues.append(
-        {
-            "id": str(uuid.uuid4()),
-            "type": "duplicate_suspect",
-            "severity": "warning",
-            "scene_id": scene_id,
-            "entity_id": match.best_id,
-            "description": (
-                f"Personnage '{name}' ressemble a '{match.best_name}' "
-                f"(score {match.score:.2f}). Lien automatique effectue."
-            ),
-            "suggestion": f"Verifier si '{name}' est bien '{match.best_name}'.",
-        }
-    )
+    # Fallback: no queue, auto-link
+    issues.append({
+        "id": str(uuid.uuid4()),
+        "type": "duplicate_suspect",
+        "severity": "warning",
+        "scene_id": scene_id,
+        "entity_id": match.best_id,
+        "description": (
+            f"Personnage '{name}' ressemble a '{match.best_name}' "
+            f"(score {match.score:.2f}). Lien automatique effectue."
+        ),
+        "suggestion": f"Verifier si '{name}' est bien '{match.best_name}'.",
+    })
     return ResolvedEntity(id=match.best_id, name=match.best_name)
 
 
@@ -312,7 +295,6 @@ async def _resolve_location(  # noqa: PLR0913
 ) -> ResolvedEntity:
     match = fuzzy_match_entity(analysis.location.name, loc_registry)
     if isinstance(match, AmbiguousMatch):
-        # For locations, ask user if queue available
         if queue and pending_clarifications is not None:
             clarification_id = str(uuid.uuid4())
             slot = ClarificationSlot()
@@ -340,31 +322,21 @@ async def _resolve_location(  # noqa: PLR0913
             if slot.answer == "new":
                 new_id = slugify(analysis.location.name)
                 loc_registry[new_id] = analysis.location.name
-                await _emit(
-                    queue,
-                    "entity_resolved",
-                    name=analysis.location.name,
-                    action="created",
-                )
-                return ResolvedEntity(
-                    id=new_id, name=analysis.location.name, is_new=True
-                )
+                await _emit(queue, "entity_resolved", name=analysis.location.name, action="created")
+                return ResolvedEntity(id=new_id, name=analysis.location.name, is_new=True)
 
-            # link
-            issues.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "type": "duplicate_suspect",
-                    "severity": "warning",
-                    "scene_id": scene_id,
-                    "entity_id": match.best_id,
-                    "description": (
-                        f"Lieu '{analysis.location.name}' ressemble a '{match.best_name}' "
-                        f"(score {match.score:.2f}). Lien effectue."
-                    ),
-                    "suggestion": None,
-                }
-            )
+            issues.append({
+                "id": str(uuid.uuid4()),
+                "type": "duplicate_suspect",
+                "severity": "warning",
+                "scene_id": scene_id,
+                "entity_id": match.best_id,
+                "description": (
+                    f"Lieu '{analysis.location.name}' ressemble a '{match.best_name}' "
+                    f"(score {match.score:.2f}). Lien effectue."
+                ),
+                "suggestion": None,
+            })
             await _emit(
                 queue,
                 "entity_resolved",
@@ -376,20 +348,18 @@ async def _resolve_location(  # noqa: PLR0913
             return ResolvedEntity(id=match.best_id, name=match.best_name)
 
         # Fallback: no queue
-        issues.append(
-            {
-                "id": str(uuid.uuid4()),
-                "type": "duplicate_suspect",
-                "severity": "warning",
-                "scene_id": scene_id,
-                "entity_id": match.best_id,
-                "description": (
-                    f"Lieu '{analysis.location.name}' ressemble a '{match.best_name}' "
-                    f"(score {match.score:.2f}). Lien automatique effectue."
-                ),
-                "suggestion": f"Verifier si '{analysis.location.name}' est bien '{match.best_name}'.",
-            }
-        )
+        issues.append({
+            "id": str(uuid.uuid4()),
+            "type": "duplicate_suspect",
+            "severity": "warning",
+            "scene_id": scene_id,
+            "entity_id": match.best_id,
+            "description": (
+                f"Lieu '{analysis.location.name}' ressemble a '{match.best_name}' "
+                f"(score {match.score:.2f}). Lien automatique effectue."
+            ),
+            "suggestion": f"Verifier si '{analysis.location.name}' est bien '{match.best_name}'.",
+        })
         return ResolvedEntity(id=match.best_id, name=match.best_name)
 
     if match.is_new:
@@ -408,7 +378,7 @@ async def _resolve_location(  # noqa: PLR0913
 
 @dataclass
 class _PipelineContext:
-    db: aiosqlite.Connection
+    driver: AsyncDriver
     collection: chromadb.Collection
     progress: ImportProgress
     queue: EventQueue | None
@@ -441,7 +411,7 @@ async def _process_scene(
     ctx.progress.status = ImportStatus.ANALYZING
     await _emit_status(ctx, ImportStatus.ANALYZING)
 
-    scene_text = scene_file.read_text(encoding="utf-8")  # noqa: ASYNC240
+    scene_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
     analysis = await analyze_scene(analyzer, scene_text)
 
     if ctx.queue:
@@ -458,7 +428,6 @@ async def _process_scene(
             mood=analysis.mood,
         )
 
-    # Resolve
     ctx.progress.status = ImportStatus.RESOLVING
     await _emit_status(ctx, ImportStatus.RESOLVING)
     scene_issues: list[dict] = []
@@ -489,11 +458,10 @@ async def _process_scene(
     if resolved_location.is_new:
         ctx.progress.new_locations.append(resolved_location.name)
 
-    # Load
     ctx.progress.status = ImportStatus.LOADING
     await _emit_status(ctx, ImportStatus.LOADING)
     await load_scene(
-        ctx.db,
+        ctx.driver,
         ctx.collection,
         scene_id,
         scene_file.name,
@@ -542,7 +510,7 @@ async def _check_scene(
 
     try:
         report = await check_scene_consistency(
-            ctx.db, ctx.collection, scene_summary, timeline_agent, narrative_agent
+            ctx.driver, ctx.collection, scene_summary, timeline_agent, narrative_agent
         )
     except Exception as e:
         logger.exception("Consistency check failed for scene: %s", scene_summary["scene_id"])
@@ -561,7 +529,7 @@ async def _check_scene(
             "description": ci.description,
             "suggestion": ci.suggestion,
         }
-        await create_issue(ctx.db, issue)
+        await create_issue(ctx.driver, issue)
         ctx.progress.issues_found += 1
         if ctx.queue:
             await _emit(
@@ -598,8 +566,8 @@ async def _profile_scene_characters(
         char_name = rc.name
 
         try:
-            existing_row = await get_character_profile(ctx.db, char_id)
-            existing_profile = dict(existing_row) if existing_row else {}
+            existing_row = await get_character_profile(ctx.driver, char_id)
+            existing_profile = existing_row if existing_row else {}
             has_profile = bool(
                 existing_profile.get("background") or existing_profile.get("arc")
             )
@@ -620,14 +588,13 @@ async def _profile_scene_characters(
                 profile = await patch_character_profile(
                     profiler_patch or profiler, char_name, existing_profile, scene_text, fragment
                 )
-                await patch_character_profile_fields(ctx.db, char_id, profile.model_dump())
+                await patch_character_profile_fields(ctx.driver, char_id, profile.model_dump())
             else:
                 profile = await profile_character(
                     profiler, char_name, [scene_text], [fragment], char_known_names
                 )
-                await update_character_profile(ctx.db, char_id, profile.model_dump())
+                await update_character_profile(ctx.driver, char_id, profile.model_dump())
 
-            # Resolve and store relations
             stored_relations: list[dict[str, str]] = []
             for rel in profile.relations:
                 other_match = fuzzy_match_entity(
@@ -643,14 +610,14 @@ async def _profile_scene_characters(
                     other_name = other_match.name
                 if other_id != char_id:
                     a, b = sorted([char_id, other_id])
-                    existing_rels = await get_relation_types_for_pair(ctx.db, a, b)
+                    existing_rels = await get_relation_types_for_pair(ctx.driver, a, b)
                     is_duplicate = any(
                         fuzz.ratio(rel.relation.lower(), ex.lower()) >= 75
                         for ex in existing_rels
                     )
                     if not is_duplicate:
                         era = existing_profile.get("era") or ctx.char_details.get(char_id, {}).get("era")
-                        await upsert_character_relation(ctx.db, a, b, rel.relation, era=era)
+                        await upsert_character_relation(ctx.driver, a, b, rel.relation, era=era)
                         stored_relations.append({"other_name": other_name, "relation": rel.relation})
 
             filled = [
@@ -670,18 +637,12 @@ async def _profile_scene_characters(
         except Exception as e:
             logger.exception("Profiling failed for character: %s", char_name)
             if ctx.queue:
-                await _emit(
-                    ctx.queue,
-                    "profiling_error",
-                    name=char_name,
-                    id=char_id,
-                    error=str(e),
-                )
+                await _emit(ctx.queue, "profiling_error", name=char_name, id=char_id, error=str(e))
 
 
 async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
     scenes_dir: str,
-    db: aiosqlite.Connection,
+    driver: AsyncDriver,
     collection: chromadb.Collection,
     model_name: str | None,
     base_url: str | None,
@@ -691,16 +652,19 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
     enrich_profiles: bool = True,
 ) -> None:
     ctx = _PipelineContext(
-        db=db,
+        driver=driver,
         collection=collection,
         progress=progress,
         queue=queue,
         pending_clarifications=pending_clarifications,
     )
     try:
-        scene_files = sorted(
-            f for ext in SCENE_FILE_EXTENSIONS for f in Path(scenes_dir).glob(f"*{ext}")  # noqa: ASYNC240
-        )
+        def _collect_scene_files() -> list[Path]:
+            return sorted(
+                f for ext in SCENE_FILE_EXTENSIONS for f in Path(scenes_dir).glob(f"*{ext}")
+            )
+
+        scene_files = await asyncio.to_thread(_collect_scene_files)
         if not scene_files:
             progress.error = f"Aucun fichier texte dans {scenes_dir}"
             progress.status = ImportStatus.ERROR
@@ -719,10 +683,10 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 current_scene="",
             )
 
-        ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.char_details = await _load_registries(
-            db
-        )
-        await delete_issues_for_scenes(db, [f"scene-{f.stem}" for f in scene_files])
+        ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.char_details = await _load_registries(driver)
+        scene_ids = [f"scene-{f.stem}" for f in scene_files]
+        await delete_issues_for_scenes(driver, scene_ids)
+        await delete_scenes(driver, scene_ids)
 
         analyzer = create_analyzer_agent(model_name, base_url)
         timeline_checker, narrative_checker = create_checker_agents(model_name, base_url)
@@ -736,11 +700,17 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                     ctx, scene_file, analyzer
                 )
                 for issue in scene_issues:
-                    await create_issue(db, issue)
+                    await create_issue(driver, issue)
                 progress.issues_found += len(scene_issues)
                 scenes_processed += 1
 
                 await _check_scene(ctx, summary, timeline_checker, narrative_checker)
+
+                await write_scene(driver, summary)
+                graph_issues = await check_bilocalization(driver, summary["scene_id"])
+                for issue in graph_issues:
+                    await create_issue(driver, issue)
+                progress.issues_found += len(graph_issues)
 
                 if enrich_profiles:
                     await _profile_scene_characters(
@@ -752,18 +722,18 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                         profiler,
                         profiler_patch,
                     )
+            except ModelHTTPError as e:
+                logger.error("Scene processing failed: %s — HTTP %s: %s", scene_file.name, e.status_code, e)
+                progress.failed_scenes += 1
+                progress.processed_scenes += 1
+                if queue:
+                    await _emit(queue, "scene_error", scene_id=f"scene-{scene_file.stem}", filename=scene_file.name, error=str(e))
             except Exception as e:
                 logger.exception("Scene processing failed: %s", scene_file.name)
                 progress.failed_scenes += 1
                 progress.processed_scenes += 1
                 if queue:
-                    await _emit(
-                        queue,
-                        "scene_error",
-                        scene_id=f"scene-{scene_file.stem}",
-                        filename=scene_file.name,
-                        error=str(e),
-                    )
+                    await _emit(queue, "scene_error", scene_id=f"scene-{scene_file.stem}", filename=scene_file.name, error=str(e))
 
         if scenes_processed == 0:
             progress.error = f"Toutes les scenes ont echoue ({progress.failed_scenes}/{progress.total_scenes})"

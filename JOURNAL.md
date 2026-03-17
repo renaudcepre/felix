@@ -1,5 +1,66 @@
 # Journal de developpement — Felix
 
+## Code review fixes — 2026-03-17
+
+**Objectif :** Résoudre 7 issues remontées lors de la code review post-migration Neo4j.
+
+**Changements :**
+- `src/felix/graph/writer.py` : `write_scene` → transaction atomique `execute_write()` (était plusieurs `session.run()` auto-commit)
+- `src/felix/config.py` + `.env.example` : documenter le password dev-only, créer fichier d'exemple complet
+- `src/felix/graph/repository.py` : migration complète vers `execute_read/execute_write()` avec `AsyncManagedTransaction` ; fix N+1 dans `get_timeline_rows` (COLLECT en Cypher) et `get_location_detail` ; ajout `get_issue_by_id()`
+- `src/felix/graph/checks.py` : `check_bilocalization` → `execute_read()`
+- `src/felix/graph/formatters.py` : `find_character` consolidée en une seule requête Cypher (OPTIONAL MATCH relations + fragments) — de N+2 sessions à 1 session par appel ; `_format_character_profile` devient synchrone
+- `src/felix/api/routes/ingest.py` : `patch_issue` utilise `get_issue_by_id()` au lieu de `list_issues()` + scan linéaire
+- `src/felix/ingest/pipeline.py` : `read_text` et `glob` via `asyncio.to_thread` (plus de blocage I/O sur l'event loop)
+- `src/felix/api/main.py` : commentaire explicatif sur l'ordre de `setup_logfire()` (instrumenter avant pydantic-ai)
+- `evals/_runner.py` : suppression de `run_with_spinners` (dead code depuis l'unification en `asyncio.run()` unique)
+
+**Tests :** 86/86 passent. `test_format_profile_includes_fragments` mis à jour pour utiliser l'API publique `find_character`.
+
+---
+
+## Isolation evals par récit + fix bilocalization dedup — 2026-03-17
+
+**Objectif :** Isoler les fixtures d'evals par récit (un sous-dossier par histoire), corriger le bug de déduplication bilocalization (IDs aléatoires → MERGE ne dédupliquait pas), et ajouter un dataset Convoi avec 12 cas d'évaluation dont 2 tests de régression directs.
+
+**Changements :**
+- `src/felix/graph/checks.py` : remplacer `uuid.uuid4()` par ID déterministe `biloc-{char_id}-{min(s1,s2)}-{max(s1,s2)}` — le `MERGE (i:Issue {id: $id})` dans `repository.py` déduplique naturellement. Suppression `import uuid`.
+- `evals/fixtures/` : réorganisation en `helios/` (7 fichiers déplacés) et `convoi/` (3 fichiers copiés depuis `data/scenes/`)
+- `evals/pipeline/task.py` : `FIXTURES_DIR` → `FIXTURES_ROOT`, `_run_pipeline()` prend `fixtures_dir: Path`, `build_pipeline_task()` remplacé par `make_pipeline_task(subdir)` — factory sync retournant un builder async no-arg détectable par le runner
+- `evals/pipeline/evaluators.py` : ajout `ExactIssueCountByType` et `NoIssueDescriptionContains`
+- `evals/run_evals.py` : ajout `CONVOI_DATASET` (12 cas), imports mis à jour, `SUITES` étendu avec `pipeline-convoi`
+
+**Architecture :** Les suites `pipeline` et `pipeline-convoi` partagent le même Neo4j mais tournent séquentiellement — `MATCH (n) DETACH DELETE n` en début de `_run_pipeline` assure l'isolation. Les IDs Helios sont inchangés (déplacement de fichiers ne change pas les stems).
+
+---
+
+
+## Migration SQLite + Kuzu → Neo4j (store unique) — 2026-03-17
+
+**Objectif :** Remplacer SQLite (aiosqlite) + Kuzu par Neo4j comme store unique. Un seul store, Cypher partout, async natif. ChromaDB inchangé.
+
+**Changements :**
+- `pyproject.toml` : ajout `neo4j>=5.0`, `testcontainers[neo4j]` (dev), suppression `aiosqlite`, `kuzu`
+- `src/felix/config.py` : ajout `neo4j_uri/user/password`, suppression `db_path`/`kuzu_path`
+- `docker-compose.yml` : créé avec service Neo4j 5.24-community
+- `src/felix/graph/` : réécriture complète — `driver.py`, `repository.py` (37 fonctions), `writer.py`, `checks.py`, `seed.py`, `formatters.py` nouveaux/réécrits en Cypher async
+- `src/felix/db/` : supprimé entièrement
+- `src/felix/ingest/loader.py`, `checker.py`, `pipeline.py` : portés vers `neo4j.AsyncDriver`
+- `src/felix/api/` : deps, main, et 5 routes portées (`DB` → `Neo4jDriver`)
+- `src/felix/agent/deps.py`, `tools.py` : `db` → `driver`, formatters depuis `graph.formatters`
+- `src/felix/cli.py` : `init_db` → `get_driver + setup_constraints`
+- `tests/conftest.py` : fixture `driver` via testcontainers Neo4j, `seeded_driver` avec teardown DETACH DELETE
+- Tous les tests unitaires portés vers `AsyncDriver` + Cypher
+- `evals/pipeline/task.py`, `evals/task.py` : portés vers Neo4j driver
+
+**Points clés :** `aliases` stocké nativement LIST<STRING> (plus de json.dumps/loads), `resolved` stocké BOOLEAN, `scene_id` des issues via relation `(Scene)-[:HAS_ISSUE]->(Issue)`, bilocalization check en Cypher pur.
+
+**Bugs Cypher corrigés :** WHERE après OPTIONAL MATCH ne filtre que le pattern optionnel — déplacé avant le OPTIONAL MATCH dans `get_timeline_rows` et `list_issues`. testcontainers remplacé par connexion directe au docker-compose (évite les problèmes d'event loop avec les fixtures session-scoped).
+
+**Résultat evals pipeline (mistral-small-latest) :** 29/34 (85%). Échecs restants : `no_duplicate_relation` (doublon RELATED_TO), `irina_kepler9_date_resolved` (date non retrouvée après patching), `chen_active_appearances` (count fragments), `no_error_severity` (8 issues error), `lena_physical_contradiction_detected` (non détectée).
+
+---
+
 ## Remplacement `os._exit(0)` par `atexit` dans `run_evals.py` — 2026-03-16
 
 **Objectif :** Éliminer le `os._exit(0)` brutal qui empêchait tout cleanup (atexit handlers, flush fichiers, fermeture DB).

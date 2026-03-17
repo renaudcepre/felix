@@ -1,7 +1,7 @@
 """Task function wrapping the import pipeline for pydantic-evals.
 
-The pipeline runs once on the fixture scenes via `build_pipeline_task()`,
-which returns a closure capturing the initialized DB.
+The pipeline runs once on the fixture scenes via `make_pipeline_task(subdir)`,
+which returns a coroutine builder capturing the initialized driver.
 """
 
 from __future__ import annotations
@@ -14,19 +14,20 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import chromadb
+from neo4j import AsyncDriver
 from pydantic import BaseModel
 from rich.console import Console
 
-from felix.db.schema import init_db
+from felix.graph.driver import close_driver, get_driver, setup_constraints
+from felix.graph import repository
 from felix.ingest.pipeline import ImportProgress, run_import_pipeline
 
 _console = Console()
 
 if TYPE_CHECKING:
-    import aiosqlite
     from collections.abc import Callable, Coroutine
 
-FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+FIXTURES_ROOT = Path(__file__).parent.parent / "fixtures"
 
 
 class PipelineQueryResult(BaseModel):
@@ -57,14 +58,20 @@ async def _log_progress(progress: ImportProgress) -> None:
         await asyncio.sleep(0.3)
 
 
-async def _run_pipeline() -> aiosqlite.Connection:
-    """Run the import pipeline on fixtures, return the populated DB."""
+async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
+    """Run the import pipeline on fixtures, return the populated driver."""
     tmpdir = tempfile.mkdtemp()
+    driver = get_driver()
+    await setup_constraints(driver)
+
+    # Clear any previous data
+    async with driver.session() as session:
+        await session.run("MATCH (n) DETACH DELETE n")
+
     try:
-        for f in sorted(FIXTURES_DIR.glob("*.txt")):
+        for f in sorted(fixtures_dir.glob("*.txt")):
             shutil.copy(f, tmpdir)
 
-        db = await init_db(":memory:")
         client = chromadb.EphemeralClient()
         collection = client.get_or_create_collection("pipeline_eval")
         progress = ImportProgress()
@@ -73,7 +80,7 @@ async def _run_pipeline() -> aiosqlite.Connection:
         try:
             await run_import_pipeline(
                 scenes_dir=tmpdir,
-                db=db,
+                driver=driver,
                 collection=collection,
                 model_name=os.environ.get("FLX_EVAL_MODEL"),
                 base_url=os.environ.get("FLX_EVAL_BASE_URL", ""),
@@ -85,11 +92,11 @@ async def _run_pipeline() -> aiosqlite.Connection:
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
-    return db
+    return driver
 
 
-async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
-    """Answer a DB query against an already-populated pipeline DB.
+async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:
+    """Answer a DB query against an already-populated pipeline driver.
 
     Supported query keys:
       - "characters"               → character_ids list
@@ -104,118 +111,91 @@ async def _query(db: aiosqlite.Connection, query: str) -> PipelineQueryResult:
       - "issues:<scene_id>"        → issues for that scene
       - "all_issues"               → all issues across all scenes
       - "scene_date:<scene_id>"    → scene_date text for that scene
+      - "relation_count:char_a,char_b" → relation count for a pair
     """
     if query == "characters":
-        cursor = await db.execute("SELECT id FROM characters")
-        rows = await cursor.fetchall()
-        return PipelineQueryResult(character_ids=[r[0] for r in rows])
+        rows = await repository.list_all_characters(driver)
+        return PipelineQueryResult(character_ids=[r["id"] for r in rows])
 
     if query == "locations":
-        cursor = await db.execute("SELECT name FROM locations")
-        rows = await cursor.fetchall()
-        return PipelineQueryResult(location_names=[r[0] for r in rows])
+        rows = await repository.list_all_locations(driver)
+        return PipelineQueryResult(location_names=[r["name"] for r in rows])
 
     if query == "irina_profile":
-        cursor = await db.execute(
-            "SELECT background, arc, traits FROM characters WHERE id = 'irina-voss'"
-        )
-        row = await cursor.fetchone()
+        row = await repository.get_character_profile(driver, "irina-voss")
         if row:
-            parts = [v for v in (row[0], row[1], row[2]) if v]
+            parts = [v for v in (row.get("background"), row.get("arc"), row.get("traits")) if v]
             return PipelineQueryResult(background=" | ".join(parts) if parts else None)
         return PipelineQueryResult()
 
     if query.startswith("profile:"):
         char_id = query[len("profile:"):]
-        cursor = await db.execute(
-            "SELECT background, arc, traits FROM characters WHERE id = ?", (char_id,)
-        )
-        row = await cursor.fetchone()
+        row = await repository.get_character_profile(driver, char_id)
         if row:
-            parts = [v for v in (row[0], row[1], row[2]) if v]
+            parts = [v for v in (row.get("background"), row.get("arc"), row.get("traits")) if v]
             return PipelineQueryResult(background=" | ".join(parts) if parts else None)
         return PipelineQueryResult()
 
     if query == "irina_fragments":
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM character_fragments WHERE character_id = 'irina-voss'"
-        )
-        row = await cursor.fetchone()
-        return PipelineQueryResult(fragment_count=row[0] if row else 0)
+        fragments = await repository.get_character_fragments(driver, "irina-voss")
+        return PipelineQueryResult(fragment_count=len(fragments))
 
     if query.startswith("fragments:"):
         char_id = query[len("fragments:"):]
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM character_fragments WHERE character_id = ?", (char_id,)
-        )
-        row = await cursor.fetchone()
-        return PipelineQueryResult(fragment_count=row[0] if row else 0)
+        fragments = await repository.get_character_fragments(driver, char_id)
+        return PipelineQueryResult(fragment_count=len(fragments))
 
     if query.startswith("active_fragments:"):
         char_id = query[len("active_fragments:"):]
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM character_fragments WHERE character_id = ? AND role = 'participant'",
-            (char_id,),
-        )
-        row = await cursor.fetchone()
-        return PipelineQueryResult(fragment_count=row[0] if row else 0)
+        fragments = await repository.get_character_fragments(driver, char_id)
+        return PipelineQueryResult(fragment_count=sum(1 for f in fragments if f.get("role") == "participant"))
 
     if query == "relations":
-        cursor = await db.execute(
-            "SELECT character_id_a, character_id_b, relation_type FROM character_relations"
-        )
-        rows = await cursor.fetchall()
-        return PipelineQueryResult(relations=[{"a": r[0], "b": r[1], "relation": r[2]} for r in rows])
+        rows = await repository.list_all_character_relations(driver)
+        return PipelineQueryResult(relations=[{"a": r["character_id_a"], "b": r["character_id_b"], "relation": r["relation_type"]} for r in rows])
 
     if query.startswith("issues:"):
         scene_id = query[len("issues:"):]
-        cursor = await db.execute(
-            "SELECT type, severity, description FROM issues WHERE scene_id = ?",
-            (scene_id,),
-        )
-        rows = await cursor.fetchall()
-        return PipelineQueryResult(issues=[{"type": r[0], "severity": r[1], "description": r[2]} for r in rows])
+        all_issues = await repository.list_issues(driver)
+        filtered = [i for i in all_issues if i.get("scene_id") == scene_id]
+        return PipelineQueryResult(issues=[{"type": i["type"], "severity": i["severity"], "description": i["description"]} for i in filtered])
 
     if query.startswith("relation_count:"):
         parts = query[len("relation_count:"):].split(",")
         if len(parts) == 2:  # noqa: PLR2004
             a, b = sorted(parts)
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM character_relations WHERE character_id_a = ? AND character_id_b = ?",
-                (a, b),
-            )
-            row = await cursor.fetchone()
-            return PipelineQueryResult(fragment_count=row[0] if row else 0)
+            rels = await repository.get_relation_types_for_pair(driver, a, b)
+            return PipelineQueryResult(fragment_count=len(rels))
         return PipelineQueryResult()
 
     if query.startswith("scene_date:"):
         scene_id = query[len("scene_date:"):]
-        cursor = await db.execute("SELECT date FROM scenes WHERE id = ?", (scene_id,))
-        row = await cursor.fetchone()
-        return PipelineQueryResult(scene_date=row[0] if row else None)
+        summaries = await repository.get_scene_summaries_by_ids(driver, [scene_id])
+        if summaries:
+            return PipelineQueryResult(scene_date=summaries[0].get("date"))
+        return PipelineQueryResult()
 
     if query == "all_issues":
-        cursor = await db.execute("SELECT type, severity, description, scene_id FROM issues")
-        rows = await cursor.fetchall()
-        return PipelineQueryResult(issues=[{"type": r[0], "severity": r[1], "description": r[2], "scene_id": r[3]} for r in rows])
+        all_issues = await repository.list_issues(driver)
+        return PipelineQueryResult(issues=[{"type": i["type"], "severity": i["severity"], "description": i["description"], "scene_id": i.get("scene_id")} for i in all_issues])
 
     if query.startswith("relations:"):
         char_id = query[len("relations:"):]
-        cursor = await db.execute(
-            "SELECT character_id_a, character_id_b, relation_type FROM character_relations WHERE character_id_a = ? OR character_id_b = ?",
-            (char_id, char_id),
-        )
-        rows = await cursor.fetchall()
-        return PipelineQueryResult(relations=[{"a": r[0], "b": r[1], "relation": r[2]} for r in rows])
+        rows = await repository.list_all_character_relations(driver)
+        filtered = [r for r in rows if r["character_id_a"] == char_id or r["character_id_b"] == char_id]
+        return PipelineQueryResult(relations=[{"a": r["character_id_a"], "b": r["character_id_b"], "relation": r["relation_type"]} for r in filtered])
 
     return PipelineQueryResult()
 
 
-async def build_pipeline_task() -> Callable[[str], Coroutine[Any, Any, PipelineQueryResult]]:
-    """Initialize the pipeline and return a task closure capturing the DB."""
-    db = await _run_pipeline()
+def make_pipeline_task(fixtures_subdir: str) -> Callable[[], Coroutine[Any, Any, Callable[[str], Coroutine[Any, Any, PipelineQueryResult]]]]:
+    """Factory: returns an async no-arg builder that initializes the pipeline for the given fixtures subdir."""
+    async def _builder() -> Callable[[str], Coroutine[Any, Any, PipelineQueryResult]]:
+        drv = await _run_pipeline(FIXTURES_ROOT / fixtures_subdir)
 
-    async def import_pipeline_task(query: str) -> PipelineQueryResult:
-        return await _query(db, query)
+        async def import_pipeline_task(query: str) -> PipelineQueryResult:
+            return await _query(drv, query)
 
-    return import_pipeline_task
+        return import_pipeline_task
+
+    return _builder
