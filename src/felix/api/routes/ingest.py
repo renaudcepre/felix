@@ -5,8 +5,8 @@ import json
 import tempfile
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
-from felix.api.deps import BaseUrl, Collection, ModelName, Neo4jDriver
+from fastapi import APIRouter, HTTPException, UploadFile
+from felix.api.deps import BaseUrl, Collection, ImportStateDep, ModelName, Neo4jDriver
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
@@ -40,7 +40,7 @@ class ClarifyRequest(BaseModel):
 
 @router.post("/import", status_code=202)
 async def start_import(
-    request: Request,
+    import_state: ImportStateDep,
     driver: Neo4jDriver,
     collection: Collection,
     model_name: ModelName,
@@ -48,10 +48,7 @@ async def start_import(
     files: list[UploadFile] = [],  # noqa: B006
     enrich: bool = True,
 ) -> ImportProgressResponse:
-    progress: ImportProgress | None = getattr(
-        request.app.state, "import_progress", None
-    )
-    if progress and progress.status not in (
+    if import_state.progress and import_state.progress.status not in (
         ImportStatus.DONE,
         ImportStatus.ERROR,
         ImportStatus.PENDING,
@@ -69,21 +66,20 @@ async def start_import(
         dest.write_bytes(content)
 
     new_progress = ImportProgress()
-    request.app.state.import_progress = new_progress
-
-    request.app.state.import_task = asyncio.create_task(
+    import_state.progress = new_progress
+    import_state.task = asyncio.create_task(
         run_import_pipeline(
             tmp_dir, driver, collection, model_name, base_url, new_progress,
             enrich_profiles=enrich,
         )
     )
 
-    return ImportProgressResponse(**new_progress.__dict__)
+    return ImportProgressResponse.model_validate(new_progress, from_attributes=True)
 
 
 @router.post("/import/stream")
 async def import_stream(
-    request: Request,
+    import_state: ImportStateDep,
     driver: Neo4jDriver,
     collection: Collection,
     model_name: ModelName,
@@ -91,10 +87,7 @@ async def import_stream(
     files: list[UploadFile] = [],  # noqa: B006
     enrich: bool = True,
 ) -> EventSourceResponse:
-    progress: ImportProgress | None = getattr(
-        request.app.state, "import_progress", None
-    )
-    if progress and progress.status not in (
+    if import_state.progress and import_state.progress.status not in (
         ImportStatus.DONE,
         ImportStatus.ERROR,
         ImportStatus.PENDING,
@@ -112,11 +105,11 @@ async def import_stream(
         dest.write_bytes(content)
 
     new_progress = ImportProgress()
-    request.app.state.import_progress = new_progress
+    import_state.progress = new_progress
 
     queue: EventQueue = asyncio.Queue()
     pending: dict[str, ClarificationSlot] = {}
-    request.app.state.pending_clarifications = pending
+    import_state.pending_clarifications = pending
 
     task = asyncio.create_task(
         run_import_pipeline(
@@ -131,7 +124,7 @@ async def import_stream(
             enrich_profiles=enrich,
         )
     )
-    request.app.state.import_task = task
+    import_state.task = task
 
     async def event_generator() -> AsyncGenerator[ServerSentEvent]:
         try:
@@ -166,10 +159,8 @@ async def import_stream(
 
 
 @router.post("/import/clarify")
-async def clarify(body: ClarifyRequest, request: Request) -> dict[str, str]:
-    pending: dict[str, ClarificationSlot] | None = getattr(
-        request.app.state, "pending_clarifications", None
-    )
+async def clarify(body: ClarifyRequest, import_state: ImportStateDep) -> dict[str, str]:
+    pending = import_state.pending_clarifications
     if not pending or body.id not in pending:
         raise HTTPException(
             status_code=404, detail="Clarification not found or expired"
@@ -182,13 +173,10 @@ async def clarify(body: ClarifyRequest, request: Request) -> dict[str, str]:
 
 
 @router.get("/import/status")
-async def get_import_status(request: Request) -> ImportProgressResponse:
-    progress: ImportProgress | None = getattr(
-        request.app.state, "import_progress", None
-    )
-    if not progress:
+async def get_import_status(import_state: ImportStateDep) -> ImportProgressResponse:
+    if not import_state.progress:
         return ImportProgressResponse(status=ImportStatus.PENDING)
-    return ImportProgressResponse(**progress.__dict__)
+    return ImportProgressResponse.model_validate(import_state.progress, from_attributes=True)
 
 
 @router.get("/issues")

@@ -19,6 +19,15 @@ Valeur : arcs personnages à grain fin, consistency checker plus précis, liens 
 
 Frein : extraction LLM d'events discrets est difficile (granularité floue, risque de bruit). À designer soigneusement. → Issue "Idea" à créer, pas de rush.
 
+## Issue #8 — Remplacer app.state par DI typé — 2026-03-18
+
+**Contexte :** Les routes `ingest.py` accédaient directement à `request.app.state` pour l'état mutable d'import (progress, task, pending_clarifications). Les autres routes utilisaient déjà les `Depends` de `deps.py`.
+
+**Changements :**
+- `deps.py` : ajout de `ImportState` (dataclass avec `progress`, `task`, `pending_clarifications`) + `get_import_state` + `ImportStateDep`
+- `main.py` : initialisation de `ImportState()` dans le lifespan
+- `ingest.py` : toutes les routes utilisent désormais `import_state: ImportStateDep` — `Request` supprimé
+
 ## Refacto analyzer : split en 2 calls LLM — 2026-03-18
 
 **Contexte :** Le prompt unique de l'analyzer mêlait extraction de métadonnées (titre, date, lieu, era, mood) et extraction de personnages (avec ses nombreuses règles). Risque de dilution d'attention sur les scènes complexes.

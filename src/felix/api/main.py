@@ -12,7 +12,7 @@ from felix.telemetry import setup_logfire
 setup_logfire()
 
 from felix.agent.chat_agent import create_agent
-from felix.api.deps import BaseUrl, ModelName
+from felix.api.deps import BaseUrl, ImportState, ModelName
 from felix.api.routes import characters, chat, export, ingest, locations, timeline
 from felix.config import settings
 from felix.graph.driver import close_driver, get_driver, setup_constraints
@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.agent = agent
     app.state.model_name = settings.llm_model
     app.state.base_url = settings.llm_base_url
+    app.state.import_state = ImportState()
 
     print(f"Felix API started — model={settings.llm_model}, base_url={settings.llm_base_url}")
     yield
