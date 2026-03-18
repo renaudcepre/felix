@@ -1,5 +1,26 @@
 # Journal de developpement — Felix
 
+## Réflexion architecture graph — 2026-03-18
+
+### BEFORE/AFTER entre nodes Timeline
+
+Discussion sur l'ajout de relations directionnelles entre nodes `Timeline`. Conclusion :
+- Quand une date existe, le lien est "gratuit" (dérivé de l'ordre des dates)
+- Utile surtout quand `approximate_date` est absent (œuvres sans ancrage calendaire précis)
+- Effort S/M, valeur immédiate → créer issue dédiée
+
+### Notion d'Event (idée future)
+
+Idée : ajouter un node `Event` en dessous de `Scene` pour capturer des beats narratifs précis ("Gandalf entre chez Bilbo", "Frodon se fait blesser"). Distinctions :
+- **Scene** = unité lieu/temps (maille grosse) — déjà dans Felix
+- **Event** = beat narratif discret, peut être intra-scène ou à cheval sur plusieurs scènes
+
+Valeur : arcs personnages à grain fin, consistency checker plus précis, liens depuis les mentions dans les dialogues vers des events existants.
+
+Frein : extraction LLM d'events discrets est difficile (granularité floue, risque de bruit). À designer soigneusement. → Issue "Idea" à créer, pas de rush.
+
+## Issue #16 — Dates extrapolées sans justification — 2026-03-18
+
 ## Issue #13 — Nettoyage des dossiers temporaires d'import — 2026-03-18
 
 **Contexte :** `api/routes/ingest.py` créait des dossiers temporaires `felix-import-*` via `tempfile.mkdtemp()` mais ne les supprimait jamais, ni en succès ni en erreur.

@@ -21,9 +21,9 @@ From the scene text, extract the following information:
 - title : short title (max 10 words)
 - summary : 2-3 sentence summary
 - era : decade-level period ("2050s", "2140s", "1940s", etc.)
-- approximate_date : date in YYYY-MM-DD format if inferable from the text. \
-If only the year is known, use YYYY-01-01. \
-If the year and month are known, use YYYY-MM-01. Return null only if there is NO temporal indication.
+- approximate_date : partial date extracted strictly from the text. \
+Use YYYY if only the year is known. Use YYYY-MM if year and month are known. Use YYYY-MM-DD only if a full date is explicitly stated. \
+NEVER invent a month or day that is not in the text. Return null only if there is NO temporal indication.
 - characters : list of characters with their role and description if present
 - location : main location of the scene with description if present
 - mood : general atmosphere in one word or short phrase
