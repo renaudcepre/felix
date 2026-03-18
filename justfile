@@ -54,5 +54,5 @@ db-archive:
     @echo "Cleaned."
 
 # View a .jsonl history file
-view-history file:
-    python3 tools/view_history.py {{file}}
+view-history *args:
+    python3 tools/view_history.py {{ args }}
