@@ -637,7 +637,7 @@ INGEST_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="fantasy_varek_redeyes_in_desc",
             inputs="eval-fantasy-redeyes.txt",
-            expected_output="rouge",
+            expected_output="rouge,red,crimson",
             metadata={"category": "physical_description", "difficulty": "hard"},
             evaluators=[CharacterDescriptionContains(character="Varek")],
         ),

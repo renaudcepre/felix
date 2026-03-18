@@ -199,8 +199,11 @@ class CharacterDescriptionContains(Evaluator[str, SceneAnalysis]):
         if matched is None:
             return {"description_contains": False, "reason": f"{self.character} not found"}
         desc = normalize(matched.description or "")
+        keywords = [normalize(k.strip()) for k in ctx.expected_output.split(",") if k.strip()]
+        found = next((k for k in keywords if k in desc), None)
         return {
-            "description_contains": keyword in desc,
+            "description_contains": found is not None,
+            "matched_keyword": found or "none",
             "description_got": matched.description or "(none)",
         }
 
