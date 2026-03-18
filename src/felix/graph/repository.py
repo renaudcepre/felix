@@ -125,20 +125,11 @@ async def patch_character_profile_fields(
         await tx.run(
             """
             MATCH (c:Character {id: $id})
-            SET c.age      = CASE WHEN $age IS NOT NULL THEN $age ELSE c.age END,
-                c.physical = CASE WHEN $physical IS NOT NULL THEN $physical ELSE c.physical END,
-                c.background = CASE
-                    WHEN $background IS NULL THEN c.background
-                    WHEN c.background IS NULL THEN $background
-                    ELSE c.background + ' | ' + $background END,
-                c.arc = CASE
-                    WHEN $arc IS NULL THEN c.arc
-                    WHEN c.arc IS NULL THEN $arc
-                    ELSE c.arc + ' | ' + $arc END,
-                c.traits = CASE
-                    WHEN $traits IS NULL THEN c.traits
-                    WHEN c.traits IS NULL THEN $traits
-                    ELSE c.traits + ' | ' + $traits END
+            SET c.age        = CASE WHEN $age IS NOT NULL THEN $age ELSE c.age END,
+                c.physical   = CASE WHEN $physical IS NOT NULL THEN $physical ELSE c.physical END,
+                c.background = CASE WHEN $background IS NOT NULL THEN $background ELSE c.background END,
+                c.arc        = CASE WHEN $arc IS NOT NULL THEN $arc ELSE c.arc END,
+                c.traits     = CASE WHEN $traits IS NOT NULL THEN $traits ELSE c.traits END
             """,
             id=char_id,
             age=_nullify_empty(profile.get("age")),

@@ -134,6 +134,8 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
       - "relation_count:char_a,char_b" → relation count for a pair
       - "chunk_count:<stem>"           → number of Scene nodes for that file stem
       - "next_chunk_links:<stem>"      → number of NEXT_CHUNK links for that file stem
+      - "traits:<char_id>"            → raw traits field for that character
+      - "arc:<char_id>"               → raw arc field for that character
     """
     if query == "characters":
         rows = await repository.list_all_characters(driver)
@@ -206,6 +208,16 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
         rows = await repository.list_all_character_relations(driver)
         filtered = [r for r in rows if r["character_id_a"] == char_id or r["character_id_b"] == char_id]
         return PipelineQueryResult(relations=[{"a": r["character_id_a"], "b": r["character_id_b"], "relation": r["relation_type"]} for r in filtered])
+
+    if query.startswith("traits:"):
+        char_id = query[len("traits:"):]
+        row = await repository.get_character_profile(driver, char_id)
+        return PipelineQueryResult(background=row.get("traits") if row else None)
+
+    if query.startswith("arc:"):
+        char_id = query[len("arc:"):]
+        row = await repository.get_character_profile(driver, char_id)
+        return PipelineQueryResult(background=row.get("arc") if row else None)
 
     if query.startswith("chunk_count:"):
         stem = query[len("chunk_count:"):]

@@ -15,29 +15,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger("felix.ingest.profiler")
 
 PROFILER_PATCH_PROMPT = """\
-You are a specialized assistant for enriching screenplay character profiles.
+You are a specialized assistant for maintaining screenplay character profiles.
 
 You are given:
 1. The current validated profile of a character (from previous scenes)
 2. A new scene in which this character appears
 
-Your task: enrich the profile ONLY with what this new scene adds.
+Your task: return the COMPLETE updated profile, merging existing information with what the new scene reveals.
 
-ABSOLUTE RULE:
-- Do not modify, erase, or rephrase anything that already exists in the profile.
-- Invent nothing: every added piece of information must be pointable to the scene text.
-- If the scene adds nothing new for a field, return null for that field.
-- A null field means "unchanged", not "empty".
+RULES:
+- Incorporate ALL existing profile information — do not lose any detail already known.
+- Add new information revealed by the current scene.
+- If a field already has content, synthesize old and new into a single concise statement — no duplication, no repetition, no " | " separators.
+- If the scene adds nothing new for a field, return the existing value unchanged.
+- If a field is unknown in both the profile and the scene, return null.
+- Invent nothing: every piece of information must be traceable to the profile or the scene text.
 
-Fields to enrich (null if no new information):
-- age: if the scene specifies or confirms the age (new details only)
-- physical: if the scene describes physical appearance (new details only)
-- background: if the scene reveals new elements of the character's past
-- arc: if the scene develops the character (new concrete actions)
-- traits: if the scene demonstrates new character traits
-- relations: new relationships observed in THIS scene only
-
-Be concise and factual.
+One sentence per field maximum. Be concise and factual.
 """
 
 PROFILER_PROMPT = """\

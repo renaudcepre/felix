@@ -316,6 +316,21 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
             metadata={"category": "relative_date", "difficulty": "hard"},
             evaluators=[BackgroundContainsKeywords(min_match=1)],
         ),
+        # --- no pipe accumulation in traits/arc ---
+        Case(
+            name="irina_traits_no_pipe",
+            inputs="traits:irina-voss",
+            expected_output="|",
+            metadata={"category": "profiling", "difficulty": "medium"},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="irina_arc_no_pipe",
+            inputs="arc:irina-voss",
+            expected_output="|",
+            metadata={"category": "profiling", "difficulty": "medium"},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
         # --- incremental profile (amnesia) ---
         Case(
             name="amnesia_irina_all_scenes",
@@ -982,6 +997,21 @@ PROFILER_ATTRIBUTION_DATASET: Dataset[str, Any] = Dataset(
             expected_output="3",
             metadata={"category": "appearances"},
             evaluators=[MinFragmentCount()],
+        ),
+        # --- no pipe accumulation in traits/arc ---
+        Case(
+            name="attr_gandalf_traits_no_pipe",
+            inputs="traits:gandalf",
+            expected_output="|",
+            metadata={"category": "profiling", "difficulty": "medium"},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="attr_aldric_arc_no_pipe",
+            inputs="arc:aldric",
+            expected_output="|",
+            metadata={"category": "profiling", "difficulty": "medium"},
+            evaluators=[ProfileNotContainsKeyword()],
         ),
     ],
 )

@@ -52,3 +52,7 @@ db-archive:
     rm -rf {{ chroma_path }}
     docker compose exec neo4j cypher-shell -u neo4j -p felixpassword "MATCH (n) DETACH DELETE n"
     @echo "Cleaned."
+
+# View a .jsonl history file
+view-history file:
+    python3 tools/view_history.py {{file}}
