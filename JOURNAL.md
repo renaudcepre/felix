@@ -1,5 +1,14 @@
 # Journal de developpement — Felix
 
+## Issue #13 — Nettoyage des dossiers temporaires d'import — 2026-03-18
+
+**Contexte :** `api/routes/ingest.py` créait des dossiers temporaires `felix-import-*` via `tempfile.mkdtemp()` mais ne les supprimait jamais, ni en succès ni en erreur.
+
+**Changements :**
+- `src/felix/ingest/pipeline.py` : ajout de `import shutil` + bloc `finally` en fin de `run_import_pipeline` appelant `asyncio.to_thread(shutil.rmtree, scenes_dir, True)`. `ignore_errors=True` évite toute exception si le dossier est absent (tests avec `tmp_path` pytest).
+
+**Tests :** 9 tests passent (les 3 échecs préexistants sont sans lien).
+
 ## Issue #34 — Segmenter : remplacer all-MiniLM-L6-v2 par bge-m3 configurable — 2026-03-18
 
 **Contexte :** Le segmenter utilisait `all-MiniLM-L6-v2` (English-only) en dur. ChromaDB avait déjà migré vers `BAAI/bge-m3` (multilingual) pour le français.

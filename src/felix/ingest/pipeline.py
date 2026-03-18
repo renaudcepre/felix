@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
 import uuid
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -832,3 +833,5 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         progress.status = ImportStatus.ERROR
         if queue:
             await _emit(queue, "error", message=str(e))
+    finally:
+        await asyncio.to_thread(shutil.rmtree, scenes_dir, True)
