@@ -48,10 +48,12 @@ from evals.pipeline.evaluators import (
     IssueTypePresent,
     LocationContainsKeyword,
     MaxIssueSeverityCount,
+    MinChunkCount,
     MinFragmentCount,
     MinIssueCount,
     MinRelationsCount,
     NoIssueDescriptionContains,
+    ProfileNotContainsKeyword,
     RelationWithCharPresent,
     SceneDateContainsKeywords,
 )
@@ -421,6 +423,72 @@ CONVOI_DATASET: Dataset[str, Any] = Dataset(
             expected_output="marco-ruiz",
             metadata={"category": "relations"},
             evaluators=[RelationWithCharPresent()],
+        ),
+    ],
+)
+
+SEGMENTATION_DATASET: Dataset[str, Any] = Dataset(
+    cases=[
+        # --- segmentation structurelle ---
+        Case(
+            name="seg_chunk_count",
+            inputs="chunk_count:long-mission",
+            expected_output="2",
+            metadata={"category": "segmentation"},
+            evaluators=[MinChunkCount()],
+        ),
+        Case(
+            name="seg_next_chunk_links",
+            inputs="next_chunk_links:long-mission",
+            expected_output="1",
+            metadata={"category": "segmentation"},
+            evaluators=[MinChunkCount()],
+        ),
+        # --- extraction malgré le chunking ---
+        Case(
+            name="seg_characters_extracted",
+            inputs="characters",
+            expected_output="daria-kovacs,finn-osei",
+            metadata={"category": "extraction"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+        Case(
+            name="seg_luno_extracted",
+            inputs="characters",
+            expected_output="luno",
+            metadata={"category": "extraction"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+        # --- présence dans plusieurs chunks ---
+        Case(
+            name="seg_daria_multi_fragments",
+            inputs="fragments:daria-kovacs",
+            expected_output="2",
+            metadata={"category": "segmentation", "difficulty": "medium"},
+            evaluators=[MinFragmentCount()],
+        ),
+        # --- profiling cross-chunk ---
+        Case(
+            name="seg_daria_profile",
+            inputs="profile:daria-kovacs",
+            expected_output="ingenieure,aurore",
+            metadata={"category": "profiling"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="seg_finn_profile",
+            inputs="profile:finn-osei",
+            expected_output="securite,callisto",
+            metadata={"category": "profiling"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- extraction de lieu ---
+        Case(
+            name="seg_location_aurore",
+            inputs="locations",
+            expected_output="aurore",
+            metadata={"category": "extraction"},
+            evaluators=[LocationContainsKeyword()],
         ),
     ],
 )
@@ -842,11 +910,58 @@ def _show_history(suite: str | None, *, diff: bool = False) -> None:
     console.print(table)
 
 
+PROFILER_ATTRIBUTION_DATASET: Dataset[str, Any] = Dataset(
+    cases=[
+        # --- extraction ---
+        Case(
+            name="attr_characters_extracted",
+            inputs="characters",
+            expected_output="gandalf,aldric,mira",
+            metadata={"category": "extraction"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+        # --- attribution correcte : Aldric reçoit la lame Morgul ---
+        Case(
+            name="attr_aldric_morgul_in_arc",
+            inputs="profile:aldric",
+            expected_output="morgul,lame,poignard,bless,conscience,blafard,froid,plaie",
+            metadata={"category": "profiling", "difficulty": "medium"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- non-attribution : Gandalf NE doit PAS avoir la blessure dans son profil ---
+        Case(
+            name="attr_gandalf_not_stabbed",
+            inputs="profile:gandalf",
+            expected_output="morgul,poignard,bless",
+            metadata={"category": "profiling", "difficulty": "hard"},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- Gandalf actif dans les 3 scènes ---
+        Case(
+            name="attr_gandalf_three_scenes",
+            inputs="fragments:gandalf",
+            expected_output="3",
+            metadata={"category": "appearances"},
+            evaluators=[MinFragmentCount()],
+        ),
+        # --- Aldric actif dans les 3 scènes ---
+        Case(
+            name="attr_aldric_three_scenes",
+            inputs="fragments:aldric",
+            expected_output="3",
+            metadata={"category": "appearances"},
+            evaluators=[MinFragmentCount()],
+        ),
+    ],
+)
+
 SUITES: dict[str, tuple[Dataset, Any, str]] = {
-    "pipeline":        (PIPELINE_DATASET, make_pipeline_task("helios"),  "Pipeline Eval (Helios)"),
-    "pipeline-convoi": (CONVOI_DATASET,   make_pipeline_task("convoi"),  "Pipeline Eval (Convoi)"),
-    "ingest":          (INGEST_DATASET,   analyze_scene_task,            "Ingest Eval"),
-    "chatbot":         (CHATBOT_DATASET,  felix_task,                    "Chat Agent Eval"),
+    "pipeline":                    (PIPELINE_DATASET,              make_pipeline_task("helios"),                "Pipeline Eval (Helios)"),
+    "pipeline-convoi":             (CONVOI_DATASET,                make_pipeline_task("convoi"),                "Pipeline Eval (Convoi)"),
+    "pipeline-segmentation":       (SEGMENTATION_DATASET,          make_pipeline_task("segmentation"),          "Pipeline Eval (Segmentation)"),
+    "pipeline-profiler-attribution": (PROFILER_ATTRIBUTION_DATASET, make_pipeline_task("profiler_attribution"), "Pipeline Eval (Profiler Attribution)"),
+    "ingest":                      (INGEST_DATASET,                 analyze_scene_task,                          "Ingest Eval"),
+    "chatbot":                     (CHATBOT_DATASET,                felix_task,                                  "Chat Agent Eval"),
 }
 
 # ---------------------------------------------------------------------------

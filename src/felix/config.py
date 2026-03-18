@@ -25,10 +25,14 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LOGFIRE_TOKEN", "FLX_LOGFIRE_TOKEN"),
     )
 
+    segmenter_max_tokens: int = 2500
+    segmenter_overlap_ratio: float = 0.20
+    segmenter_threshold: float = 0.45
+
     neo4j_uri: str = "bolt://localhost:7687"
     neo4j_user: str = "neo4j"
     # DEV-ONLY default — override via FLX_NEO4J_PASSWORD in .env for any shared environment
-    neo4j_password: str = "felixpassword"
+    neo4j_password: str = "felixpassword"  # noqa: S105
     chroma_path: str = "chroma_data"
 
 

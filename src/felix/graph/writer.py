@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from neo4j import AsyncManagedTransaction, AsyncDriver
+    from neo4j import AsyncDriver, AsyncManagedTransaction
 
 
 async def delete_scenes(driver: AsyncDriver, scene_ids: list[str]) -> None:
@@ -67,6 +67,22 @@ async def write_scene(driver: AsyncDriver, scene_summary: dict[str, Any]) -> Non
                 sid=scene_id,
                 role=char.get("role", ""),
             )
+
+    async with driver.session() as session:
+        await session.execute_write(_tx)
+
+
+async def link_next_chunk(driver: AsyncDriver, from_id: str, to_id: str) -> None:
+    """Create (s1)-[:NEXT_CHUNK]->(s2) between two consecutive scene chunks."""
+    async def _tx(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
+            """
+            MATCH (s1:Scene {id: $from_id}), (s2:Scene {id: $to_id})
+            MERGE (s1)-[:NEXT_CHUNK]->(s2)
+            """,
+            from_id=from_id,
+            to_id=to_id,
+        )
 
     async with driver.session() as session:
         await session.execute_write(_tx)

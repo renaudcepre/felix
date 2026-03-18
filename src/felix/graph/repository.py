@@ -179,7 +179,7 @@ async def get_relation_types_for_pair(
         return await session.execute_read(_read)
 
 
-async def upsert_character_relation(
+async def upsert_character_relation(  # noqa: PLR0913
     driver: AsyncDriver,
     char_id_a: str,
     char_id_b: str,
@@ -716,3 +716,57 @@ async def delete_issues_for_scenes(
 
     async with driver.session() as session:
         await session.execute_write(_write)
+
+
+async def get_scene_ids_for_stems(
+    driver: AsyncDriver, stems: list[str]
+) -> list[str]:
+    """Return all Scene IDs whose id starts with 'scene-{stem}' for idempotent re-import."""
+    if not stems:
+        return []
+
+    async def _read(tx: AsyncManagedTransaction) -> list[str]:
+        result = await tx.run(
+            """
+            MATCH (s:Scene)
+            WHERE any(stem IN $stems WHERE s.id STARTS WITH ('scene-' + stem))
+            RETURN s.id AS id
+            """,
+            stems=stems,
+        )
+        return [r["id"] for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
+
+async def count_scenes_for_stem(driver: AsyncDriver, stem: str) -> int:
+    """Return the number of Scene nodes whose id starts with 'scene-{stem}'."""
+    async def _read(tx: AsyncManagedTransaction) -> int:
+        result = await tx.run(
+            "MATCH (s:Scene) WHERE s.id STARTS WITH $prefix RETURN count(s) AS n",
+            prefix=f"scene-{stem}",
+        )
+        record = await result.single()
+        return record["n"] if record else 0
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
+
+async def count_next_chunk_links_for_stem(driver: AsyncDriver, stem: str) -> int:
+    """Return the number of NEXT_CHUNK relationships for scenes matching 'scene-{stem}'."""
+    async def _read(tx: AsyncManagedTransaction) -> int:
+        result = await tx.run(
+            """
+            MATCH (s1:Scene)-[:NEXT_CHUNK]->(s2:Scene)
+            WHERE s1.id STARTS WITH $prefix
+            RETURN count(*) AS n
+            """,
+            prefix=f"scene-{stem}",
+        )
+        record = await result.single()
+        return record["n"] if record else 0
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)

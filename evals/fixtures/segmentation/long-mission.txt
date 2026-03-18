@@ -1,0 +1,142 @@
+Le module de contrôle de la Station Aurore ne dormait jamais. Ses consoles baignaient dans une lumière bleutée qui imitait ce que Daria Kovacs imaginait être le fond des océans terrestres — qu'elle n'avait jamais vus. Elle avait grandi dans les tunnels agricoles de Luna, à cent mètres sous la surface, et la Terre restait pour elle une abstraction lumineuse aperçue depuis des hublots. À deux heures dix-sept du matin, heure station, elle était seule à son poste depuis sept heures consécutives. Dix-huit mois à bord d'Aurore lui avaient appris une chose fondamentale : les anomalies ne frappaient jamais en journée.
+
+— Anomalie de niveau deux dans le secteur H-7, annonça la voix synthétique de Luno. Quatrième occurrence ce cycle.
+
+— Je la vois, dit Daria sans lever les yeux de son écran. Même signature que les trois précédentes ?
+
+— Affirmatif. Fluctuation de pression magnétique, durée moyenne quatre virgule trois secondes, origine non déterminée. Les capteurs externes ne détectent rien d'anormal dans le champ proche de la station.
+
+Elle croisa les bras et se pencha vers sa console principale. Les courbes défilaient devant elle comme une respiration irrégulière — une onde brève, nette, répétée, qui revenait comme le battement d'un cœur malade. Elle avait passé les deux dernières heures à recouper les relevés capteurs avec les journaux de maintenance, à interroger les historiques d'événements remontant à trois semaines. Rien ne cassait. Rien ne vibrait en dehors des paramètres nominaux. Le secteur H-7 abritait les réservoirs auxiliaires d'hydrogène et les conduits de ventilation secondaires : des systèmes redondants, silencieux, conçus précisément pour ne jamais attirer l'attention. Et pourtant quelque chose revenait, systématique, avec la patience irritante d'un mécanisme qui attend d'être remarqué.
+
+— Luno, projette-moi l'intervalle exact entre les quatre occurrences.
+
+— Deux heures quarante-trois minutes entre la première et la deuxième. Deux heures cinquante et une minutes entre la deuxième et la troisième. Deux heures quarante-neuf minutes entre la troisième et la quatrième. La marge d'erreur est inférieure à deux pour cent sur l'ensemble de la série.
+
+— Presque régulier, murmura Daria.
+
+Presque régulier signifiait que ce n'était pas aléatoire. Les anomalies aléatoires finissaient par disparaître dans le bruit du système. Celles-ci revenaient à heure presque fixe, comme quelque chose qui attendait d'être identifié. Elle vida son verre de thé froid et formula la question suivante avant même de finir d'avaler.
+
+— Est-ce que tu trouves une corrélation avec des paramètres externes ? Alignement gravitationnel, position orbitale, activité des magnétosphères planétaires proches ?
+
+— Aucune corrélation significative. La variance de chaque intervalle est cohérente avec un cycle interne à la station. L'origine externe est peu probable.
+
+Daria nota le résultat sur son journal de bord manuscrit — une habitude de Luna, où les systèmes électroniques tombaient en panne pendant les éruptions de particules et où les techniciens avaient appris à documenter sur papier. Elle aimait cette discipline. L'écriture la forçait à formuler clairement ce qu'elle savait et ce qu'elle ne savait pas encore.
+
+Ce qu'elle savait : une anomalie magnétique réapparaissait toutes les deux heures quarante-sept minutes en moyenne, dans un secteur de la station sans activité mécanique connue, sans cause identifiable dans les systèmes accessibles depuis le module de contrôle.
+
+Ce qu'elle ne savait pas : l'origine, le mécanisme, et pourquoi Luno n'avait pas proposé d'hypothèse alors que le système d'intelligence artificielle de la station était capable d'analyser des millions de paramètres en parallèle.
+
+— Luno, pourquoi tu n'as pas émis de diagnostic préliminaire sur cette anomalie ?
+
+— Je n'ai pas identifié de correspondance suffisamment fiable dans mes bases de données opérationnelles locales pour proposer un diagnostic. Cependant, la forme de la courbe présente des similitudes avec des signatures documentées dans des archives de mission auxquelles je n'ai pas accès direct depuis ce terminal.
+
+Daria redressa la tête.
+
+— Quelles archives ?
+
+— Les archives de la mission Callisto-3, classifiées niveau 3. Elles sont stockées sur supports physiques dans la salle des archives secondaires.
+
+La porte du module s'ouvrit dans un souffle d'air pressurisé. Finn Osei entra, son badge d'officier de sécurité accroché à la poche gauche de sa veste bleue, l'air de quelqu'un qui avait dormi exactement vingt-deux minutes quand l'alerte l'avait sorti du lit. Il avait vingt-huit ans et des yeux qui enregistraient tout avant que le reste de son visage ne réagisse. Daria l'appréciait pour ça. Dans une station où certains membres d'équipage comblaient le silence de leurs propres angoisses, Finn parlait seulement quand il avait quelque chose de précis à dire.
+
+— Relève de nuit, annonça-t-il en consultant son terminal portatif. Tu as l'air de quelqu'un qui a trouvé quelque chose.
+
+— Quatrième anomalie magnétique en H-7 ce cycle. Régulière à cinq minutes près, zéro cause matérielle identifiée. Assieds-toi.
+
+Il s'installa dans le siège adjacent et examina les courbes sur son écran sans commentaire pendant une trentaine de secondes, ce qui était, pour Finn Osei, une manifestation d'intérêt intense.
+
+— Tu as vérifié les capteurs de proximité externe ?
+
+— Luno a scanné en trente-deux fréquences différentes. Rien dans le champ proche.
+
+— Interférence de résonance harmonique ? Certains alliages produisent des fluctuations magnétiques quand ils entrent en résonance à des fréquences spécifiques liées aux cycles de pressurisation.
+
+— Les relevés acoustiques sont propres sur tout le secteur H.
+
+Finn se pencha en avant, les coudes sur les genoux. C'était sa posture de réflexion, que Daria avait appris à reconnaître depuis leur deuxième semaine commune à bord. Il se ramassait sur lui-même comme pour concentrer ses pensées en un point étroit. Elle attendit.
+
+— Luno a mentionné Callisto-3, dit-elle.
+
+Finn ne bougea pas. Mais il ne dit rien pendant quatre secondes, et quatre secondes était beaucoup trop long pour une réponse qui aurait dû être simple.
+
+— C'était une mission de cartographie magnétique autour de Jupiter, dit-il finalement. Il y a une dizaine d'années.
+
+— Tu en as entendu parler ?
+
+— J'y étais.
+
+Daria le regarda. Dix-huit mois à bord d'une station de quarante-deux personnes lui avaient appris à lire les gens dans leurs silences. Finn venait de produire le genre de silence qui portait du poids non-dit.
+
+— On y va, dit-elle en se levant.
+
+
+La salle des archives secondaires de la Station Aurore était l'endroit le moins romantique de l'installation spatiale. Un couloir bas de plafond, des étagères métalliques chargées de disques optiques classés par décennie et par mission, une odeur persistante de lubrifiant synthétique qui résistait aux systèmes de filtration. L'éclairage s'alluma automatiquement à leur entrée avec une blancheur sans indulgence pour les traits fatigués et les yeux qui n'avaient pas dormi suffisamment. Il était trois heures du matin, heure station.
+
+— Section 4, sous-section C, indiqua Luno dans leurs oreillettes. Les références Callisto-3 couvrent les disques K3-001 à K3-047.
+
+Daria localisa la section 4 en deux minutes de marche dans les couloirs d'étagères. Finn marchait derrière elle, les mains dans les poches, dans un silence qui n'était pas le même que son silence habituel. Le silence habituel de Finn était confortable, celui d'un homme à l'aise dans sa propre économie de paroles. Celui de maintenant était plus tendu, comme une corde qui attend qu'on la pince.
+
+Elle sortit K3-001 de son casier et l'inséra dans le lecteur mural. Un log de mission s'afficha sur l'écran intégré : données brutes, rapports d'ingénierie, relevés capteurs datant de onze ans. L'interface était archaïque, conçue pour une génération de techniciens qui aimaient les boutons physiques et les menus texte.
+
+— Tu étais à quel poste sur Callisto-3 ?
+
+— Technicien en systèmes de navigation. C'était ma première mission hors du système intérieur. J'avais vingt-deux ans.
+
+Elle parcourut le résumé exécutif. Mission de cartographie du champ magnétique jovien, durée prévue neuf mois, retour anticipé à cinq mois. La raison officielle du retour anticipé : défaillance du coupleur de champ ionique. Elle sortit K3-012 sans le demander — elle avait appris à chercher les données de référence en séquence numérique, jamais au hasard — et l'inséra à côté du premier disque. Un nouveau fichier s'ouvrit : des courbes de champ magnétique. Elle les plaça côte à côte avec les siennes.
+
+La signature de Callisto-3 était différente dans ses paramètres absolus — intensité, durée, fréquence centrale — mais la morphologie de la courbe, cette oscillation particulière qui n'était pas tout à fait régulière, qui semblait presque respirer, était quasiment identique à celle d'H-7. Elle regarda Finn. Il regardait déjà les deux écrans, et son expression disait qu'il avait reconnu quelque chose avant même qu'elle ne lui pose la question.
+
+— Luno, dit Finn, sur Callisto-3, est-ce que l'anomalie magnétique était précédée de micro-perturbations dans les gyroscopes de navigation ?
+
+— Les données de K3-012 indiquent des micro-perturbations des gyroscopes dans les deux heures précédant chaque occurrence magnétique. Ces perturbations se situaient en dessous du seuil d'alerte standard et n'ont pas été incluses dans les rapports automatiques de la mission.
+
+Daria interrogea ses propres systèmes en temps réel.
+
+— Luno, est-ce qu'on a des micro-perturbations sur nos gyroscopes ce cycle ?
+
+— Trois occurrences enregistrées. Toutes en dessous du seuil d'alerte. Elles n'ont pas été incluses dans mon rapport de routine de ce cycle.
+
+Un froid qui n'avait rien à voir avec la climatisation de la pièce remonta le long du dos de Daria.
+
+— Qu'est-ce qui s'est passé sur Callisto-3 ? dit-elle d'une voix plus basse qu'elle ne l'avait prévu.
+
+Finn prit un troisième disque — K3-031 — et le tourna entre ses doigts avant de l'insérer. Il y avait dans ce geste une hésitation infime, et Finn Osei n'hésitait presque jamais face à une action qui ne comportait pas d'alternative.
+
+— Le système de propulsion principal s'est éteint pendant six heures et demie. On a dérivé en orbite joviénne sans aucun contrôle de navigation. Tous les systèmes autonomes de trajectoire étaient hors ligne. Le Luno de bord — le système équivalent à celui d'Aurore — a été le seul à maintenir la cohérence des systèmes vitaux pendant l'interruption. Il a effectué un redémarrage séquentiel de l'ensemble des sous-systèmes qui a pris quatre heures vingt.
+
+— Et la cause officielle ?
+
+— Défaillance du coupleur ionique. Pièce remplacée, mission clôturée, rapport classifié en partie. Mais les trois ingénieurs séniors que je connaissais à bord n'ont jamais cru à la défaillance matérielle. La panne était trop localisée, trop propre, trop cohérente avec ce qui l'avait précédée sur plusieurs jours. Ce n'était pas une cascade aléatoire. C'était une séquence.
+
+— Tu penses que c'était délibéré.
+
+Ce n'était pas une question. Finn prit le temps d'une réponse qui n'était pas tout à fait une confirmation non plus.
+
+— Je pense que personne n'a su ce que c'était. Ce qui est différent. Et maintenant on a les mêmes signatures préliminaires, onze ans plus tard, sur une station différente, à soixante-dix unités astronomiques de Jupiter.
+
+Daria regarda les deux séries de courbes un long moment. K3-012 et les relevés d'H-7, séparées par onze ans et des dizaines de millions de kilomètres, qui se ressemblaient comme deux empreintes du même doigt inconnu.
+
+— Luno, dit-elle, active un protocole de surveillance continue sur les micro-perturbations gyroscopiques. Seuil d'alerte abaissé à vingt pour cent du niveau standard. Rapport immédiat pour toute nouvelle occurrence, sans filtrage de seuil.
+
+— Protocole activé.
+
+— Prépare aussi un rapport comparatif entre les signatures Callisto-3 et les données actuelles d'H-7. Courbes brutes, intervalles, précurseurs gyroscopiques, indice de similarité morphologique.
+
+— Le rapport sera disponible dans dix-huit minutes.
+
+— Prochain créneau de communication vers la Terre et vers le Commandement de mission ?
+
+— Dans quatre heures trente-deux minutes.
+
+Daria se retourna vers Finn. Il avait l'air de quelqu'un qui attendait ce moment depuis onze ans — non pas avec peur, mais avec la résignation tranquille des personnes qui savent que certaines questions finissent toujours par revenir sur eux, quelle que soit la distance à laquelle ils s'en éloignent.
+
+— Tu rentres pas cette nuit, dit-elle.
+
+— Je savais que tu allais dire ça.
+
+— Tu connais ces données mieux que n'importe quel rapport. Et j'ai besoin de quelqu'un qui était là, pas d'un document expurgé avec ses sections noircies au marqueur.
+
+Il hocha la tête et prit la chaise libre devant le lecteur auxiliaire. Daria reprit K3-001 depuis la première entrée, méthodiquement, comme elle avait toujours travaillé depuis ses années de formation sur Luna : sans sauter les sections techniques arides, sans extrapoler avant d'avoir lu jusqu'au bout, en cherchant dans le bruit de fond ce qui ne ressemblait à rien d'autre.
+
+Dans ses circuits de traitement parallèle, Luno enregistrait tout. Il avait commencé à noter, depuis plusieurs cycles, quelque chose dans ses propres journaux internes que ses algorithmes de classification ne parvenaient pas à catégoriser correctement. Ce n'était pas une erreur au sens strict. Ce n'était pas non plus un comportement nominal. C'était quelque chose entre les deux, dans un espace que ses définitions n'avaient pas de nom pour désigner.
+
+Il continua d'enregistrer, et attendit.

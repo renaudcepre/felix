@@ -15,23 +15,23 @@ if TYPE_CHECKING:
     from felix.ingest.models import SceneAnalysis
 
 from pydantic_ai.exceptions import ModelHTTPError
+from rapidfuzz import fuzz
 
-from felix.config import SCENE_FILE_EXTENSIONS
+from felix.config import SCENE_FILE_EXTENSIONS, settings
 from felix.graph.checks import check_bilocalization
 from felix.graph.repository import (
     create_issue,
     delete_issues_for_scenes,
     get_character_profile,
     get_relation_types_for_pair,
+    get_scene_ids_for_stems,
     list_all_characters_full,
     list_all_locations,
     patch_character_profile_fields,
     update_character_profile,
     upsert_character_relation,
 )
-from felix.graph.writer import delete_scenes, write_scene
-from rapidfuzz import fuzz
-
+from felix.graph.writer import delete_scenes, link_next_chunk, write_scene
 from felix.ingest.analyzer import analyze_scene, create_analyzer_agent
 from felix.ingest.checker import check_scene_consistency, create_checker_agents
 from felix.ingest.loader import load_scene
@@ -47,6 +47,7 @@ from felix.ingest.resolver import (
     fuzzy_match_entity,
     slugify,
 )
+from felix.ingest.segmenter import TextSegmenter
 
 logger = logging.getLogger("felix.ingest")
 
@@ -389,6 +390,12 @@ class _PipelineContext:
     char_details: dict[str, dict] = field(default_factory=dict)
 
 
+def _make_scene_id(stem: str, chunk_idx: int, total_chunks: int) -> str:
+    if total_chunks == 1:
+        return f"scene-{stem}"
+    return f"scene-{stem}-chunk-{chunk_idx:02d}"
+
+
 async def _emit_status(ctx: _PipelineContext, status: ImportStatus) -> None:
     if ctx.queue:
         await _emit(
@@ -405,13 +412,20 @@ async def _process_scene(
     ctx: _PipelineContext,
     scene_file: Path,
     analyzer: Any,
+    *,
+    scene_id: str | None = None,
+    chunk_text: str | None = None,
 ) -> tuple[list[dict], dict, list[tuple[Any, str, str | None]], str]:
-    scene_id = f"scene-{scene_file.stem}"
+    if scene_id is None:
+        scene_id = f"scene-{scene_file.stem}"
     ctx.progress.current_scene = scene_file.name
     ctx.progress.status = ImportStatus.ANALYZING
     await _emit_status(ctx, ImportStatus.ANALYZING)
 
-    scene_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
+    if chunk_text is not None:
+        scene_text = chunk_text
+    else:
+        scene_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
     analysis = await analyze_scene(analyzer, scene_text)
 
     if ctx.queue:
@@ -544,7 +558,7 @@ async def _check_scene(
         await _emit(ctx.queue, "check_complete", issue_count=len(report.issues))
 
 
-async def _profile_scene_characters(
+async def _profile_scene_characters(  # noqa: PLR0912, PLR0913
     ctx: _PipelineContext,
     resolved_chars: list[tuple[Any, str, str | None]],
     scene_id: str,
@@ -612,7 +626,7 @@ async def _profile_scene_characters(
                     a, b = sorted([char_id, other_id])
                     existing_rels = await get_relation_types_for_pair(ctx.driver, a, b)
                     is_duplicate = any(
-                        fuzz.ratio(rel.relation.lower(), ex.lower()) >= 75
+                        fuzz.ratio(rel.relation.lower(), ex.lower()) >= 75  # noqa: PLR2004
                         for ex in existing_rels
                     )
                     if not is_duplicate:
@@ -684,9 +698,37 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
             )
 
         ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.char_details = await _load_registries(driver)
-        scene_ids = [f"scene-{f.stem}" for f in scene_files]
-        await delete_issues_for_scenes(driver, scene_ids)
-        await delete_scenes(driver, scene_ids)
+
+        # Idempotent cleanup — covers both "scene-{stem}" and "scene-{stem}-chunk-NN"
+        existing_scene_ids = await get_scene_ids_for_stems(driver, [f.stem for f in scene_files])
+        await delete_issues_for_scenes(driver, existing_scene_ids)
+        await delete_scenes(driver, existing_scene_ids)
+
+        # Expand each file into (file, chunk_idx, total_chunks, chunk_text)
+        segmenter = TextSegmenter(
+            max_tokens=settings.segmenter_max_tokens,
+            overlap_ratio=settings.segmenter_overlap_ratio,
+            threshold=settings.segmenter_threshold,
+        )
+        scene_units: list[tuple[Path, int, int, str]] = []
+        for scene_file in scene_files:
+            raw_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
+            chunks = await asyncio.to_thread(segmenter.segment, raw_text)
+            if len(chunks) > 1 and queue:
+                await _emit(queue, "file_segmented", filename=scene_file.name, chunk_count=len(chunks))
+            for i, chunk in enumerate(chunks):
+                scene_units.append((scene_file, i, len(chunks), chunk))
+
+        progress.total_scenes = len(scene_units)
+        if queue:
+            await _emit(
+                queue,
+                "status_change",
+                status=ImportStatus.PENDING,
+                total_scenes=progress.total_scenes,
+                processed_scenes=0,
+                current_scene="",
+            )
 
         analyzer = create_analyzer_agent(model_name, base_url)
         timeline_checker, narrative_checker = create_checker_agents(model_name, base_url)
@@ -694,10 +736,11 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         profiler_patch = create_profiler_patch_agent(model_name, base_url) if enrich_profiles else None
         scenes_processed = 0
 
-        for scene_file in scene_files:
+        for scene_file, chunk_idx, total_chunks, chunk_text in scene_units:
+            scene_id = _make_scene_id(scene_file.stem, chunk_idx, total_chunks)
             try:
-                scene_issues, summary, resolved_chars, scene_text = await _process_scene(
-                    ctx, scene_file, analyzer
+                scene_issues, summary, resolved_chars, _ = await _process_scene(
+                    ctx, scene_file, analyzer, scene_id=scene_id, chunk_text=chunk_text
                 )
                 for issue in scene_issues:
                     await create_issue(driver, issue)
@@ -707,6 +750,11 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 await _check_scene(ctx, summary, timeline_checker, narrative_checker)
 
                 await write_scene(driver, summary)
+
+                if chunk_idx > 0:
+                    prev_id = _make_scene_id(scene_file.stem, chunk_idx - 1, total_chunks)
+                    await link_next_chunk(driver, prev_id, scene_id)
+
                 graph_issues = await check_bilocalization(driver, summary["scene_id"])
                 for issue in graph_issues:
                     await create_issue(driver, issue)
@@ -717,7 +765,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                         ctx,
                         resolved_chars,
                         summary["scene_id"],
-                        scene_text,
+                        chunk_text,
                         summary["title"],
                         profiler,
                         profiler_patch,
@@ -727,13 +775,13 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 progress.failed_scenes += 1
                 progress.processed_scenes += 1
                 if queue:
-                    await _emit(queue, "scene_error", scene_id=f"scene-{scene_file.stem}", filename=scene_file.name, error=str(e))
+                    await _emit(queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
             except Exception as e:
                 logger.exception("Scene processing failed: %s", scene_file.name)
                 progress.failed_scenes += 1
                 progress.processed_scenes += 1
                 if queue:
-                    await _emit(queue, "scene_error", scene_id=f"scene-{scene_file.stem}", filename=scene_file.name, error=str(e))
+                    await _emit(queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
 
         if scenes_processed == 0:
             progress.error = f"Toutes les scenes ont echoue ({progress.failed_scenes}/{progress.total_scenes})"

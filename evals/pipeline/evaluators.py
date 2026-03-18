@@ -305,6 +305,44 @@ class NoIssueDescriptionContains(Evaluator[str, PipelineQueryResult]):
 
 
 @dataclass
+class ProfileNotContainsKeyword(Evaluator[str, PipelineQueryResult]):
+    """Check that the character profile does NOT contain a keyword (attribution test).
+
+    expected_output: comma-separated keywords, ALL must be absent.
+    Example: "morgul,poignard,lame"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | str]:
+        if not ctx.expected_output:
+            return {}
+        keywords = [k.strip().lower() for k in ctx.expected_output.split(",") if k.strip()]
+        bg = (ctx.output.background or "").lower()
+        found = [k for k in keywords if k in bg]
+        result: dict[str, bool | str] = {"profile_not_contains": not found}
+        if found:
+            result["found_keywords"] = ", ".join(found)
+        return result
+
+
+@dataclass
+class MinChunkCount(Evaluator[str, PipelineQueryResult]):
+    """Check that a file was segmented into at least N chunks (Scene nodes).
+
+    expected_output: minimum chunk count as a string.
+    Example: "2"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | int]:
+        expected = int(ctx.expected_output or 1)
+        count = ctx.output.fragment_count
+        return {"chunks_ok": count >= expected, "chunks_got": count}
+
+
+@dataclass
 class AllLocationsContainKeyword(Evaluator[str, PipelineQueryResult]):
     """Check that ALL locations contain the expected keyword (tests deduplication).
 

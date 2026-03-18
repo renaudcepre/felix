@@ -107,7 +107,10 @@ def export() -> None:
     exports_dir = Path("exports")
     exports_dir.mkdir(exist_ok=True)
     filename = exports_dir / f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    filename.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    def _default(o: object) -> str:
+        return str(o)
+
+    filename.write_text(json.dumps(data, indent=2, ensure_ascii=False, default=_default))
     console.print(f"[green]Export sauvegarde :[/green] {filename} ({len(data['characters'])} perso, {len(data['scenes'])} scenes)")
 
 

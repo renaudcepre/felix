@@ -64,9 +64,19 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
     driver = get_driver()
     await setup_constraints(driver)
 
-    # Clear any previous data
+    # Clear any previous data (explicit write transaction for reliable commit)
+    async def _delete_all(tx: Any) -> None:
+        await tx.run("MATCH (n) DETACH DELETE n")
+
     async with driver.session() as session:
-        await session.run("MATCH (n) DETACH DELETE n")
+        await session.execute_write(_delete_all)
+        # Verify the graph is actually empty
+        result = await session.run("MATCH (n) RETURN count(n) AS remaining")
+        record = await result.single()
+        remaining = record["remaining"] if record else 0
+        if remaining > 0:
+            _console.print(f"  [yellow]Warning: {remaining} nodes still in DB after delete, retrying...[/yellow]")
+            await session.execute_write(_delete_all)
 
     try:
         for f in sorted(fixtures_dir.glob("*.txt")):
@@ -92,10 +102,20 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
+    # Diagnostic: count nodes after pipeline to detect silent failures
+    async with driver.session() as session:
+        r = await session.run("MATCH (n) RETURN labels(n)[0] AS lbl, count(n) AS n ORDER BY lbl")
+        rows = await r.data()
+    if rows:
+        counts = ", ".join(f"{row['lbl']}={row['n']}" for row in rows)
+        _console.print(f"  [dim]Graph: {counts}[/dim]")
+    else:
+        _console.print("  [red]Graph: EMPTY — pipeline may have failed silently[/red]")
+
     return driver
 
 
-async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:
+async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noqa: PLR0911, PLR0912
     """Answer a DB query against an already-populated pipeline driver.
 
     Supported query keys:
@@ -112,6 +132,8 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:
       - "all_issues"               → all issues across all scenes
       - "scene_date:<scene_id>"    → scene_date text for that scene
       - "relation_count:char_a,char_b" → relation count for a pair
+      - "chunk_count:<stem>"           → number of Scene nodes for that file stem
+      - "next_chunk_links:<stem>"      → number of NEXT_CHUNK links for that file stem
     """
     if query == "characters":
         rows = await repository.list_all_characters(driver)
@@ -184,6 +206,16 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:
         rows = await repository.list_all_character_relations(driver)
         filtered = [r for r in rows if r["character_id_a"] == char_id or r["character_id_b"] == char_id]
         return PipelineQueryResult(relations=[{"a": r["character_id_a"], "b": r["character_id_b"], "relation": r["relation_type"]} for r in filtered])
+
+    if query.startswith("chunk_count:"):
+        stem = query[len("chunk_count:"):]
+        count = await repository.count_scenes_for_stem(driver, stem)
+        return PipelineQueryResult(fragment_count=count)
+
+    if query.startswith("next_chunk_links:"):
+        stem = query[len("next_chunk_links:"):]
+        count = await repository.count_next_chunk_links_for_stem(driver, stem)
+        return PipelineQueryResult(fragment_count=count)
 
     return PipelineQueryResult()
 

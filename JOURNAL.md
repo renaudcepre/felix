@@ -1,5 +1,28 @@
 # Journal de developpement — Felix
 
+## Segmentation narrative — 2026-03-17
+
+**Objectif :** Rendre la pipeline robuste face aux fichiers de taille arbitraire (texte libre > 2500 tokens). Découpage sémantique en chunks overlappants, idempotence re-import, liaison NEXT_CHUNK dans le graphe.
+
+**Nouveaux fichiers :**
+- `src/felix/ingest/segmenter.py` : `segment_text()` — passthrough si ≤ budget, sinon découpage en 3 passes (estimate_tokens → semantic breakpoints cosine similarity all-MiniLM-L6-v2 → overlap 20%). Modèle chargé lazily.
+- `tests/test_segmenter.py` : 26 tests unitaires (vecteurs orthogonaux pour forcer les cuts à positions précises).
+- `plans/segmentation.md` : plan d'architecture complet (phases, API, injection pipeline, schéma Neo4j).
+
+**Fichiers modifiés :**
+- `src/felix/config.py` : 3 nouveaux settings (`segmenter_max_tokens`, `segmenter_overlap_ratio`, `segmenter_threshold`).
+- `src/felix/graph/writer.py` : ajout `link_next_chunk(driver, from_id, to_id)` — crée `(:Scene)-[:NEXT_CHUNK]->(:Scene)`.
+- `src/felix/graph/repository.py` : ajout `get_scene_ids_for_stems(driver, stems)` — STARTS WITH pour couvrir `scene-{stem}` et `scene-{stem}-chunk-NN`.
+- `src/felix/ingest/pipeline.py` : expansion fichier → chunks avant traitement, `_make_scene_id()`, SSE event `file_segmented`, `link_next_chunk` après chaque chunk.
+
+**Tests :** 115/115 passent (112 unitaires + 3 nouveaux pour `_merge_small_segments`).
+
+**Evals :** suite `pipeline-segmentation` 8/8 (Mistral small). Fixture `long-mission.txt` (2148 mots, ~2899 tokens) → 2 chunks, 1 NEXT_CHUNK, 4 personnages extraits cross-chunk.
+
+**Fix bug segmenter :** `_merge_small_segments` ajoutée — les breakpoints sémantiques sont des points de coupure préférentiels, pas forcés. Texte dialogue-heavy : 2 chunks au lieu de 53.
+
+---
+
 ## Code review fixes — 2026-03-17
 
 **Objectif :** Résoudre 7 issues remontées lors de la code review post-migration Neo4j.
