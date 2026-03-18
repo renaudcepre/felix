@@ -15,61 +15,61 @@ if TYPE_CHECKING:
 logger = logging.getLogger("felix.ingest.profiler")
 
 PROFILER_PATCH_PROMPT = """\
-Tu es un assistant specialise dans l'enrichissement de profils de personnages de scenario.
+You are a specialized assistant for enriching screenplay character profiles.
 
-On te donne :
-1. Le profil actuel valide d'un personnage (issu des scenes precedentes)
-2. Une nouvelle scene ou ce personnage apparait
+You are given:
+1. The current validated profile of a character (from previous scenes)
+2. A new scene in which this character appears
 
-Ta mission : enrichir le profil UNIQUEMENT avec ce que cette nouvelle scene apporte de nouveau.
+Your task: enrich the profile ONLY with what this new scene adds.
 
-REGLE ABSOLUE :
-- Ne modifie, n'efface, ne reformule rien de ce qui existe deja dans le profil.
-- N'invente rien : chaque information ajoutee doit pouvoir etre pointee dans le texte de la scene.
-- Si la scene n'apporte rien de nouveau pour un champ, retourne null pour ce champ.
-- Un champ null signifie "inchange", pas "vide".
+ABSOLUTE RULE:
+- Do not modify, erase, or rephrase anything that already exists in the profile.
+- Invent nothing: every added piece of information must be pointable to the scene text.
+- If the scene adds nothing new for a field, return null for that field.
+- A null field means "unchanged", not "empty".
 
-Champs a enrichir (null si pas de nouvelle information) :
-- age : si la scene precise ou confirme l'age (nouveaux details uniquement)
-- physical : si la scene decrit l'apparence physique (nouveaux details uniquement)
-- background : si la scene revele de nouveaux elements du passe du personnage
-- arc : si la scene fait evoluer le personnage (actions concretes nouvelles)
-- traits : si la scene demontre de nouveaux traits de caractere
-- relations : nouvelles relations observees dans CETTE scene uniquement
+Fields to enrich (null if no new information):
+- age: if the scene specifies or confirms the age (new details only)
+- physical: if the scene describes physical appearance (new details only)
+- background: if the scene reveals new elements of the character's past
+- arc: if the scene develops the character (new concrete actions)
+- traits: if the scene demonstrates new character traits
+- relations: new relationships observed in THIS scene only
 
-Reponds en francais. Sois concis et factuel.
+Be concise and factual.
 """
 
 PROFILER_PROMPT = """\
-Tu es un assistant specialise dans la synthese de profils de personnages de scenario.
+You are a specialized assistant for synthesizing screenplay character profiles.
 
-On te donne le nom d'un personnage et les extraits de scenes ou il apparait.
-Synthetise un profil structure a partir UNIQUEMENT de ce qui est EXPLICITEMENT \
-ecrit dans les textes fournis.
+You are given a character's name and excerpts from scenes in which they appear.
+Synthesize a structured profile based ONLY on what is EXPLICITLY \
+written in the provided texts.
 
-REGLE ABSOLUE : chaque information que tu ecris DOIT pouvoir etre pointee dans \
-une phrase precise des textes. Si tu ne peux pas citer la phrase source, \
-mets le champ a null. Un champ null est TOUJOURS preferable a une invention.
+ABSOLUTE RULE: every piece of information you write MUST be traceable to \
+a specific sentence in the texts. If you cannot cite the source sentence, \
+set the field to null. A null field is ALWAYS preferable to an invention.
 
-Ne deduis PAS, n'extrapole PAS, n'embellis PAS. Pas de "probablement", \
-pas de "semble", pas de supposition sur l'apparence, les vetements, l'age \
-ou le caractere si le texte n'en parle pas.
+Do NOT infer, extrapolate, or embellish. No "probably", \
+no "seems", no guessing about appearance, clothing, age \
+or personality if the text does not mention it.
 
-Champs a remplir :
-- age : age ou tranche d'age UNIQUEMENT si le texte le mentionne explicitement
-- physical : description physique UNIQUEMENT si le texte decrit l'apparence \
-(vetements, traits, corpulence...). "fixait l'ecran" n'est PAS une description physique.
-- background : historique et origines UNIQUEMENT ce que le texte dit du passe du personnage
-- arc : evolution narrative du personnage a travers les scenes, basee sur ses actions concretes
-- traits : traits de caractere UNIQUEMENT ceux demontres par les actions et dialogues du texte
-- relations : liste des relations avec d'autres personnages observees dans les textes.
-  Pour chaque relation, indique :
-  - other_name : le nom exact du personnage tel qu'il apparait dans les textes
-  - relation : description libre de la relation (ex: "collegue au relais Helios-3", \
-"mentor", "rival", "pere", "IA compagnon"). Sois precis et contextuel.
-  Ne liste que les relations clairement presentes dans les textes.
+Fields to fill:
+- age: age or age range ONLY if the text mentions it explicitly
+- physical: physical description ONLY if the text describes appearance \
+(clothing, features, build...). "stared at the screen" is NOT a physical description.
+- background: history and origins — ONLY what the text says about the character's past
+- arc: narrative evolution of the character across scenes, based on their concrete actions
+- traits: character traits ONLY as demonstrated by actions and dialogue in the text
+- relations: list of relationships with other characters observed in the texts.
+  For each relation, provide:
+  - other_name: the exact name of the character as it appears in the texts
+  - relation: free-form description of the relationship (e.g. "colleague at Helios-3 relay", \
+"mentor", "rival", "father", "companion AI"). Be precise and contextual.
+  List only relationships clearly present in the texts.
 
-Reponds en francais. Sois concis et factuel.
+Be concise and factual.
 """
 
 
@@ -106,20 +106,20 @@ async def patch_character_profile(
     new_scene_text: str,
     new_scene_fragment: dict,
 ) -> CharacterProfile:
-    parts = [f"Personnage : {name}\n"]
-    parts.append("=== Profil actuel ===")
+    parts = [f"Character: {name}\n"]
+    parts.append("=== Current profile ===")
     for field in ("age", "physical", "background", "arc", "traits"):
         val = existing_profile.get(field)
         if val:
-            parts.append(f"- {field} : {val}")
+            parts.append(f"- {field}: {val}")
 
     role = new_scene_fragment.get("role", "")
     desc = new_scene_fragment.get("description", "")
     title = new_scene_fragment.get("scene_title") or new_scene_fragment.get("scene_id", "?")
-    parts.append(f"\n=== Nouvelle scene : '{title}' (role: {role}) ===")
+    parts.append(f"\n=== New scene: '{title}' (role: {role}) ===")
     if desc:
-        parts.append(f"Fragment : {desc}")
-    parts.append(f"\n--- Texte de la scene ---\n{new_scene_text}")
+        parts.append(f"Fragment: {desc}")
+    parts.append(f"\n--- Scene text ---\n{new_scene_text}")
 
     input_text = "\n".join(parts)
     result = await agent.run(input_text)
@@ -133,20 +133,20 @@ async def profile_character(
     fragments: list[dict],
     known_characters: list[str] | None = None,
 ) -> CharacterProfile:
-    parts = [f"Personnage : {name}\n"]
+    parts = [f"Character: {name}\n"]
     for frag in fragments:
         title = frag.get("scene_title") or frag.get("scene_id", "?")
         role = frag.get("role", "")
         desc = frag.get("description", "")
-        parts.append(f"- Scene '{title}' (role: {role}) : {desc}")
+        parts.append(f"- Scene '{title}' (role: {role}): {desc}")
 
     if known_characters:
-        parts.append(f"\nPersonnages connus du scenario : {', '.join(known_characters)}")
+        parts.append(f"\nKnown characters in the screenplay: {', '.join(known_characters)}")
         parts.append(
-            "Pour les relations, utilise les noms exacts de cette liste quand possible."
+            "For relations, use the exact names from this list when possible."
         )
 
-    parts.append("\nTextes des scenes :")
+    parts.append("\nScene texts:")
     for i, text in enumerate(scene_texts, 1):
         parts.append(f"\n--- Scene {i} ---\n{text}")
 

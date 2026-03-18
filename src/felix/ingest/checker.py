@@ -19,67 +19,67 @@ if TYPE_CHECKING:
 logger = logging.getLogger("felix.ingest.checker")
 
 CHECKER_TIMELINE_PROMPT = """\
-Tu es un assistant specialise dans la verification de coherence temporelle de scenarios.
+You are a specialized assistant for checking temporal consistency in screenplays.
 
-On te donne une liste de scenes triees chronologiquement (scene_id, titre, resume, date, era).
+You are given a chronologically sorted list of scenes (scene_id, title, summary, date, era).
 
-CONTEXTE IMPORTANT :
-- Les scenes peuvent couvrir plusieurs epoques (ex: 1940s, 1970s, 2050s, 2140s).
-- Des personnages avec le meme nom de famille peuvent etre des personnes DIFFERENTES.
-- Une entite (objet, IA, organisation) peut EVOLUER au fil du temps — ce n'est PAS une incoherence.
+IMPORTANT CONTEXT:
+- Scenes can span multiple eras (e.g. 1940s, 1970s, 2050s, 2140s).
+- Characters sharing the same last name may be DIFFERENT people.
+- An entity (object, AI, organization) can EVOLVE over time — this is NOT an inconsistency.
 
-Detecte UNIQUEMENT les vraies incoherences TEMPORELLES :
-- timeline_inconsistency : dates impossibles, anachronismes, evenements dans le mauvais ordre,
-  dates contradictoires entre scenes
+Detect ONLY real TEMPORAL inconsistencies:
+- timeline_inconsistency: impossible dates, anachronisms, events in the wrong order,
+  contradictory dates between scenes
 
-NE SIGNALE PAS :
-- Des personnages de la meme famille avec des noms similaires (ce sont des personnes differentes)
-- L'evolution normale d'une entite au fil du temps
-- Toute incoherence non temporelle (contradictions de personnages, infos manquantes...)
+DO NOT REPORT:
+- Characters from the same family with similar names (they are different people)
+- Normal evolution of an entity over time
+- Any non-temporal inconsistency (character contradictions, missing info...)
 
-Pour chaque probleme, fournis :
-- type : "timeline_inconsistency"
-- severity : "error" (certaine) ou "warning" (suspicion)
-- scene_id : l'ID de la scene concernee
-- entity_id : l'ID de l'entite concernee si applicable, sinon null
-- description : description claire en francais
-- suggestion : suggestion de correction en francais
+For each problem, provide:
+- type: "timeline_inconsistency"
+- severity: "error" (certain) or "warning" (suspected)
+- scene_id: the ID of the affected scene
+- entity_id: the ID of the affected entity if applicable, otherwise null
+- description: clear description
+- suggestion: correction suggestion
 
-Si tout est coherent, retourne une liste vide d'issues.
+If everything is consistent, return an empty issues list.
 """
 
 CHECKER_NARRATIVE_PROMPT = """\
-Tu es un assistant specialise dans la verification de coherence narrative de scenarios.
+You are a specialized assistant for checking narrative consistency in screenplays.
 
-On te donne :
-- "current_scene" : la scene a verifier (scene_id, titre, resume, personnages, lieu)
-- "related_scenes" : les scenes semantiquement proches (scene_id, titre, resume)
+You are given:
+- "current_scene": the scene to verify (scene_id, title, summary, characters, location)
+- "related_scenes": semantically related scenes (scene_id, title, summary)
 
-CONTEXTE IMPORTANT :
-- Des personnages avec le meme nom de famille peuvent etre des personnes DIFFERENTES.
-- Un personnage avec le role "mentioned" n'est PAS physiquement present — il est juste evoque.
-- Un personnage mort peut etre mentionne dans des scenes posterieures — ce n'est PAS une incoherence.
+IMPORTANT CONTEXT:
+- Characters sharing the same last name may be DIFFERENT people.
+- A character with role "mentioned" is NOT physically present — they are merely evoked.
+- A dead character can be mentioned in later scenes — this is NOT an inconsistency.
 
-Detecte UNIQUEMENT les vraies incoherences NARRATIVES dans la scene courante :
-- character_contradiction : un personnage fait quelque chose d'incompatible avec ce qu'on
-  sait de lui dans les scenes precedentes (meme personnage, pas un homonyme ou descendant)
-- missing_info : un personnage reagit a une information qu'il ne peut pas encore connaitre
-  d'apres les scenes precedentes
+Detect ONLY real NARRATIVE inconsistencies in the current scene:
+- character_contradiction: a character does something incompatible with what we know
+  about them from previous scenes (same character, not a namesake or descendant)
+- missing_info: a character reacts to information they cannot yet know
+  based on previous scenes
 
-NE SIGNALE PAS :
-- Les incoherences temporelles (dates, anachronismes) — ce n'est pas votre domaine
-- Des personnages de la meme famille avec des noms similaires
-- L'evolution normale d'entites au fil du temps
+DO NOT REPORT:
+- Temporal inconsistencies (dates, anachronisms) — that is not your domain
+- Characters from the same family with similar names
+- Normal evolution of entities over time
 
-Pour chaque probleme, fournis :
-- type : "character_contradiction" ou "missing_info"
-- severity : "error" (certaine) ou "warning" (suspicion)
-- scene_id : l'ID de la scene concernee (le scene_id de la current_scene)
-- entity_id : l'ID de l'entite concernee si applicable, sinon null
-- description : description claire en francais
-- suggestion : suggestion de correction en francais
+For each problem, provide:
+- type: "character_contradiction" or "missing_info"
+- severity: "error" (certain) or "warning" (suspected)
+- scene_id: the ID of the affected scene (the scene_id of the current_scene)
+- entity_id: the ID of the affected entity if applicable, otherwise null
+- description: clear description
+- suggestion: correction suggestion
 
-Si tout est coherent, retourne une liste vide d'issues.
+If everything is consistent, return an empty issues list.
 """
 
 

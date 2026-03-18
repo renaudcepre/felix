@@ -1,5 +1,34 @@
 # Journal de developpement — Felix
 
+## Piste — Segmenter embedding model incohérent — 2026-03-18
+
+**Observation :** Le segmenter (`src/felix/ingest/segmenter.py`, ligne 25) utilise `all-MiniLM-L6-v2` (anglophone) pour détecter les breakpoints sémantiques, alors que ChromaDB a migré vers `bge-m3` (multilingue) pour exactement la même raison. Le contenu de Felix étant en français, c'est incohérent.
+
+**Impact :** Faible en pratique — la segmentation détecte juste des changements de topic, pas de la similarité fine. Le modèle produit des coupures acceptables sur du français. Mais c'est une dette technique à résorber.
+
+**Fix envisagé :** Remplacer le hardcode par `bge-m3` ou exposer un setting `segmenter_embedding_model` dans `config.py`. `bge-m3` est déjà une dépendance (ChromaDB).
+
+**Ref :** [Issue #34](https://github.com/renaudcepre/felix/issues/34)
+
+---
+
+## Migration prompts en anglais — 2026-03-18
+
+**Contexte :** Les evals chatbot avec Qwen2.5-7B-Instruct-Turbo ont chuté de 81% à 54%. Hypothèse : demander au modèle de raisonner sur une base ingérée en anglais avec des questions en français crée une friction trop importante pour un petit modèle.
+
+**Changements :**
+- `src/felix/ingest/analyzer.py` : `ANALYZER_PROMPT` traduit en anglais. Message de retry traduit.
+- `src/felix/ingest/checker.py` : `CHECKER_TIMELINE_PROMPT` et `CHECKER_NARRATIVE_PROMPT` traduits en anglais.
+- `src/felix/ingest/profiler.py` : `PROFILER_PROMPT` et `PROFILER_PATCH_PROMPT` traduits en anglais. Labels d'input des fonctions `profile_character` et `patch_character_profile` traduits.
+- `src/felix/agent/chat_agent.py` : suppression de `You answer in French.` et traduction de l'exemple dans le prompt.
+- `evals/run_evals.py` : les 26 questions du `CHATBOT_DATASET` traduites en anglais.
+
+**Décision :** Suppression de toutes les instructions de langue dans les prompts (`Reply in French`, `You answer in French`, etc.). La langue de réponse sera injectée dynamiquement au niveau applicatif dans une future itération.
+
+**Leçon :** Le mix FR/EN (questions FR + données EN + instructions EN) est trop ambigu pour les petits modèles — ils perdent le fil entre la langue de raisonnement et la langue de réponse. Garder une langue unique bout-en-bout pour les prompts système.
+
+---
+
 ## Segmentation narrative — 2026-03-17
 
 **Objectif :** Rendre la pipeline robuste face aux fichiers de taille arbitraire (texte libre > 2500 tokens). Découpage sémantique en chunks overlappants, idempotence re-import, liaison NEXT_CHUNK dans le graphe.

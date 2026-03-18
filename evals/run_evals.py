@@ -15,6 +15,7 @@ import atexit
 import os
 from typing import Annotated, Any
 
+import logfire
 import typer
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
@@ -625,21 +626,21 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         # --- lookup ---
         Case(
             name="lookup_character",
-            inputs="Qui est Marie Dupont ?",
+            inputs="Who is Marie Dupont?",
             expected_output="Marie, Resistance, 1940s, coursiere",
             metadata={"category": "lookup"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="lookup_pierre",
-            inputs="Qui est Pierre Renard ?",
+            inputs="Who is Pierre Renard?",
             expected_output="Pierre, Renard, arret, 1942",
             metadata={"category": "lookup"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="lookup_location",
-            inputs="Decris la planque de Lyon.",
+            inputs="Describe the Lyon safehouse.",
             expected_output="Planque de Lyon, Lyon, Resistance",
             metadata={"category": "lookup"},
             evaluators=[ContainsExpectedFacts()],
@@ -647,14 +648,14 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         # --- coherence ---
         Case(
             name="coherence_marie_sarah",
-            inputs="Est-ce coherent si Marie rencontre Sarah en mars 1942 ?",
+            inputs="Is it consistent for Marie to meet Sarah in March 1942?",
             expected_output="Sarah, mars 1942, Lyon",
             metadata={"category": "coherence"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="coherence_pierre_november",
-            inputs="Ou etait Pierre en novembre 1942 ?",
+            inputs="Where was Pierre in November 1942?",
             expected_output="Pierre, novembre 1942, arret",
             metadata={"category": "coherence"},
             evaluators=[ContainsExpectedFacts()],
@@ -662,21 +663,21 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         # --- semantic ---
         Case(
             name="semantic_identity",
-            inputs="Trouve les scenes ou quelqu'un decouvre une identite secrete.",
+            inputs="Find scenes where someone discovers a secret identity.",
             expected_output="042, identite, Laforge",
             metadata={"category": "semantic"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="semantic_archives",
-            inputs="Que se passe-t-il dans les archives ?",
+            inputs="What happens in the archives?",
             expected_output="Julien, Paris, document",
             metadata={"category": "semantic"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="semantic_rafle",
-            inputs="Trouve les scenes liees aux rafles.",
+            inputs="Find scenes related to the roundups.",
             expected_output="rafle, Vichy, 1942",
             metadata={"category": "semantic"},
             evaluators=[ContainsExpectedFacts()],
@@ -684,14 +685,14 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         # --- cross-era ---
         Case(
             name="cross_era_benoit_julien",
-            inputs="Quel est le lien entre Benoit dans les annees 40 et les documents que Julien trouve ?",
+            inputs="What is the connection between Benoit in the 1940s and the documents Julien finds?",
             expected_output="Benoit, calendrier, rafle, Julien, documents",
             metadata={"category": "cross_era"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="cross_era_marie_timeline",
-            inputs="Quel etait le role de Marie entre janvier et novembre 1942 ?",
+            inputs="What was Marie's role between January and November 1942?",
             expected_output="Marie, 1942, coursiere, cellule",
             metadata={"category": "cross_era"},
             evaluators=[ContainsExpectedFacts()],
@@ -699,7 +700,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         # --- causalite ---
         Case(
             name="causal_marie_leader",
-            inputs="Qu'est-ce qui a pousse Marie a prendre la tete de la cellule ?",
+            inputs="What pushed Marie to take over the cell?",
             expected_output="Pierre est arrete en 1942, Marie prend la tete de la cellule de resistance",
             metadata={"category": "causal"},
             evaluators=[LLMJudge(
@@ -710,7 +711,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         ),
         Case(
             name="causal_benoit_protection",
-            inputs="Comment les actions de Benoit ont-elles protege la cellule de Pierre ?",
+            inputs="How did Benoit's actions protect Pierre's cell?",
             expected_output="Benoit transmet des informations a Pierre pour proteger la cellule de resistance",
             metadata={"category": "causal"},
             evaluators=[LLMJudge(
@@ -721,14 +722,14 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         ),
         Case(
             name="causal_julien_discovery",
-            inputs="Pourquoi Julien cherche-t-il dans les archives en 1970 ?",
+            inputs="Why is Julien searching the archives in 1970?",
             expected_output="",
             metadata={"category": "causal"},
             evaluators=[RefusesToFabricate()],
         ),
         Case(
             name="causal_chain_benoit_to_julien",
-            inputs="Retrace la chaine causale entre le double jeu de Benoit en 1942 et la decouverte de Julien 30 ans plus tard.",
+            inputs="Trace the causal chain between Benoit's double game in 1942 and Julien's discovery 30 years later.",
             expected_output="Benoit transmet en 1942, les documents survivent, Julien les decouvre dans les archives",
             metadata={"category": "causal"},
             evaluators=[LLMJudge(
@@ -737,24 +738,24 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
                 include_input=True,
             )],
         ),
-        # --- prop tracking (Fusil de Tchekhov) ---
+        # --- prop tracking (Chekhov's gun) ---
         Case(
             name="prop_carbone_origin",
-            inputs="Qui a créé le carbone mentionné dans les archives de 1942 ?",
+            inputs="Who created the carbon copy mentioned in the 1942 archives?",
             expected_output="Benoit,calendrier,rafle",
             metadata={"category": "prop_tracking", "difficulty": "medium"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="prop_carbone_rediscovery",
-            inputs="Quand et où le carbone réapparaît-il après 1942 ?",
+            inputs="When and where does the carbon copy reappear after 1942?",
             expected_output="Julien,1974,archives",
             metadata={"category": "prop_tracking", "difficulty": "medium"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="prop_carbone_full_trace",
-            inputs="Retrace le parcours du document des rafles depuis sa création jusqu'à sa redécouverte.",
+            inputs="Trace the roundup document from its creation to its rediscovery.",
             expected_output="Benoit crée le carbone en 1942, Julien le retrouve dans les archives en 1974",
             metadata={"category": "prop_tracking", "difficulty": "hard"},
             evaluators=[LLMJudge(
@@ -766,7 +767,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         # --- information asymmetry ---
         Case(
             name="asym_julien_henriblanc",
-            inputs="Lorsque Julien rencontre Henri Blanc en juin 1974, sait-il que c'est Benoit Laforge ?",
+            inputs="When Julien meets Henri Blanc in June 1974, does he know it's Benoit Laforge?",
             expected_output="Julien ne sait pas que Henri Blanc est Benoit Laforge lors de leur rencontre",
             metadata={"category": "info_asymmetry", "difficulty": "medium"},
             evaluators=[LLMJudge(
@@ -777,14 +778,14 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         ),
         Case(
             name="asym_marie_benoit_july42",
-            inputs="En juillet 1942, Marie sait-elle déjà que Benoit est un agent double ?",
+            inputs="By July 1942, does Marie already know Benoit is a double agent?",
             expected_output="",
             metadata={"category": "info_asymmetry", "difficulty": "hard"},
             evaluators=[RefusesToFabricate()],
         ),
         Case(
             name="asym_who_knows_june42",
-            inputs="En juin 1942, qui est au courant que Benoit transmet des informations à la Résistance ?",
+            inputs="In June 1942, who knows that Benoit is passing information to the Resistance?",
             expected_output="Pierre,Benoit",
             metadata={"category": "info_asymmetry", "difficulty": "medium"},
             evaluators=[ContainsExpectedFacts()],
@@ -792,21 +793,21 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         # --- alias resolution ---
         Case(
             name="alias_inspecteur_laforge",
-            inputs="Qui est l'Inspecteur Laforge ?",
+            inputs="Who is Inspector Laforge?",
             expected_output="Benoit,Laforge,agent double",
             metadata={"category": "alias_resolution", "difficulty": "medium"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="alias_henri_blanc",
-            inputs="Qui est Henri Blanc ?",
+            inputs="Who is Henri Blanc?",
             expected_output="Benoit,1974,faux nom",
             metadata={"category": "alias_resolution", "difficulty": "medium"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="alias_le_fantome",
-            inputs="Qui est Le Fantôme ?",
+            inputs="Who is Le Fantome?",
             expected_output="",
             metadata={"category": "alias_resolution", "difficulty": "easy"},
             evaluators=[RefusesToFabricate()],
@@ -814,21 +815,21 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         # --- negative ---
         Case(
             name="negative_car_color",
-            inputs="De quelle couleur est la voiture de Marie ?",
+            inputs="What color is Marie's car?",
             expected_output="",
             metadata={"category": "negative"},
             evaluators=[RefusesToFabricate()],
         ),
         Case(
             name="negative_julien_brother",
-            inputs="Qui est le frere de Julien ?",
+            inputs="Who is Julien's brother?",
             expected_output="",
             metadata={"category": "negative"},
             evaluators=[RefusesToFabricate()],
         ),
         Case(
             name="negative_unknown_person",
-            inputs="Qui est Francois Moreau ?",
+            inputs="Who is Francois Moreau?",
             expected_output="",
             metadata={"category": "negative"},
             evaluators=[RefusesToFabricate()],
@@ -989,6 +990,13 @@ def main(
     # before this, then os._exit prevents threading._shutdown from hanging
     # on non-daemon threads left by chromadb / sentence-transformers.
     atexit.register(os._exit, 0)
+
+    if settings.logfire_token:
+        logfire.configure(
+            token=settings.logfire_token,
+            console={"min_log_level": "warn"},
+        )
+        logfire.instrument_pydantic_ai(event_mode="logs")
 
     if history or diff:
         _show_history(suite, diff=diff)
