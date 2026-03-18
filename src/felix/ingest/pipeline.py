@@ -264,6 +264,7 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
             "severity": "warning",
             "scene_id": scene_id,
             "entity_id": match.best_id,
+            "resolved": not was_timeout,
             "description": (
                 f"Personnage '{name}' ressemble a '{match.best_name}' "
                 f"(score {match.score:.2f}). Lien "
@@ -352,6 +353,7 @@ async def _resolve_location(  # noqa: PLR0913
                 "severity": "warning",
                 "scene_id": scene_id,
                 "entity_id": match.best_id,
+                "resolved": not was_timeout,
                 "description": (
                     f"Lieu '{analysis.location.name}' ressemble a '{match.best_name}' "
                     f"(score {match.score:.2f}). Lien effectue."

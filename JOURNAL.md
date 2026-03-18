@@ -1,5 +1,16 @@
 # Journal de developpement — Felix
 
+## Issue #18 — duplicate_suspect resolved=True après confirmation utilisateur — 2026-03-18
+
+**Contexte :** Quand l'utilisateur confirmait un lien d'entité ambiguë, l'issue `duplicate_suspect` était créée avec `resolved=False` (valeur par défaut). La description indiquait "Lien confirmé" mais l'issue restait ouverte.
+
+**Changements :**
+- `src/felix/ingest/pipeline.py` : ajout de `"resolved": not was_timeout` dans les deux dicts d'issue `duplicate_suspect` (fonctions `_handle_ambiguous_character` et `_resolve_location`). Si l'utilisateur confirme, `resolved=True` ; si timeout (lien auto), `resolved=False`.
+
+**Tests :** `uv run pytest tests/test_resolver.py -v` → 19/19 passent.
+
+---
+
 ## Issue #30 — Persistance des alias après confirmation de match — 2026-03-18
 
 **Contexte :** Lors d'un import multi-chunk, une confirmation `"link"` sur une entité ambiguë n'était pas mémorisée. Le même match était re-demandé pour chaque chunk suivant contenant la même entité.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
@@ -27,7 +28,15 @@ from felix.ingest.models import (
     ExtractedRelation,
     SceneAnalysis,
 )
-from felix.ingest.pipeline import ImportProgress, ImportStatus, run_import_pipeline
+from felix.ingest.pipeline import (
+    ClarificationSlot,
+    ImportProgress,
+    ImportStatus,
+    _handle_ambiguous_character,
+    _resolve_location,
+    run_import_pipeline,
+)
+from felix.ingest.resolver import AmbiguousMatch
 
 SCENE_1 = SceneAnalysis(
     title="Arrivee a la planque",
@@ -374,3 +383,127 @@ async def test_profiling_stores_relations(
     assert len(rels) >= 1
     rel_names = [r["other_name"] for r in rels]
     assert "Marie Dupont" in rel_names
+
+
+# --- Tests issue #18 : duplicate_suspect resolved selon confirmation ou timeout ---
+
+def _make_ambiguous_match() -> AmbiguousMatch:
+    return AmbiguousMatch(best_id="marie-dupont", best_name="Marie Dupont", score=0.85)
+
+
+async def test_duplicate_suspect_resolved_true_when_user_confirms():
+    """L'utilisateur confirme 'link' explicitement → resolved=True."""
+    queue: asyncio.Queue = asyncio.Queue()
+    pending: dict[str, ClarificationSlot] = {}
+    issues: list[dict] = []
+    match = _make_ambiguous_match()
+    driver = AsyncMock()
+
+    async def _answer_link():
+        await asyncio.sleep(0.01)
+        cid = next(iter(pending))
+        slot = pending[cid]
+        slot.answer = "link"
+        slot.event.set()
+
+    with patch("felix.ingest.pipeline.add_character_alias", new=AsyncMock()):
+        await asyncio.gather(
+            _handle_ambiguous_character(
+                name="Marie D.",
+                context=None,
+                match=match,
+                char_details={},
+                scene_id="scene-001",
+                issues=issues,
+                queue=queue,
+                pending_clarifications=pending,
+                char_registry={"marie-dupont": "Marie Dupont"},
+                char_aliases={},
+                driver=driver,
+            ),
+            _answer_link(),
+        )
+
+    assert len(issues) == 1
+    assert issues[0]["type"] == "duplicate_suspect"
+    assert issues[0]["resolved"] is True
+
+
+async def test_duplicate_suspect_resolved_false_on_timeout():
+    """Timeout → lien automatique → resolved=False."""
+    queue: asyncio.Queue = asyncio.Queue()
+    issues: list[dict] = []
+    match = _make_ambiguous_match()
+    driver = AsyncMock()
+
+    with (
+        patch("felix.ingest.pipeline.CLARIFICATION_TIMEOUT", 0.01),
+        patch("felix.ingest.pipeline.add_character_alias", new=AsyncMock()),
+    ):
+        await _handle_ambiguous_character(
+            name="Marie D.",
+            context=None,
+            match=match,
+            char_details={},
+            scene_id="scene-001",
+            issues=issues,
+            queue=queue,
+            pending_clarifications={},
+            char_registry={"marie-dupont": "Marie Dupont"},
+            char_aliases={},
+            driver=driver,
+        )
+
+    assert len(issues) == 1
+    assert issues[0]["type"] == "duplicate_suspect"
+    assert issues[0]["resolved"] is False
+
+
+async def test_location_duplicate_suspect_resolved_true_when_user_confirms():
+    """Lieu : utilisateur confirme → resolved=True."""
+    from felix.ingest.models import ExtractedLocation, SceneAnalysis as SA
+
+    queue: asyncio.Queue = asyncio.Queue()
+    pending: dict[str, ClarificationSlot] = {}
+    issues: list[dict] = []
+    driver = AsyncMock()
+
+    analysis = SA(
+        title="T",
+        summary="S",
+        era="1940s",
+        approximate_date=None,
+        characters=[],
+        location=ExtractedLocation(name="Planque Lyon", description=None),
+        mood=None,
+    )
+    loc_registry = {"planque-de-lyon": "Planque de Lyon"}
+
+    async def _answer_link():
+        await asyncio.sleep(0.01)
+        cid = next(iter(pending))
+        slot = pending[cid]
+        slot.answer = "link"
+        slot.event.set()
+
+    with patch("felix.ingest.pipeline.add_location_alias", new=AsyncMock()):
+        # Patch fuzzy_match_entity pour forcer un AmbiguousMatch
+        amb = AmbiguousMatch(best_id="planque-de-lyon", best_name="Planque de Lyon", score=0.86)
+        with patch("felix.ingest.pipeline.fuzzy_match_entity", return_value=amb):
+            await asyncio.gather(
+                _resolve_location(
+                    analysis=analysis,
+                    loc_registry=loc_registry,
+                    loc_aliases={},
+                    driver=driver,
+                    scene_id="scene-001",
+                    issues=issues,
+                    queue=queue,
+                    pending_clarifications=pending,
+                ),
+                _answer_link(),
+            )
+
+    assert len(issues) == 1
+    assert issues[0]["type"] == "duplicate_suspect"
+    assert issues[0]["resolved"] is True
