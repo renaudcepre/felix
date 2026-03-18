@@ -20,9 +20,8 @@ import numpy as np
 if TYPE_CHECKING:
     from sentence_transformers import SentenceTransformer
 
+from felix.config import settings
 from felix.ingest.utils import estimate_tokens
-
-_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 _EPSILON = 1e-8
 _MIN_BLOCKS = 2
 
@@ -58,7 +57,7 @@ class TextSegmenter:
         if self._model is None:
             from sentence_transformers import SentenceTransformer  # noqa: PLC0415
 
-            self._model = SentenceTransformer(_EMBEDDING_MODEL)
+            self._model = SentenceTransformer(settings.segmenter_embedding_model)
         return self._model
 
     # ── private helpers ───────────────────────────────────────────────────────

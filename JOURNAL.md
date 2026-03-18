@@ -1,5 +1,17 @@
 # Journal de developpement — Felix
 
+## Issue #34 — Segmenter : remplacer all-MiniLM-L6-v2 par bge-m3 configurable — 2026-03-18
+
+**Contexte :** Le segmenter utilisait `all-MiniLM-L6-v2` (English-only) en dur. ChromaDB avait déjà migré vers `BAAI/bge-m3` (multilingual) pour le français.
+
+**Changements :**
+- `src/felix/config.py` : ajout de `segmenter_embedding_model: str = "BAAI/bge-m3"` (configurable via `FLX_SEGMENTER_EMBEDDING_MODEL`)
+- `src/felix/ingest/segmenter.py` : suppression de `_EMBEDDING_MODEL`, import de `settings`, property `_embedding_model` utilise désormais `settings.segmenter_embedding_model`
+
+**Tests :** `uv run pytest tests/test_segmenter.py -v` → 29/29 passent (les tests mockent déjà la property, aucune modification nécessaire).
+
+---
+
 ## Issue #18 — duplicate_suspect resolved=True après confirmation utilisateur — 2026-03-18
 
 **Contexte :** Quand l'utilisateur confirmait un lien d'entité ambiguë, l'issue `duplicate_suspect` était créée avec `resolved=False` (valeur par défaut). La description indiquait "Lien confirmé" mais l'issue restait ouverte.
