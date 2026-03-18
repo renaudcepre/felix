@@ -662,8 +662,8 @@ async def _profile_scene_characters(  # noqa: PLR0912, PLR0913
                         stored_relations.append({"other_name": other_name, "relation": rel.relation})
 
             filled = [
-                k for k in ("age", "physical", "background", "arc", "traits")
-                if getattr(profile, k)
+                k for k, v in profile.model_dump().items()
+                if v and k in {"age", "physical", "background", "arc", "traits"}
             ]
 
             if ctx.queue:
