@@ -25,6 +25,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LOGFIRE_TOKEN", "FLX_LOGFIRE_TOKEN"),
     )
 
+    log_level: str = "INFO"
+
     segmenter_max_tokens: int = 2500
     segmenter_overlap_ratio: float = 0.20
     segmenter_threshold: float = 0.45

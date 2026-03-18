@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -7,6 +8,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from felix.telemetry import setup_logfire
+
+logger = logging.getLogger(__name__)
 
 # Must be called before pydantic-ai imports so logfire can instrument the models.
 setup_logfire()
@@ -36,7 +39,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.base_url = settings.llm_base_url
     app.state.import_state = ImportState()
 
-    print(f"Felix API started — model={settings.llm_model}, base_url={settings.llm_base_url}")
+    logger.info("Felix API started — model=%s, base_url=%s", settings.llm_model, settings.llm_base_url)
     yield
 
     await close_driver(driver)

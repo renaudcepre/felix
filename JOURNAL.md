@@ -1,5 +1,16 @@
 # Journal de developpement — Felix
 
+## Structured logging (Issue #12) — 2026-03-18
+
+4 fichiers modifiés, aucun nouveau fichier :
+- `config.py` : champ `log_level: str = "INFO"` → env var `FLX_LOG_LEVEL`
+- `telemetry.py` : `setup_logging()` (basicConfig idempotent), appelé en tête de `setup_logfire()`
+- `api/main.py` : `print()` → `logger.info()` (style `%`)
+- `api/routes/ingest.py` : `_log_task_exception` done_callback sur les deux `create_task` pour logger les exceptions silencieuses
+- `pyproject.toml` : suppression de `T201` dans `src/felix/api/**`
+
+Les modules `ingest/` avaient déjà des loggers corrects — ils émettent maintenant via le handler configuré.
+
 ## Réflexion architecture graph — 2026-03-18
 
 ### BEFORE/AFTER entre nodes Timeline

@@ -2,13 +2,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import tempfile
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, UploadFile
-from felix.api.deps import BaseUrl, Collection, ImportStateDep, ModelName, Neo4jDriver
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse, ServerSentEvent
+
+from felix.api.deps import BaseUrl, Collection, ImportStateDep, ModelName, Neo4jDriver
+
+logger = logging.getLogger(__name__)
+
+
+def _log_task_exception(task: asyncio.Task) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.exception("Unhandled exception in background import task", exc_info=exc)
 
 from felix.api.models import (
     ImportProgressResponse,
@@ -73,6 +85,7 @@ async def start_import(
             enrich_profiles=enrich,
         )
     )
+    import_state.task.add_done_callback(_log_task_exception)
 
     return ImportProgressResponse.model_validate(new_progress, from_attributes=True)
 
@@ -124,6 +137,7 @@ async def import_stream(
             enrich_profiles=enrich,
         )
     )
+    task.add_done_callback(_log_task_exception)
     import_state.task = task
 
     async def event_generator() -> AsyncGenerator[ServerSentEvent]:

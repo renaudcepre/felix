@@ -85,7 +85,6 @@ ignore = [
     "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
 ]
 "src/felix/api/**" = [
-    "T201",     # print allowed in API entry point
     "PLC0415",  # lazy import uvicorn in cli()
 ]
 
