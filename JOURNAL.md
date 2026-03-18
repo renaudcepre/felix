@@ -1,5 +1,23 @@
 # Journal de developpement — Felix
 
+## Issue #30 — Persistance des alias après confirmation de match — 2026-03-18
+
+**Contexte :** Lors d'un import multi-chunk, une confirmation `"link"` sur une entité ambiguë n'était pas mémorisée. Le même match était re-demandé pour chaque chunk suivant contenant la même entité.
+
+**Changements :**
+- `src/felix/graph/repository.py` : ajout de `add_character_alias(driver, char_id, alias)` et `add_location_alias(driver, loc_id, alias)` — Cypher `SET aliases = CASE ... END` idempotent.
+- `src/felix/ingest/pipeline.py` :
+  - `_PipelineContext` : ajout de `loc_aliases: dict[str, list[str]]`
+  - `_build_registry` : lecture des aliases des lieux depuis Neo4j (comme c'était déjà fait pour les personnages)
+  - `_load_registries` : retourne 5 valeurs au lieu de 4 (ajout de `loc_aliases`)
+  - `_handle_ambiguous_character` : après confirmation utilisateur (pas timeout), écrit l'alias en mémoire et en Neo4j
+  - `_resolve_location` : passe `loc_aliases` à `fuzzy_match_entity`, et après confirmation utilisateur (pas timeout), écrit l'alias en mémoire et en Neo4j
+  - `_resolve_characters` et `_process_scene` : call sites mis à jour pour passer `driver`, `char_aliases`, `loc_aliases`
+
+**Comportement :** Alias écrits uniquement sur confirmation explicite — les timeouts (auto-link) ne créent pas d'alias car la correspondance reste incertaine.
+
+---
+
 ## Piste — Segmenter embedding model incohérent — 2026-03-18
 
 **Observation :** Le segmenter (`src/felix/ingest/segmenter.py`, ligne 25) utilise `all-MiniLM-L6-v2` (anglophone) pour détecter les breakpoints sémantiques, alors que ChromaDB a migré vers `bge-m3` (multilingue) pour exactement la même raison. Le contenu de Felix étant en français, c'est incohérent.

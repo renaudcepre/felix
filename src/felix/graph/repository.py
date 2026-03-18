@@ -320,6 +320,42 @@ async def list_all_locations(driver: AsyncDriver) -> list[dict[str, Any]]:
         return await session.execute_read(_read)
 
 
+async def add_character_alias(driver: AsyncDriver, char_id: str, alias: str) -> None:
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
+            """
+            MATCH (c:Character {id: $id})
+            SET c.aliases = CASE
+                WHEN $alias IN coalesce(c.aliases, []) THEN coalesce(c.aliases, [])
+                ELSE coalesce(c.aliases, []) + [$alias]
+            END
+            """,
+            id=char_id,
+            alias=alias,
+        )
+
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
+
+async def add_location_alias(driver: AsyncDriver, loc_id: str, alias: str) -> None:
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
+            """
+            MATCH (l:Location {id: $id})
+            SET l.aliases = CASE
+                WHEN $alias IN coalesce(l.aliases, []) THEN coalesce(l.aliases, [])
+                ELSE coalesce(l.aliases, []) + [$alias]
+            END
+            """,
+            id=loc_id,
+            alias=alias,
+        )
+
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
+
 async def get_location_detail(
     driver: AsyncDriver, loc_id: str
 ) -> dict[str, Any] | None:

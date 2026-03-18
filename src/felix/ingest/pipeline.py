@@ -20,6 +20,8 @@ from rapidfuzz import fuzz
 from felix.config import SCENE_FILE_EXTENSIONS, settings
 from felix.graph.checks import check_bilocalization
 from felix.graph.repository import (
+    add_character_alias,
+    add_location_alias,
     create_issue,
     delete_issues_for_scenes,
     get_character_profile,
@@ -92,10 +94,11 @@ async def _emit(queue: EventQueue, event: str, **data: Any) -> None:
 
 def _build_registry(
     db_chars: list[dict], db_locs: list[dict]
-) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str]]:
+) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str], dict[str, list[str]]]:
     char_registry: dict[str, str] = {}
     char_aliases: dict[str, list[str]] = {}
     loc_registry: dict[str, str] = {}
+    loc_aliases: dict[str, list[str]] = {}
 
     for c in db_chars:
         char_registry[c["id"]] = c["name"]
@@ -105,13 +108,16 @@ def _build_registry(
 
     for loc in db_locs:
         loc_registry[loc["id"]] = loc["name"]
+        aliases_raw = loc.get("aliases")
+        if aliases_raw and isinstance(aliases_raw, list):
+            loc_aliases[loc["id"]] = aliases_raw
 
-    return char_registry, char_aliases, loc_registry
+    return char_registry, char_aliases, loc_registry, loc_aliases
 
 
 async def _load_registries(
     driver: AsyncDriver,
-) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str], dict[str, dict]]:
+) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str], dict[str, list[str]], dict[str, dict]]:
     chars = await list_all_characters_full(driver)
     locs = await list_all_locations(driver)
 
@@ -124,8 +130,8 @@ async def _load_registries(
         for c in chars
     }
 
-    reg = _build_registry(chars, locs)
-    return (*reg, char_details)
+    char_registry, char_aliases, loc_registry, loc_aliases = _build_registry(chars, locs)
+    return char_registry, char_aliases, loc_registry, loc_aliases, char_details
 
 
 _EXCERPT_MAX_LEN = 120
@@ -148,6 +154,7 @@ async def _resolve_characters(  # noqa: PLR0913
     char_details: dict[str, dict],
     scene_id: str,
     issues: list[dict],
+    driver: AsyncDriver,
     queue: EventQueue | None = None,
     pending_clarifications: dict[str, ClarificationSlot] | None = None,
 ) -> list[tuple[ResolvedEntity, str, str | None]]:
@@ -166,6 +173,8 @@ async def _resolve_characters(  # noqa: PLR0913
                 queue,
                 pending_clarifications,
                 char_registry,
+                char_aliases,
+                driver,
             )
         else:
             resolved = match
@@ -195,6 +204,8 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
     queue: EventQueue | None,
     pending_clarifications: dict[str, ClarificationSlot] | None,
     char_registry: dict[str, str],
+    char_aliases: dict[str, list[str]],
+    driver: AsyncDriver,
 ) -> ResolvedEntity:
     if queue and pending_clarifications is not None:
         clarification_id = str(uuid.uuid4())
@@ -244,6 +255,9 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
             return resolved
 
         was_timeout = slot.answer == "link" and not slot.event.is_set()
+        if not was_timeout:
+            char_aliases.setdefault(match.best_id, []).append(name)
+            await add_character_alias(driver, match.best_id, name)
         issues.append({
             "id": str(uuid.uuid4()),
             "type": "duplicate_suspect",
@@ -289,12 +303,14 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
 async def _resolve_location(  # noqa: PLR0913
     analysis: SceneAnalysis,
     loc_registry: dict[str, str],
+    loc_aliases: dict[str, list[str]],
+    driver: AsyncDriver,
     scene_id: str,
     issues: list[dict],
     queue: EventQueue | None = None,
     pending_clarifications: dict[str, ClarificationSlot] | None = None,
 ) -> ResolvedEntity:
-    match = fuzzy_match_entity(analysis.location.name, loc_registry)
+    match = fuzzy_match_entity(analysis.location.name, loc_registry, loc_aliases)
     if isinstance(match, AmbiguousMatch):
         if queue and pending_clarifications is not None:
             clarification_id = str(uuid.uuid4())
@@ -326,6 +342,10 @@ async def _resolve_location(  # noqa: PLR0913
                 await _emit(queue, "entity_resolved", name=analysis.location.name, action="created")
                 return ResolvedEntity(id=new_id, name=analysis.location.name, is_new=True)
 
+            was_timeout = slot.answer == "link" and not slot.event.is_set()
+            if not was_timeout:
+                loc_aliases.setdefault(match.best_id, []).append(analysis.location.name)
+                await add_location_alias(driver, match.best_id, analysis.location.name)
             issues.append({
                 "id": str(uuid.uuid4()),
                 "type": "duplicate_suspect",
@@ -387,6 +407,7 @@ class _PipelineContext:
     char_registry: dict[str, str] = field(default_factory=dict)
     char_aliases: dict[str, list[str]] = field(default_factory=dict)
     loc_registry: dict[str, str] = field(default_factory=dict)
+    loc_aliases: dict[str, list[str]] = field(default_factory=dict)
     char_details: dict[str, dict] = field(default_factory=dict)
 
 
@@ -454,12 +475,15 @@ async def _process_scene(
         ctx.char_details,
         scene_id,
         scene_issues,
+        ctx.driver,
         ctx.queue,
         ctx.pending_clarifications,
     )
     resolved_location = await _resolve_location(
         analysis,
         ctx.loc_registry,
+        ctx.loc_aliases,
+        ctx.driver,
         scene_id,
         scene_issues,
         ctx.queue,
@@ -697,7 +721,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 current_scene="",
             )
 
-        ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.char_details = await _load_registries(driver)
+        ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.loc_aliases, ctx.char_details = await _load_registries(driver)
 
         # Idempotent cleanup — covers both "scene-{stem}" and "scene-{stem}-chunk-NN"
         existing_scene_ids = await get_scene_ids_for_stems(driver, [f.stem for f in scene_files])
