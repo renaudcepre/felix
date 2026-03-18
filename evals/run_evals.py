@@ -29,6 +29,7 @@ from rich.table import Table
 from evals._runner import load_history, run_suite_async, setup_model_env
 from evals.evaluators import ContainsExpectedFacts, RefusesToFabricate
 from evals.ingest.evaluators import (
+    CharacterDescriptionContains,
     CharacterRoleAccuracy,
     EraAccuracy,
     ExtractsExpectedCharacters,
@@ -616,6 +617,35 @@ INGEST_DATASET: Dataset[str, Any] = Dataset(
             inputs="test-003-la-frequence.txt",
             expected_output="Milton,Voss",
             metadata={"category": "extraction", "scene": "test-003"},
+            evaluators=[ExtractsExpectedCharacters()],
+        ),
+        # --- physical description : ephemeral vs permanent ---
+        Case(
+            name="ephemeral_haddad_no_redeyes",
+            inputs="eval-ephemeral-physical.txt",
+            expected_output="",
+            metadata={"category": "physical_description", "difficulty": "medium"},
+            evaluators=[NoEphemeralPhysicalDescription(character="Karim Haddad")],
+        ),
+        Case(
+            name="ephemeral_haddad_no_anger",
+            inputs="eval-ephemeral-physical.txt",
+            expected_output="",
+            metadata={"category": "physical_description", "difficulty": "medium"},
+            evaluators=[NoEphemeralPhysicalDescription(character="Karim Haddad")],
+        ),
+        Case(
+            name="fantasy_varek_redeyes_in_desc",
+            inputs="eval-fantasy-redeyes.txt",
+            expected_output="rouge",
+            metadata={"category": "physical_description", "difficulty": "hard"},
+            evaluators=[CharacterDescriptionContains(character="Varek")],
+        ),
+        Case(
+            name="fantasy_varek_extracted",
+            inputs="eval-fantasy-redeyes.txt",
+            expected_output="Varek,Ilena",
+            metadata={"category": "extraction", "difficulty": "easy"},
             evaluators=[ExtractsExpectedCharacters()],
         ),
     ],

@@ -19,6 +19,17 @@ Valeur : arcs personnages à grain fin, consistency checker plus précis, liens 
 
 Frein : extraction LLM d'events discrets est difficile (granularité floue, risque de bruit). À designer soigneusement. → Issue "Idea" à créer, pas de rush.
 
+## Refacto analyzer : split en 2 calls LLM — 2026-03-18
+
+**Contexte :** Le prompt unique de l'analyzer mêlait extraction de métadonnées (titre, date, lieu, era, mood) et extraction de personnages (avec ses nombreuses règles). Risque de dilution d'attention sur les scènes complexes.
+
+**Changements :**
+- `src/felix/ingest/analyzer.py` : split en deux agents pydantic-ai — `META_PROMPT` (métadonnées) et `CHARACTER_PROMPT` (personnages). `asyncio.gather` pour les lancer en parallèle. Nouveau type `AnalyzerAgents` (dataclass) retourné par `create_analyzer_agent`. `analyze_scene()` merge les deux résultats en `SceneAnalysis`.
+- `CHARACTER_PROMPT` : ajout d'une section `PHYSICAL DESCRIPTION` — seuls les traits permanents (taille, morphologie, cicatrices) sont inclus, pas les états éphémères (yeux rouges, posture du moment, fatigue).
+- `evals/ingest/task.py` : adapté pour utiliser `analyze_scene()` via les nouveaux `AnalyzerAgents`.
+
+**Evals ingest :** 16/17 avant → 16/17 après (stable, échec préexistant `scene2_no_jakes_participant` sans rapport).
+
 ## Issue #16 — Dates extrapolées sans justification — 2026-03-18
 
 ## Issue #13 — Nettoyage des dossiers temporaires d'import — 2026-03-18

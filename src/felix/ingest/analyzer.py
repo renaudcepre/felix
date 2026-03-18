@@ -1,20 +1,33 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.settings import ModelSettings
 
 from felix.agent.chat_agent import _build_model
-from felix.ingest.models import SceneAnalysis
+from felix.ingest.models import ExtractedCharacter, ExtractedLocation, SceneAnalysis
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
 
 logger = logging.getLogger("felix.ingest.analyzer")
 
-ANALYZER_PROMPT = """\
+
+class _SceneMeta(BaseModel):
+    title: str
+    summary: str
+    era: str
+    approximate_date: str | None = None
+    location: ExtractedLocation
+    mood: str | None = None
+
+
+META_PROMPT = """\
 You are a specialized assistant for analyzing screenplay scenes.
 
 From the scene text, extract the following information:
@@ -24,11 +37,18 @@ From the scene text, extract the following information:
 - approximate_date : partial date extracted strictly from the text. \
 Use YYYY if only the year is known. Use YYYY-MM if year and month are known. Use YYYY-MM-DD only if a full date is explicitly stated. \
 NEVER invent a month or day that is not in the text. Return null only if there is NO temporal indication.
-- characters : list of characters with their role and description if present
 - location : main location of the scene with description if present
 - mood : general atmosphere in one word or short phrase
 
-CHARACTERS — EXTRACT ALL CHARACTERS, including those merely evoked or mentioned in passing:
+RULES:
+- Invent NOTHING. Extract only what is in the text.
+- If information is not in the text, use null.
+"""
+
+CHARACTER_PROMPT = """\
+You are a specialized assistant for extracting characters from screenplay scenes.
+
+Extract ALL characters from the scene text, including those merely evoked or mentioned in passing:
 - "participant" : the character PHYSICALLY ACTS in the scene (speaks, moves, does something)
 - "witness" : the character is PRESENT in the scene but does not act directly
 - "mentioned" : the character is EVOKED by another, in dialogue, narration, or a memory — even briefly. Includes ancestors, parents, people referenced by name.
@@ -43,6 +63,12 @@ CHARACTER NAMES:
 (not "Doctor Jean Martin" but "Jean Martin", not "Captain Korvin" but "Lara Korvin").
 - Profession or rank should go in the "description" field, not "name".
 
+PHYSICAL DESCRIPTION:
+- Only include traits that are permanent or stable characteristics (e.g. height, build, age, scars, hair color, distinctive features).
+- Do NOT include ephemeral or momentary states: fatigue, red eyes, tears, posture at a given moment, \
+actions performed in the scene ("hand on the wheel", "sitting", "bleeding").
+- If no permanent physical trait is mentioned, leave description null or describe only role/profession.
+
 RULES:
 - Invent NOTHING. Extract only what is in the text.
 - If information is not in the text, use null.
@@ -50,29 +76,56 @@ RULES:
 """
 
 
+@dataclass
+class AnalyzerAgents:
+    meta: Agent[None, _SceneMeta]
+    characters: Agent[None, list[ExtractedCharacter]]
+
+
 def create_analyzer_agent(
     model_name: str | None = None, base_url: str | None = None
-) -> Agent[None, SceneAnalysis]:
+) -> AnalyzerAgents:
     model: Model = _build_model(model_name, base_url)
-    agent: Agent[None, SceneAnalysis] = Agent(
+
+    meta_agent: Agent[None, _SceneMeta] = Agent(
         model,
-        instructions=ANALYZER_PROMPT,
-        output_type=SceneAnalysis,
+        instructions=META_PROMPT,
+        output_type=_SceneMeta,
         model_settings=ModelSettings(temperature=0.1),
         retries=2,
     )
 
-    @agent.output_validator
-    def validate_output(output: SceneAnalysis) -> SceneAnalysis:
-        if len(output.characters) < 1:
+    char_agent: Agent[None, list[ExtractedCharacter]] = Agent(
+        model,
+        instructions=CHARACTER_PROMPT,
+        output_type=list[ExtractedCharacter],
+        model_settings=ModelSettings(temperature=0.1),
+        retries=2,
+    )
+
+    @char_agent.output_validator
+    def validate_characters(output: list[ExtractedCharacter]) -> list[ExtractedCharacter]:
+        if len(output) < 1:
             raise ModelRetry("The scene must contain at least one character")
         return output
 
-    return agent
+    return AnalyzerAgents(meta=meta_agent, characters=char_agent)
 
 
 async def analyze_scene(
-    agent: Agent[None, SceneAnalysis], scene_text: str
+    agents: AnalyzerAgents, scene_text: str
 ) -> SceneAnalysis:
-    result = await agent.run(scene_text)
-    return result.output
+    meta_result, char_result = await asyncio.gather(
+        agents.meta.run(scene_text),
+        agents.characters.run(scene_text),
+    )
+    m = meta_result.output
+    return SceneAnalysis(
+        title=m.title,
+        summary=m.summary,
+        era=m.era,
+        approximate_date=m.approximate_date,
+        characters=char_result.output,
+        location=m.location,
+        mood=m.mood,
+    )

@@ -172,6 +172,40 @@ _EPHEMERAL_PHYSICAL_TERMS = [
 
 
 @dataclass
+class CharacterDescriptionContains(Evaluator[str, SceneAnalysis]):
+    """Check that a specific character's description contains an expected keyword.
+
+    character: name of the character to check.
+    expected_output: keyword that must appear in the description.
+    """
+
+    character: str = ""
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, SceneAnalysis]
+    ) -> dict[str, bool | str]:
+        if not ctx.expected_output or not isinstance(ctx.expected_output, str):
+            return {}
+        target_name = normalize(self.character)
+        keyword = normalize(ctx.expected_output.strip())
+        matched = next(
+            (
+                c
+                for c in ctx.output.characters
+                if target_name in normalize(c.name) or normalize(c.name) in target_name
+            ),
+            None,
+        )
+        if matched is None:
+            return {"description_contains": False, "reason": f"{self.character} not found"}
+        desc = normalize(matched.description or "")
+        return {
+            "description_contains": keyword in desc,
+            "description_got": matched.description or "(none)",
+        }
+
+
+@dataclass
 class NoEphemeralPhysicalDescription(Evaluator[str, SceneAnalysis]):
     """Check that a character's description contains no ephemeral physical state.
 
