@@ -50,6 +50,9 @@ class ClarifyRequest(BaseModel):
     answer: str  # "link" or "new"
 
 
+_TERMINAL_STATUSES = (ImportStatus.DONE, ImportStatus.ERROR, ImportStatus.PENDING)
+
+
 @router.post("/import", status_code=202)
 async def start_import(
     import_state: ImportStateDep,
@@ -60,32 +63,29 @@ async def start_import(
     files: list[UploadFile] = [],  # noqa: B006
     enrich: bool = True,
 ) -> ImportProgressResponse:
-    if import_state.progress and import_state.progress.status not in (
-        ImportStatus.DONE,
-        ImportStatus.ERROR,
-        ImportStatus.PENDING,
-    ):
-        raise HTTPException(status_code=409, detail="Import already in progress")
-
     txt_files = [f for f in files if f.filename and f.filename.lower().endswith(SCENE_FILE_EXTENSIONS)]
     if not txt_files:
         raise HTTPException(status_code=400, detail="Aucun fichier texte recu")
 
-    tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
-    for upload in txt_files:
-        content = await upload.read()
-        dest = _tmp_path(tmp_dir) / upload.filename  # type: ignore[arg-type]
-        dest.write_bytes(content)
+    contents = [(upload.filename, await upload.read()) for upload in txt_files]
 
-    new_progress = ImportProgress()
-    import_state.progress = new_progress
-    import_state.task = asyncio.create_task(
-        run_import_pipeline(
-            tmp_dir, driver, collection, model_name, base_url, new_progress,
-            enrich_profiles=enrich,
+    async with import_state.lock:
+        if import_state.progress and import_state.progress.status not in _TERMINAL_STATUSES:
+            raise HTTPException(status_code=409, detail="Import already in progress")
+
+        tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
+        for filename, content in contents:
+            (_tmp_path(tmp_dir) / filename).write_bytes(content)  # type: ignore[operator]
+
+        new_progress = ImportProgress()
+        import_state.progress = new_progress
+        import_state.task = asyncio.create_task(
+            run_import_pipeline(
+                tmp_dir, driver, collection, model_name, base_url, new_progress,
+                enrich_profiles=enrich,
+            )
         )
-    )
-    import_state.task.add_done_callback(_log_task_exception)
+        import_state.task.add_done_callback(_log_task_exception)
 
     return ImportProgressResponse.model_validate(new_progress, from_attributes=True)
 
@@ -100,45 +100,35 @@ async def import_stream(
     files: list[UploadFile] = [],  # noqa: B006
     enrich: bool = True,
 ) -> EventSourceResponse:
-    if import_state.progress and import_state.progress.status not in (
-        ImportStatus.DONE,
-        ImportStatus.ERROR,
-        ImportStatus.PENDING,
-    ):
-        raise HTTPException(status_code=409, detail="Import already in progress")
-
     txt_files = [f for f in files if f.filename and f.filename.lower().endswith(SCENE_FILE_EXTENSIONS)]
     if not txt_files:
         raise HTTPException(status_code=400, detail="Aucun fichier texte recu")
 
-    tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
-    for upload in txt_files:
-        content = await upload.read()
-        dest = _tmp_path(tmp_dir) / upload.filename  # type: ignore[arg-type]
-        dest.write_bytes(content)
+    contents = [(upload.filename, await upload.read()) for upload in txt_files]
 
-    new_progress = ImportProgress()
-    import_state.progress = new_progress
+    async with import_state.lock:
+        if import_state.progress and import_state.progress.status not in _TERMINAL_STATUSES:
+            raise HTTPException(status_code=409, detail="Import already in progress")
 
-    queue: EventQueue = asyncio.Queue()
-    pending: dict[str, ClarificationSlot] = {}
-    import_state.pending_clarifications = pending
+        tmp_dir = tempfile.mkdtemp(prefix="felix-import-")
+        for filename, content in contents:
+            (_tmp_path(tmp_dir) / filename).write_bytes(content)  # type: ignore[operator]
 
-    task = asyncio.create_task(
-        run_import_pipeline(
-            tmp_dir,
-            driver,
-            collection,
-            model_name,
-            base_url,
-            new_progress,
-            queue,
-            pending,
-            enrich_profiles=enrich,
+        new_progress = ImportProgress()
+        import_state.progress = new_progress
+
+        queue: EventQueue = asyncio.Queue()
+        pending: dict[str, ClarificationSlot] = {}
+        import_state.pending_clarifications = pending
+
+        task = asyncio.create_task(
+            run_import_pipeline(
+                tmp_dir, driver, collection, model_name, base_url, new_progress,
+                queue, pending, enrich_profiles=enrich,
+            )
         )
-    )
-    task.add_done_callback(_log_task_exception)
-    import_state.task = task
+        task.add_done_callback(_log_task_exception)
+        import_state.task = task
 
     async def event_generator() -> AsyncGenerator[ServerSentEvent]:
         try:

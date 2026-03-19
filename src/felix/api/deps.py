@@ -17,6 +17,7 @@ class ImportState:
     progress: ImportProgress | None = None
     task: asyncio.Task[None] | None = None
     pending_clarifications: dict[str, ClarificationSlot] = field(default_factory=dict)
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
 def get_driver(request: Request) -> AsyncDriver:
