@@ -23,6 +23,7 @@ from felix.graph.repository import (
 from felix.graph.writer import delete_scenes, link_next_chunk, write_scene
 from felix.ingest.analyzer import create_analyzer_agent
 from felix.ingest.checker import create_checker_agents
+from felix.ingest.cleaner import create_cleaner_agent
 from felix.ingest.orchestrator import SceneOrchestrator, make_scene_id
 from felix.ingest.profiler import (
     create_beat_extractor_agent,
@@ -197,6 +198,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
 
         analyzer = create_analyzer_agent(model_name, base_url)
         timeline_checker, narrative_checker = create_checker_agents(model_name, base_url)
+        cleaner = create_cleaner_agent(model_name, base_url)
         profiler = create_profiler_agent(model_name, base_url) if enrich_profiles else None
         profiler_patch = create_profiler_patch_agent(model_name, base_url) if enrich_profiles else None
         beat_extractor = create_beat_extractor_agent(model_name, base_url) if enrich_profiles else None
@@ -220,6 +222,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
             profiler=profiler,
             profiler_patch=profiler_patch,
             beat_extractor=beat_extractor,
+            cleaner=cleaner,
         )
 
         scenes_processed = 0

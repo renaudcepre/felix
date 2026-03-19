@@ -169,6 +169,7 @@ def _pipeline_patches(analyses, report, profile=None):
         ),
         patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
         patch("felix.ingest.pipeline.create_checker_agents", return_value=(None, None)),
+        patch("felix.ingest.pipeline.create_cleaner_agent", return_value=None),
         patch("felix.ingest.pipeline.create_profiler_agent", return_value=None),
         patch("felix.ingest.pipeline.create_profiler_patch_agent", return_value=None),
         patch("felix.ingest.pipeline.create_beat_extractor_agent", return_value=None),

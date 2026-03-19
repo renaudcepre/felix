@@ -51,7 +51,18 @@ def main(
         "--list-models",
         "-l",
         help="List all available models in the history file.",
-    )
+    ),
+    eval_name: Optional[str] = typer.Option(
+        None,
+        "--eval",
+        "-e",
+        help="Filter entries that contain a specific eval case name.",
+    ),
+    list_evals: bool = typer.Option(
+        False,
+        "--list-evals",
+        help="List all eval case names present in the history file.",
+    ),
 ):
     """
     Parses and displays a .jsonl history file in a human-readable and pretty format.
@@ -81,7 +92,26 @@ def main(
         else:
             console.print("[yellow]No models found in the history file.[/yellow]")
         return
-    
+
+    # List evals mode
+    if list_evals:
+        eval_counts: dict[str, int] = {}
+        with file_path.open('r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    entry = json.loads(line)
+                    for case_name in entry.get('cases', {}):
+                        eval_counts[case_name] = eval_counts.get(case_name, 0) + 1
+                except json.JSONDecodeError:
+                    continue
+        if eval_counts:
+            console.print("[bold]Available evals:[/bold]")
+            for name in sorted(eval_counts):
+                console.print(f"  • {name} ({eval_counts[name]} runs)")
+        else:
+            console.print("[yellow]No evals found in the history file.[/yellow]")
+        return
+
     with file_path.open('r', encoding='utf-8') as f:
         all_lines = f.readlines()
         
@@ -94,7 +124,18 @@ def main(
                     if entry.get('model') == model:
                         filtered_lines.append(line)
                 except json.JSONDecodeError:
-                    # Skip lines that can't be parsed
+                    continue
+            all_lines = filtered_lines
+
+        # Filter by eval case name if specified
+        if eval_name:
+            filtered_lines = []
+            for line in all_lines:
+                try:
+                    entry = json.loads(line)
+                    if eval_name in entry.get('cases', {}):
+                        filtered_lines.append(line)
+                except json.JSONDecodeError:
                     continue
             all_lines = filtered_lines
         

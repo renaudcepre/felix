@@ -24,6 +24,7 @@ from felix.graph.repository import (
 )
 from felix.ingest.analyzer import analyze_scene
 from felix.ingest.checker import check_scene_consistency
+from felix.ingest.cleaner import clean_scene_text
 from felix.ingest.loader import load_scene
 from felix.ingest.models import NarrativeBeat
 from felix.ingest.profiler import extract_scene_beats, patch_character_profile, profile_character
@@ -50,6 +51,7 @@ class SceneOrchestrator:
     profiler: Any = None
     profiler_patch: Any = None
     beat_extractor: Any = None
+    cleaner: Any = None
 
     async def _emit_status(self, status: ImportStatus) -> None:
         if self.ctx.queue:
@@ -76,9 +78,17 @@ class SceneOrchestrator:
         ctx.progress.status = ImportStatus.ANALYZING
         await self._emit_status(ImportStatus.ANALYZING)
 
-        scene_text = chunk_text if chunk_text is not None else await asyncio.to_thread(
+        raw_text = chunk_text if chunk_text is not None else await asyncio.to_thread(
             scene_file.read_text, encoding="utf-8"
         )
+        if self.cleaner:
+            try:
+                scene_text = await clean_scene_text(self.cleaner, raw_text)
+            except Exception:
+                logger.exception("Scene cleaning failed for %s, using raw text", scene_file.name)
+                scene_text = raw_text
+        else:
+            scene_text = raw_text
         analysis = await analyze_scene(self.analyzer, scene_text)
 
         if ctx.queue:
@@ -115,7 +125,7 @@ class SceneOrchestrator:
             ctx.collection,
             scene_id,
             scene_file.name,
-            scene_text,
+            raw_text,  # full text for ChromaDB embedding
             analysis,
             resolved_chars,
             resolved_location,
