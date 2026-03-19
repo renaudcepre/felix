@@ -797,3 +797,56 @@ async def count_next_chunk_links_for_stem(driver: AsyncDriver, stem: str) -> int
 
     async with driver.session() as session:
         return await session.execute_read(_read)
+
+
+# ---------------------------------------------------------------------------
+# Narrative Beats
+# ---------------------------------------------------------------------------
+
+
+async def create_narrative_beat(
+    driver: AsyncDriver, beat_id: str, action: str, scene_id: str
+) -> None:
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        await tx.run(
+            """
+            MERGE (b:NarrativeBeat {id: $id})
+            SET b.action = $action
+            WITH b
+            MATCH (s:Scene {id: $scene_id})
+            MERGE (b)-[:OCCURS_IN]->(s)
+            """,
+            id=beat_id,
+            action=action,
+            scene_id=scene_id,
+        )
+
+    async with driver.session() as session:
+        await session.execute_write(_write)
+
+
+async def link_beat_character(
+    driver: AsyncDriver, beat_id: str, char_id: str, role: str
+) -> None:
+    async def _write(tx: AsyncManagedTransaction) -> None:
+        if role == "subject":
+            await tx.run(
+                """
+                MATCH (b:NarrativeBeat {id: $beat_id}), (c:Character {id: $char_id})
+                MERGE (c)-[:SUBJECT_OF]->(b)
+                """,
+                beat_id=beat_id,
+                char_id=char_id,
+            )
+        else:
+            await tx.run(
+                """
+                MATCH (b:NarrativeBeat {id: $beat_id}), (c:Character {id: $char_id})
+                MERGE (b)-[:AFFECTS]->(c)
+                """,
+                beat_id=beat_id,
+                char_id=char_id,
+            )
+
+    async with driver.session() as session:
+        await session.execute_write(_write)

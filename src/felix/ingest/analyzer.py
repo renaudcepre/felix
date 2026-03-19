@@ -62,6 +62,9 @@ CHARACTER NAMES:
 - Do NOT put title, profession, or rank in the "name" field \
 (not "Doctor Jean Martin" but "Jean Martin", not "Captain Korvin" but "Lara Korvin").
 - Profession or rank should go in the "description" field, not "name".
+- EXCEPTION: creatures, monsters, or unnamed entities that physically act in the scene \
+(attack, speak, move) ARE characters. Use their species/type as the name \
+(e.g. "the creature", "the guard", "the android"). Do NOT omit them because they lack a human name.
 
 PHYSICAL DESCRIPTION:
 - Only include traits that are permanent or stable characteristics (e.g. height, build, age, scars, hair color, distinctive features).

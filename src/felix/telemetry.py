@@ -7,14 +7,19 @@ from felix.config import settings
 
 def setup_logging() -> None:
     """Configure stdlib logging with level from settings.
-    
+
+    The root logger stays at WARNING. The felix.* namespace is set to
+    the configured level so that third-party libraries (neo4j, httpcore,
+    pydantic_ai, …) don't flood the output when DEBUG is requested.
+
     Idempotent — no-op if handlers already configured.
     """
     logging.basicConfig(
-        level=settings.log_level,
+        level=logging.WARNING,
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
         datefmt="%H:%M:%S",
     )
+    logging.getLogger("felix").setLevel(settings.log_level)
 
 
 def setup_logfire() -> None:

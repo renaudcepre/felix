@@ -62,6 +62,7 @@ from evals.pipeline.evaluators import (
 from evals.pipeline.task import make_pipeline_task
 from evals.task import felix_task
 from felix.config import settings
+from felix.telemetry import setup_logging
 
 console = Console()
 
@@ -1050,6 +1051,8 @@ def main(
     # before this, then os._exit prevents threading._shutdown from hanging
     # on non-daemon threads left by chromadb / sentence-transformers.
     atexit.register(os._exit, 0)
+
+    setup_logging()
 
     if settings.logfire_token:
         logfire.configure(

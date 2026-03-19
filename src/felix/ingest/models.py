@@ -40,6 +40,12 @@ class CharacterProfile(BaseModel):
     relations: list[ExtractedRelation] = []
 
 
+class NarrativeBeat(BaseModel):
+    subject: str
+    action: str
+    object: str | None = None
+
+
 class ConsistencyIssue(BaseModel):
     type: str  # "timeline_inconsistency" | "character_contradiction" | "missing_info"
     severity: str  # "error" | "warning"

@@ -1,5 +1,24 @@
 # Journal de developpement — Felix
 
+## Narrative beats pour attribution correcte dans le profiler — 2026-03-18
+
+Implémentation du plan `plans/narrative-beats-attribution.md` pour résoudre les tests flaky d'attribution de profil.
+
+**Problème** : avec Qwen 7B, le LLM recevait le texte brut d'une scène et devait deviner quels événements appartiennent à un personnage spécifique — non-déterministe (Aldric ne recevait pas sa blessure Morgul, Gandalf recevait parfois des événements incorrects).
+
+**Solution** : extraction des narrative beats (`subject → action → object`) une seule fois par scène, puis filtrage par personnage avant d'appeler le profiler.
+
+5 fichiers modifiés :
+- `src/felix/ingest/models.py` : ajout `NarrativeBeat(subject, action, object)`
+- `src/felix/ingest/profiler.py` : `BEAT_EXTRACTOR_PROMPT`, `create_beat_extractor_agent`, `extract_scene_beats`, paramètre `beats` dans `patch_character_profile` et `profile_character`
+- `src/felix/graph/driver.py` : contrainte unique `NarrativeBeat.id`
+- `src/felix/graph/repository.py` : `create_narrative_beat`, `link_beat_character` (relations `SUBJECT_OF` / `AFFECTS`)
+- `src/felix/ingest/pipeline.py` : création du `beat_extractor`, extraction par scène, fuzzy-résolution subject/object, stockage Neo4j, filtrage `char_beats` par personnage avant appel profiler
+
+**Flux** : 1 appel LLM extracteur par scène → beats stockés en Neo4j → filtrage en mémoire par personnage → profiler reçoit uniquement les events pertinents.
+
+Vérification : `uv run python -m evals.run_evals --suite pipeline-profiler-attribution --together`
+
 ## Structured logging (Issue #12) — 2026-03-18
 
 4 fichiers modifiés, aucun nouveau fichier :

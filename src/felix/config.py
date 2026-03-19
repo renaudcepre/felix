@@ -10,8 +10,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    llm_model: str = "Qwen/Qwen2.5-7B-Instruct-Turbo"
-    llm_base_url: str | None = "https://api.together.xyz/v1"
+    llm_model: str = "qwen/qwen2.5-7b-instruct"
+    llm_base_url: str | None = "http://127.0.0.1:1234/v1"
     llm_api_key: str = ""
 
     # Clé Together AI — lue depuis TOGETHER_API_KEY ou FLX_TOGETHER_KEY

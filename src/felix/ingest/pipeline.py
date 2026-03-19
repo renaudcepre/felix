@@ -24,10 +24,12 @@ from felix.graph.repository import (
     add_character_alias,
     add_location_alias,
     create_issue,
+    create_narrative_beat,
     delete_issues_for_scenes,
     get_character_profile,
     get_relation_types_for_pair,
     get_scene_ids_for_stems,
+    link_beat_character,
     list_all_characters_full,
     list_all_locations,
     patch_character_profile_fields,
@@ -38,9 +40,12 @@ from felix.graph.writer import delete_scenes, link_next_chunk, write_scene
 from felix.ingest.analyzer import analyze_scene, create_analyzer_agent
 from felix.ingest.checker import check_scene_consistency, create_checker_agents
 from felix.ingest.loader import load_scene
+from felix.ingest.models import NarrativeBeat
 from felix.ingest.profiler import (
+    create_beat_extractor_agent,
     create_profiler_agent,
     create_profiler_patch_agent,
+    extract_scene_beats,
     patch_character_profile,
     profile_character,
 )
@@ -593,11 +598,53 @@ async def _profile_scene_characters(  # noqa: PLR0912, PLR0913
     scene_title: str,
     profiler: Any,
     profiler_patch: Any = None,
+    beat_extractor: Any = None,
 ) -> None:
     ctx.progress.status = ImportStatus.PROFILING
     await _emit_status(ctx, ImportStatus.PROFILING)
 
     known_names = list(ctx.char_registry.values())
+
+    # Extract narrative beats once per scene (1 LLM call)
+    scene_beats: list[NarrativeBeat] = []
+    if beat_extractor:
+        active_names = [rc.name for rc, role, _ in resolved_chars if role != "mentioned"]
+        if active_names:
+            try:
+                scene_beats = await extract_scene_beats(beat_extractor, scene_text, active_names)
+                logger.debug("Scene %s — %d beats extracted", scene_id, len(scene_beats))
+                # Store beats in Neo4j
+                for i, beat in enumerate(scene_beats):
+                    beat_id = f"{scene_id}-beat-{i}"
+                    await create_narrative_beat(ctx.driver, beat_id, beat.action, scene_id)
+                    # Resolve subject
+                    subject_match = fuzzy_match_entity(beat.subject, ctx.char_registry, ctx.char_aliases)
+                    subject_id: str | None = None
+                    if not isinstance(subject_match, AmbiguousMatch) and not subject_match.is_new:
+                        subject_id = subject_match.id
+                        await link_beat_character(ctx.driver, beat_id, subject_id, "subject")
+                    elif isinstance(subject_match, AmbiguousMatch):
+                        subject_id = subject_match.best_id
+                        await link_beat_character(ctx.driver, beat_id, subject_id, "subject")
+                    # Resolve object
+                    object_id: str | None = None
+                    if beat.object:
+                        object_match = fuzzy_match_entity(beat.object, ctx.char_registry, ctx.char_aliases)
+                        if not isinstance(object_match, AmbiguousMatch) and not object_match.is_new:
+                            object_id = object_match.id
+                            await link_beat_character(ctx.driver, beat_id, object_id, "object")
+                        elif isinstance(object_match, AmbiguousMatch):
+                            object_id = object_match.best_id
+                            await link_beat_character(ctx.driver, beat_id, object_id, "object")
+                    logger.debug(
+                        "  beat-%d: [%s] %s → %s → [%s] %s",
+                        i,
+                        beat.subject, subject_id or "?",
+                        beat.action,
+                        beat.object or "-", object_id or "-",
+                    )
+            except Exception:
+                logger.exception("Beat extraction failed for scene: %s", scene_id)
 
     for rc, role, desc in resolved_chars:
         if role == "mentioned":
@@ -625,14 +672,23 @@ async def _profile_scene_characters(  # noqa: PLR0912, PLR0913
 
             char_known_names = [n for n in known_names if n != char_name]
 
+            char_name_lower = char_name.lower()
+            char_beats = [
+                b for b in scene_beats
+                if b.subject.lower() == char_name_lower
+                or (b.object or "").lower() == char_name_lower
+            ] or None
+
             if has_profile:
                 profile = await patch_character_profile(
-                    profiler_patch or profiler, char_name, existing_profile, scene_text, fragment
+                    profiler_patch or profiler, char_name, existing_profile, scene_text, fragment,
+                    beats=char_beats,
                 )
                 await patch_character_profile_fields(ctx.driver, char_id, profile.model_dump())
             else:
                 profile = await profile_character(
-                    profiler, char_name, [scene_text], [fragment], char_known_names
+                    profiler, char_name, [scene_text], [fragment], char_known_names,
+                    beats=char_beats,
                 )
                 await update_character_profile(ctx.driver, char_id, profile.model_dump())
 
@@ -761,6 +817,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         timeline_checker, narrative_checker = create_checker_agents(model_name, base_url)
         profiler = create_profiler_agent(model_name, base_url) if enrich_profiles else None
         profiler_patch = create_profiler_patch_agent(model_name, base_url) if enrich_profiles else None
+        beat_extractor = create_beat_extractor_agent(model_name, base_url) if enrich_profiles else None
         scenes_processed = 0
 
         for scene_file, chunk_idx, total_chunks, chunk_text in scene_units:
@@ -796,6 +853,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                         summary["title"],
                         profiler,
                         profiler_patch,
+                        beat_extractor=beat_extractor,
                     )
             except ModelHTTPError as e:
                 logger.error("Scene processing failed: %s — HTTP %s: %s", scene_file.name, e.status_code, e)
