@@ -1,5 +1,19 @@
 # Journal de developpement — Felix
 
+## Cleaner LLM conservateur — prompt fix — 2026-03-19
+
+Ajustement du prompt `CLEANER_PROMPT` dans `src/felix/ingest/cleaner.py` après détection de régressions sur les evals pipeline Helios.
+
+**Problème** : le prompt original était trop agressif pour un modèle 7B. Il supprimait des lignes avec des infos biographiques clés ("C'est la première fois en dix-huit mois...", "En quinze ans de carrière...", "Hana ajuste un panneau quand **sa sœur** entre") car le modèle les classifiait comme gestes physiques ou descriptions ambiantes.
+
+**Conséquence** : 3 régressions sur pipeline Helios vs baseline : `kofi_profile_background`, `irina_profile_background`, `nakamura_sisters_related`.
+
+**Fix** : prompt révisé avec règle plus conservatrice — supprimer seulement les lignes *entièrement* filler, garder explicitement les faits biographiques, introductions de personnages, durées/dates, relations familiales. Exemples few-shot concrets dans le KEEP.
+
+**Résultat evals** : pipeline Helios 28/36 (vs 27/36 baseline pre-cleaner, vs 24-26/36 avec cleaner agressif). Ingest stable 20/21. Pas de régression significative.
+
+---
+
 ## Décomposition pipeline.py — 2026-03-19
 
 Implémentation du plan `#7 Décomposer pipeline.py` pour casser le God Object de 903 lignes.
