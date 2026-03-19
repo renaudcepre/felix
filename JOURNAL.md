@@ -1,5 +1,25 @@
 # Journal de developpement — Felix
 
+## Décomposition pipeline.py — 2026-03-19
+
+Implémentation du plan `#7 Décomposer pipeline.py` pour casser le God Object de 903 lignes.
+
+**Problème** : `pipeline.py` mélange résolution d'entités, émission SSE, orchestration de scènes, consistency checking et profiling dans un seul fichier. Difficile à naviguer pour les fixes data quality.
+
+**Solution** : séparation en 3 fichiers avec responsabilités claires.
+
+3 fichiers créés/modifiés :
+- `src/felix/ingest/resolution.py` (~250 lignes) : `ImportStatus`, `ClarificationSlot`, `EventQueue`, `_emit`, `_find_excerpt`, `_handle_ambiguous_character`, `_resolve_location`, `_resolve_characters`, `EntityResolutionService`
+- `src/felix/ingest/orchestrator.py` (~280 lignes) : `make_scene_id`, `process_scene`, `check_scene`, `profile_scene_characters`
+- `src/felix/ingest/pipeline.py` (~120 lignes) : `ImportProgress`, `_PipelineContext`, `_build_registry`, `_load_registries`, `run_import_pipeline` — allégé, délègue vers orchestrator + EntityResolutionService
+- `tests/test_pipeline.py` : chemins de patch mis à jour (`felix.ingest.orchestrator.*` pour analyze_scene/check_scene_consistency/profile_character/patch_character_profile, `felix.ingest.resolution.*` pour add_character_alias/add_location_alias/CLARIFICATION_TIMEOUT/fuzzy_match_entity)
+
+**API publique préservée** : `from felix.ingest.pipeline import ClarificationSlot, EventQueue, ImportProgress, ImportStatus, run_import_pipeline` — pas de breaking change.
+
+**Dépendances** : `resolution.py` est le nœud feuille (pas de deps sur pipeline). `orchestrator.py` utilise `TYPE_CHECKING` pour `_PipelineContext` pour éviter la circularité. `pipeline.py` importe les deux.
+
+Vérification : `uv run pytest tests/test_pipeline.py` — mêmes 4 failures pré-existantes, aucune régression.
+
 ## Narrative beats pour attribution correcte dans le profiler — 2026-03-18
 
 Implémentation du plan `plans/narrative-beats-attribution.md` pour résoudre les tests flaky d'attribution de profil.

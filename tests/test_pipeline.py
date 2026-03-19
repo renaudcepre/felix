@@ -144,14 +144,14 @@ MOCK_PROFILE = CharacterProfile(
 
 
 def _mock_profile_character(profile: CharacterProfile):
-    async def _profile(_agent, _name, _texts, _fragments, _known=None):
+    async def _profile(_agent, _name, _texts, _fragments, _known=None, **kwargs):
         return profile
 
     return _profile
 
 
 def _mock_patch_character_profile(profile: CharacterProfile):
-    async def _patch(_agent, _name, _existing, _text, _fragment):
+    async def _patch(_agent, _name, _existing, _text, _fragment, **kwargs):
         return profile
 
     return _patch
@@ -160,27 +160,30 @@ def _mock_patch_character_profile(profile: CharacterProfile):
 def _pipeline_patches(analyses, report, profile=None):
     patches = [
         patch(
-            "felix.ingest.pipeline.analyze_scene",
+            "felix.ingest.orchestrator.analyze_scene",
             side_effect=_mock_analyze_scene(analyses),
         ),
         patch(
-            "felix.ingest.pipeline.check_scene_consistency",
+            "felix.ingest.orchestrator.check_scene_consistency",
             side_effect=_mock_check_scene_consistency(report),
         ),
         patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
         patch("felix.ingest.pipeline.create_checker_agents", return_value=(None, None)),
         patch("felix.ingest.pipeline.create_profiler_agent", return_value=None),
+        patch("felix.ingest.pipeline.create_profiler_patch_agent", return_value=None),
+        patch("felix.ingest.pipeline.create_beat_extractor_agent", return_value=None),
+        patch("felix.ingest.pipeline.shutil.rmtree"),
     ]
     if profile is not None:
         patches.append(
             patch(
-                "felix.ingest.pipeline.profile_character",
+                "felix.ingest.orchestrator.profile_character",
                 side_effect=_mock_profile_character(profile),
             )
         )
         patches.append(
             patch(
-                "felix.ingest.pipeline.patch_character_profile",
+                "felix.ingest.orchestrator.patch_character_profile",
                 side_effect=_mock_patch_character_profile(profile),
             )
         )
@@ -406,7 +409,7 @@ async def test_duplicate_suspect_resolved_true_when_user_confirms():
         slot.answer = "link"
         slot.event.set()
 
-    with patch("felix.ingest.pipeline.add_character_alias", new=AsyncMock()):
+    with patch("felix.ingest.resolution.add_character_alias", new=AsyncMock()):
         await asyncio.gather(
             _handle_ambiguous_character(
                 name="Marie D.",
@@ -437,8 +440,8 @@ async def test_duplicate_suspect_resolved_false_on_timeout():
     driver = AsyncMock()
 
     with (
-        patch("felix.ingest.pipeline.CLARIFICATION_TIMEOUT", 0.01),
-        patch("felix.ingest.pipeline.add_character_alias", new=AsyncMock()),
+        patch("felix.ingest.resolution.CLARIFICATION_TIMEOUT", 0.01),
+        patch("felix.ingest.resolution.add_character_alias", new=AsyncMock()),
     ):
         await _handle_ambiguous_character(
             name="Marie D.",
@@ -486,10 +489,10 @@ async def test_location_duplicate_suspect_resolved_true_when_user_confirms():
         slot.answer = "link"
         slot.event.set()
 
-    with patch("felix.ingest.pipeline.add_location_alias", new=AsyncMock()):
+    with patch("felix.ingest.resolution.add_location_alias", new=AsyncMock()):
         # Patch fuzzy_match_entity pour forcer un AmbiguousMatch
         amb = AmbiguousMatch(best_id="planque-de-lyon", best_name="Planque de Lyon", score=0.86)
-        with patch("felix.ingest.pipeline.fuzzy_match_entity", return_value=amb):
+        with patch("felix.ingest.resolution.fuzzy_match_entity", return_value=amb):
             await asyncio.gather(
                 _resolve_location(
                     analysis=analysis,
