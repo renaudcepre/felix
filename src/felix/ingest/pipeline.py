@@ -23,7 +23,7 @@ from felix.graph.repository import (
 from felix.graph.writer import delete_scenes, link_next_chunk, write_scene
 from felix.ingest.analyzer import create_analyzer_agent
 from felix.ingest.checker import create_checker_agents
-from felix.ingest.orchestrator import check_scene, make_scene_id, process_scene, profile_scene_characters
+from felix.ingest.orchestrator import SceneOrchestrator, make_scene_id
 from felix.ingest.profiler import (
     create_beat_extractor_agent,
     create_profiler_agent,
@@ -211,21 +211,31 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
             queue=queue,
             pending_clarifications=pending_clarifications,
         )
+        orchestrator = SceneOrchestrator(
+            ctx=ctx,
+            resolver=resolver,
+            analyzer=analyzer,
+            timeline_checker=timeline_checker,
+            narrative_checker=narrative_checker,
+            profiler=profiler,
+            profiler_patch=profiler_patch,
+            beat_extractor=beat_extractor,
+        )
 
         scenes_processed = 0
 
         for scene_file, chunk_idx, total_chunks, chunk_text in scene_units:
             scene_id = make_scene_id(scene_file.stem, chunk_idx, total_chunks)
             try:
-                scene_issues, summary, resolved_chars, _ = await process_scene(
-                    ctx, resolver, scene_file, analyzer, scene_id=scene_id, chunk_text=chunk_text
+                scene_issues, summary, resolved_chars, _ = await orchestrator.process_scene(
+                    scene_file, scene_id=scene_id, chunk_text=chunk_text
                 )
                 for issue in scene_issues:
                     await create_issue(driver, issue)
                 progress.issues_found += len(scene_issues)
                 scenes_processed += 1
 
-                await check_scene(ctx, summary, timeline_checker, narrative_checker)
+                await orchestrator.check_scene(summary)
 
                 await write_scene(driver, summary)
 
@@ -239,15 +249,11 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 progress.issues_found += len(graph_issues)
 
                 if enrich_profiles:
-                    await profile_scene_characters(
-                        ctx,
+                    await orchestrator.profile_scene_characters(
                         resolved_chars,
                         summary["scene_id"],
                         chunk_text,
                         summary["title"],
-                        profiler,
-                        profiler_patch,
-                        beat_extractor=beat_extractor,
                     )
             except ModelHTTPError as e:
                 logger.error("Scene processing failed: %s — HTTP %s: %s", scene_file.name, e.status_code, e)
