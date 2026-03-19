@@ -22,5 +22,6 @@ async def export_all(driver: Neo4jDriver) -> FullExport:
         character_events=await repository.list_all_character_events(driver),
         character_relations=await repository.list_all_character_relations(driver),
         character_fragments=await repository.list_all_character_fragments(driver),
+        narrative_beats=await repository.list_all_narrative_beats(driver),
         issues=await repository.list_issues(driver),
     )

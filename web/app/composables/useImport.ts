@@ -58,6 +58,12 @@ export function useImport() {
         events.value = [...events.value, data]
 
         switch (sse.event) {
+          case 'segmenting_file':
+            if (progress.value) {
+              progress.value = { ...progress.value, current_scene: data.filename ?? '' }
+            }
+            break
+
           case 'status_change':
             if (progress.value) {
               progress.value = {

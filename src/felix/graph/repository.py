@@ -850,3 +850,22 @@ async def link_beat_character(
 
     async with driver.session() as session:
         await session.execute_write(_write)
+
+
+async def list_all_narrative_beats(driver: AsyncDriver) -> list[dict[str, Any]]:
+    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+        result = await tx.run(
+            """
+            MATCH (b:NarrativeBeat)-[:OCCURS_IN]->(s:Scene)
+            OPTIONAL MATCH (subject:Character)-[:SUBJECT_OF]->(b)
+            OPTIONAL MATCH (b)-[:AFFECTS]->(object:Character)
+            RETURN b.id AS id, b.action AS action, s.id AS scene_id,
+                   subject.id AS subject_id, subject.name AS subject_name,
+                   object.id AS object_id, object.name AS object_name
+            ORDER BY s.id, b.id
+            """
+        )
+        return [dict(r) for r in await result.data()]
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)

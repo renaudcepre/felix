@@ -193,6 +193,16 @@ class CharacterFragmentExport(BaseModel):
     description: str | None = None
 
 
+class NarrativeBeatExport(BaseModel):
+    id: str
+    action: str
+    scene_id: str
+    subject_id: str | None = None
+    subject_name: str | None = None
+    object_id: str | None = None
+    object_name: str | None = None
+
+
 class FullExport(BaseModel):
     exported_at: datetime
     characters: list[CharacterDetail]
@@ -202,4 +212,5 @@ class FullExport(BaseModel):
     character_events: list[CharacterEventExport]
     character_relations: list[CharacterRelationExport]
     character_fragments: list[CharacterFragmentExport]
+    narrative_beats: list[NarrativeBeatExport]
     issues: list[Issue]

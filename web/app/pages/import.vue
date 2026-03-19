@@ -56,6 +56,7 @@ const progressPercent = computed(() => {
 
 const statusLabel: Record<string, string> = {
   pending: 'En attente',
+  segmenting: 'Segmentation des fichiers',
   analyzing: 'Analyse LLM',
   resolving: 'Resolution des entites',
   loading: 'Chargement en base',
@@ -67,6 +68,7 @@ const statusLabel: Record<string, string> = {
 
 const statusColor: Record<string, string> = {
   pending: 'neutral',
+  segmenting: 'info',
   analyzing: 'info',
   resolving: 'info',
   loading: 'info',

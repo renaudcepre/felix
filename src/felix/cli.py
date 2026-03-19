@@ -94,6 +94,7 @@ async def _export_graph() -> dict:
             "character_events": await graph_queries.list_all_character_events(driver),
             "character_relations": await graph_queries.list_all_character_relations(driver),
             "character_fragments": await graph_queries.list_all_character_fragments(driver),
+            "narrative_beats": await graph_queries.list_all_narrative_beats(driver),
             "issues": await graph_queries.list_issues(driver),
         }
     finally:

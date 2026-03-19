@@ -66,6 +66,7 @@ CLARIFICATION_TIMEOUT = 30.0
 
 class ImportStatus(StrEnum):
     PENDING = "pending"
+    SEGMENTING = "segmenting"
     ANALYZING = "analyzing"
     RESOLVING = "resolving"
     LOADING = "loading"
@@ -788,6 +789,8 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         await delete_scenes(driver, existing_scene_ids)
 
         # Expand each file into (file, chunk_idx, total_chunks, chunk_text)
+        if queue:
+            await _emit(queue, "status_change", status=ImportStatus.SEGMENTING, total_scenes=len(scene_files), processed_scenes=0, current_scene="")
         segmenter = TextSegmenter(
             max_tokens=settings.segmenter_max_tokens,
             overlap_ratio=settings.segmenter_overlap_ratio,
@@ -795,12 +798,16 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         )
         scene_units: list[tuple[Path, int, int, str]] = []
         for scene_file in scene_files:
+            if queue:
+                await _emit(queue, "segmenting_file", filename=scene_file.name)
             raw_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
             chunks = await asyncio.to_thread(segmenter.segment, raw_text)
             if len(chunks) > 1 and queue:
                 await _emit(queue, "file_segmented", filename=scene_file.name, chunk_count=len(chunks))
             for i, chunk in enumerate(chunks):
                 scene_units.append((scene_file, i, len(chunks), chunk))
+        if queue:
+            await _emit(queue, "segmentation_complete", file_count=len(scene_files), scene_count=len(scene_units))
 
         progress.total_scenes = len(scene_units)
         if queue:
