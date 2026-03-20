@@ -68,6 +68,22 @@ async def write_scene(driver: AsyncDriver, scene_summary: dict[str, Any]) -> Non
                 role=char.get("role", ""),
             )
 
+        for group in scene_summary.get("groups", []):
+            await tx.run(
+                "MERGE (g:Group {id: $id}) ON CREATE SET g.name = $name",
+                id=group["id"],
+                name=group["name"],
+            )
+            await tx.run(
+                """
+                MATCH (g:Group {id: $gid}), (s:Scene {id: $sid})
+                MERGE (g)-[r:PRESENT_IN {role: $role}]->(s)
+                """,
+                gid=group["id"],
+                sid=scene_id,
+                role=group.get("role", ""),
+            )
+
     async with driver.session() as session:
         await session.execute_write(_tx)
 

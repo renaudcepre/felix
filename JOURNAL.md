@@ -1,5 +1,79 @@
 # Journal de developpement — Felix
 
+## #37 Groups/Factions : nœud `:Group` + `MEMBER_OF` — 2026-03-20
+
+Implémentation du plan #37. Les collectifs (orcs, drones, Nazgûl, Fellowship) sont maintenant des nœuds `:Group` distincts des `:Character`, évitant les profils vides et la pollution du registre.
+
+**Modèle** (`models.py`) : `character_type: Literal["individual", "group"] = "individual"` dans `ExtractedCharacter`.
+
+**Prompt** (`analyzer.py`) : bloc `CHARACTER TYPE` ajouté au `CHARACTER_PROMPT` avec règles de classification et exemples few-shot (Pixel → individual, "les drones" → group, Fellowship → group).
+
+**Repository** (`repository.py`) : 4 nouvelles fonctions — `upsert_group_minimal`, `upsert_group_in_scene`, `list_all_groups`, `create_member_of`.
+
+**Résolution** (`resolution.py`) :
+- `resolve_group_entity()` : exact match normalisé sur le `group_registry`, sinon nouveau slug sans ambiguïté.
+- `_resolve_characters()` : split par `character_type`, retourne `tuple[list[...], list[...]]` (individuals, groups). Breaking change propre.
+- `EntityResolutionService` : champ `group_registry: dict[str, str]` ajouté.
+
+**Loader** (`loader.py`) : paramètre `resolved_groups` optionnel, branche groups vers `upsert_group_minimal` + `upsert_group_in_scene`.
+
+**Writer** (`writer.py`) : `write_scene` écrit les groupes via `MERGE (:Group)` + `PRESENT_IN`.
+
+**Pipeline** (`pipeline.py`) : `group_registry` dans `_PipelineContext`, chargé en parallèle dans `_load_registries` (avec `asyncio.gather`), passé à `EntityResolutionService`.
+
+**Orchestrator** (`orchestrator.py`) :
+- `process_scene` déstructure `(resolved_chars, resolved_groups)`, passe les groupes à `load_scene` et construit `summary["groups"]`.
+- Profiling skippé pour les groupes (seuls les individuals sont dans `resolved_chars`).
+- `profile_scene_characters` : si `other_match.is_new` pour une relation, check `group_registry` → `create_member_of` si le groupe existe.
+
+Tests : 118/118 passent.
+
+**Evals** (`pipeline-groups`) : 6 cas sur fixture `evals/fixtures/groups/01_interception.txt`.
+- `groups_pixel_is_individual` / `groups_pixel_not_a_group` — Pixel reste un Character
+- `groups_drones_is_group` / `groups_drones_not_individual` — "les drones" est un Group
+- `groups_pillards_not_individual` — collectif mentionné hors du registre individus
+- `groups_lena_is_individual` — Lena Voss reste un Character
+
+Nouveaux éléments infra evals :
+- `PipelineQueryResult.group_ids` + query keys `"groups"` / `"member_of:<char_id>"`
+- Evaluators `GroupIdsPresent`, `GroupAbsent` dans `pipeline/evaluators.py`
+- Evaluator `CharacterTypeCorrect` dans `ingest/evaluators.py` (prêt pour cas ingest)
+- Suite `pipeline-groups` dans `SUITES`
+
+```bash
+uv run python -m evals.run_evals --suite pipeline-groups --together
+```
+
+---
+
+## Accumulation DB background/arc + fix patch profiler — 2026-03-20
+
+`patch_character_profile_fields` écrasait `background` et `arc` au lieu de les accumuler. Correction en deux points :
+
+**`repository.py`** — Cypher modifié : `background` et `arc` concaténés avec `. ` si une valeur existe déjà (safety net contre perte de données).
+
+**`profiler.py`** — `patch_character_profile()` n'inclut plus `background`/`arc` dans le contexte existant passé au LLM. Le modèle extrait ce que la scène contient (sans duplication), la DB accumule. Le prompt `PROFILER_PATCH_PROMPT` est inchangé (revenu à l'original après un essai raté "return ONLY new info" qui confondait le 7B).
+
+Tests : 118/118 passent.
+
+---
+
+## Déduplication relations : fuzzy pre-filter + LLM sémantique — 2026-03-19
+
+Implémentation du plan #38 : remplacement de la dédup fuzzy simple (`fuzz.ratio >= 75`) par un pipeline 3 étapes.
+
+**Architecture** :
+- `≥ 90` → doublon évident, skip sans LLM
+- `[55, 90)` → zone ambiguë, appel LLM (`merge` / `keep_both`)
+- `< 55` → clairement différent, insert direct
+
+**Fichiers modifiés** :
+- `src/felix/ingest/profiler.py` : ajout `RELATION_DEDUP_PROMPT` + `create_relation_dedup_agent()` (output `str`, température 0.0)
+- `src/felix/ingest/orchestrator.py` : champ `relation_deduper` au dataclass, fonction `_check_relation_semantic()`, méthode `_is_relation_duplicate()`, remplacement du bloc dedup L313-317
+- `src/felix/ingest/pipeline.py` : instanciation et passage de `relation_deduper` à `SceneOrchestrator`
+
+**Cas eval cible** : `no_duplicate_irina_kofi_relation` (pipeline suite, previously failing).
+
 ## Cleaner LLM conservateur — prompt fix — 2026-03-19
 
 Ajustement du prompt `CLEANER_PROMPT` dans `src/felix/ingest/cleaner.py` après détection de régressions sur les evals pipeline Helios.

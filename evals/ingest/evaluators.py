@@ -209,6 +209,40 @@ class CharacterDescriptionContains(Evaluator[str, SceneAnalysis]):
 
 
 @dataclass
+class CharacterTypeCorrect(Evaluator[str, SceneAnalysis]):
+    """Check that a specific character has the expected character_type.
+
+    character: name of the character to check.
+    expected_output: "individual" or "group".
+    """
+
+    character: str = ""
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, SceneAnalysis]
+    ) -> dict[str, bool | str]:
+        if not ctx.expected_output or not isinstance(ctx.expected_output, str):
+            return {}
+        target_name = normalize(self.character)
+        expected_type = ctx.expected_output.strip().lower()
+        matched = next(
+            (
+                c
+                for c in ctx.output.characters
+                if target_name in normalize(c.name) or normalize(c.name) in target_name
+            ),
+            None,
+        )
+        if matched is None:
+            return {"type_correct": False, "reason": f"{self.character} not found"}
+        got_type = matched.character_type
+        return {
+            "type_correct": got_type == expected_type,
+            "type_got": got_type,
+        }
+
+
+@dataclass
 class NoEphemeralPhysicalDescription(Evaluator[str, SceneAnalysis]):
     """Check that a character's description contains no ephemeral physical state.
 

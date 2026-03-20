@@ -45,6 +45,8 @@ from evals.pipeline.evaluators import (
     CharacterIdsPresent,
     ExactFragmentCount,
     ExactIssueCountByType,
+    GroupAbsent,
+    GroupIdsPresent,
     IssueDescriptionContains,
     IssueTypeAbsent,
     IssueTypePresent,
@@ -1017,11 +1019,63 @@ PROFILER_ATTRIBUTION_DATASET: Dataset[str, Any] = Dataset(
     ],
 )
 
+GROUPS_DATASET: Dataset[str, Any] = Dataset(
+    cases=[
+        # --- Pixel est un individu, pas un groupe ---
+        Case(
+            name="groups_pixel_is_individual",
+            inputs="characters",
+            expected_output="pixel",
+            metadata={"category": "groups", "difficulty": "easy"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+        Case(
+            name="groups_pixel_not_a_group",
+            inputs="groups",
+            expected_output="pixel",
+            metadata={"category": "groups", "difficulty": "easy"},
+            evaluators=[GroupAbsent()],
+        ),
+        # --- "les drones" est un groupe, pas un personnage ---
+        Case(
+            name="groups_drones_is_group",
+            inputs="groups",
+            expected_output="les-drones",
+            metadata={"category": "groups", "difficulty": "medium"},
+            evaluators=[GroupIdsPresent()],
+        ),
+        Case(
+            name="groups_drones_not_individual",
+            inputs="characters",
+            expected_output="les-drones",
+            metadata={"category": "groups", "difficulty": "medium"},
+            evaluators=[CharacterAbsent()],
+        ),
+        # --- Les pillards (groupe mentionné) ne polluent pas le registre personnages ---
+        Case(
+            name="groups_pillards_not_individual",
+            inputs="characters",
+            expected_output="les-pillards",
+            metadata={"category": "groups", "difficulty": "medium"},
+            evaluators=[CharacterAbsent()],
+        ),
+        # --- Lena Voss est bien un personnage individuel ---
+        Case(
+            name="groups_lena_is_individual",
+            inputs="characters",
+            expected_output="lena-voss",
+            metadata={"category": "groups", "difficulty": "easy"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+    ],
+)
+
 SUITES: dict[str, tuple[Dataset, Any, str]] = {
     "pipeline":                    (PIPELINE_DATASET,              make_pipeline_task("helios"),                "Pipeline Eval (Helios)"),
     "pipeline-convoi":             (CONVOI_DATASET,                make_pipeline_task("convoi"),                "Pipeline Eval (Convoi)"),
     "pipeline-segmentation":       (SEGMENTATION_DATASET,          make_pipeline_task("segmentation"),          "Pipeline Eval (Segmentation)"),
     "pipeline-profiler-attribution": (PROFILER_ATTRIBUTION_DATASET, make_pipeline_task("profiler_attribution"), "Pipeline Eval (Profiler Attribution)"),
+    "pipeline-groups":             (GROUPS_DATASET,                make_pipeline_task("groups"),                "Pipeline Eval (Groups/Factions)"),
     "ingest":                      (INGEST_DATASET,                 analyze_scene_task,                          "Ingest Eval"),
     "chatbot":                     (CHATBOT_DATASET,                felix_task,                                  "Chat Agent Eval"),
 }

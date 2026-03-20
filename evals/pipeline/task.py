@@ -34,6 +34,7 @@ class PipelineQueryResult(BaseModel):
     """Structured result for a pipeline DB query."""
 
     character_ids: list[str] = []
+    group_ids: list[str] = []
     location_names: list[str] = []
     issues: list[dict[str, Any]] = []
     background: str | None = None
@@ -140,6 +141,20 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
     if query == "characters":
         rows = await repository.list_all_characters(driver)
         return PipelineQueryResult(character_ids=[r["id"] for r in rows])
+
+    if query == "groups":
+        rows = await repository.list_all_groups(driver)
+        return PipelineQueryResult(group_ids=[r["id"] for r in rows])
+
+    if query.startswith("member_of:"):
+        char_id = query[len("member_of:"):]
+        async with driver.session() as session:
+            result = await session.run(
+                "MATCH (c:Character {id: $id})-[:MEMBER_OF]->(g:Group) RETURN g.id AS id",
+                id=char_id,
+            )
+            rows = await result.data()
+        return PipelineQueryResult(group_ids=[r["id"] for r in rows])
 
     if query == "locations":
         rows = await repository.list_all_locations(driver)

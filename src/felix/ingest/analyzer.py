@@ -72,6 +72,21 @@ PHYSICAL DESCRIPTION:
 actions performed in the scene ("hand on the wheel", "sitting", "bleeding").
 - If no permanent physical trait is mentioned, leave description null or describe only role/profession.
 
+CHARACTER TYPE:
+- "individual": any entity with a unique proper name, OR an unnamed entity acting alone
+  ("the guard", "the creature", "the android"). Default.
+- "group": a collective that refers to multiple entities simultaneously:
+  factions, armies, species, organizations, unnamed collectives
+  ("the orcs", "the Nazgûl", "the Fellowship", "the drones", "the guards").
+  Use "group" when the name is inherently plural or refers to a collective force.
+
+Examples:
+  "Pixel" (named drone) → individual
+  "the drones" → group
+  "the Fellowship of the Ring" → group
+  "a Black Rider" → individual  (one Nazgûl acting alone)
+  "the Nazgûl" → group
+
 RULES:
 - Invent NOTHING. Extract only what is in the text.
 - If information is not in the text, use null.

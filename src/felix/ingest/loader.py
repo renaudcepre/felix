@@ -12,6 +12,8 @@ from felix.graph.repository import (
     upsert_character_event,
     upsert_character_fragment,
     upsert_character_minimal,
+    upsert_group_in_scene,
+    upsert_group_minimal,
     upsert_location_minimal,
     upsert_scene,
     upsert_timeline_event,
@@ -27,6 +29,7 @@ async def load_scene(  # noqa: PLR0913
     analysis: Any,
     resolved_chars: list[tuple[ResolvedEntity, str, str | None]],
     resolved_location: ResolvedEntity,
+    resolved_groups: list[tuple[ResolvedEntity, str, str | None]] | None = None,
 ) -> None:
     # 1. Upsert location (MERGE — must exist before scene AT_LOCATION)
     await upsert_location_minimal(driver, {
@@ -57,6 +60,15 @@ async def load_scene(  # noqa: PLR0913
         await upsert_character_fragment(
             driver, resolved_char.id, scene_id, role, description
         )
+
+    # 3b. Upsert groups (MERGE :Group) + PRESENT_IN
+    for resolved_group, role, description in (resolved_groups or []):
+        await upsert_group_minimal(driver, {
+            "id": resolved_group.id,
+            "name": resolved_group.name,
+            "era": analysis.era,
+        })
+        await upsert_group_in_scene(driver, resolved_group.id, scene_id, role, description)
 
     # 4. Upsert timeline event
     date = analysis.approximate_date

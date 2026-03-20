@@ -18,6 +18,7 @@ from felix.graph.repository import (
     delete_issues_for_scenes,
     get_scene_ids_for_stems,
     list_all_characters_full,
+    list_all_groups,
     list_all_locations,
 )
 from felix.graph.writer import delete_scenes, link_next_chunk, write_scene
@@ -29,6 +30,7 @@ from felix.ingest.profiler import (
     create_beat_extractor_agent,
     create_profiler_agent,
     create_profiler_patch_agent,
+    create_relation_dedup_agent,
 )
 from felix.ingest.resolution import (
     ClarificationSlot,
@@ -70,6 +72,7 @@ class _PipelineContext:
     loc_registry: dict[str, str] = field(default_factory=dict)
     loc_aliases: dict[str, list[str]] = field(default_factory=dict)
     char_details: dict[str, dict] = field(default_factory=dict)
+    group_registry: dict[str, str] = field(default_factory=dict)
 
 
 def _build_registry(
@@ -97,9 +100,12 @@ def _build_registry(
 
 async def _load_registries(
     driver: AsyncDriver,
-) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str], dict[str, list[str]], dict[str, dict]]:
-    chars = await list_all_characters_full(driver)
-    locs = await list_all_locations(driver)
+) -> tuple[dict[str, str], dict[str, list[str]], dict[str, str], dict[str, list[str]], dict[str, dict], dict[str, str]]:
+    chars, locs, groups = await asyncio.gather(
+        list_all_characters_full(driver),
+        list_all_locations(driver),
+        list_all_groups(driver),
+    )
 
     char_details: dict[str, dict] = {
         c["id"]: {
@@ -111,7 +117,8 @@ async def _load_registries(
     }
 
     char_registry, char_aliases, loc_registry, loc_aliases = _build_registry(chars, locs)
-    return char_registry, char_aliases, loc_registry, loc_aliases, char_details
+    group_registry: dict[str, str] = {g["id"]: g["name"] for g in groups}
+    return char_registry, char_aliases, loc_registry, loc_aliases, char_details, group_registry
 
 
 async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
@@ -157,7 +164,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 current_scene="",
             )
 
-        ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.loc_aliases, ctx.char_details = await _load_registries(driver)
+        ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.loc_aliases, ctx.char_details, ctx.group_registry = await _load_registries(driver)
 
         # Idempotent cleanup — covers both "scene-{stem}" and "scene-{stem}-chunk-NN"
         existing_scene_ids = await get_scene_ids_for_stems(driver, [f.stem for f in scene_files])
@@ -202,6 +209,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         profiler = create_profiler_agent(model_name, base_url) if enrich_profiles else None
         profiler_patch = create_profiler_patch_agent(model_name, base_url) if enrich_profiles else None
         beat_extractor = create_beat_extractor_agent(model_name, base_url) if enrich_profiles else None
+        relation_deduper = create_relation_dedup_agent(model_name, base_url) if model_name else None
 
         resolver = EntityResolutionService(
             driver=driver,
@@ -210,6 +218,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
             loc_registry=ctx.loc_registry,
             loc_aliases=ctx.loc_aliases,
             char_details=ctx.char_details,
+            group_registry=ctx.group_registry,
             queue=queue,
             pending_clarifications=pending_clarifications,
         )
@@ -223,6 +232,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
             profiler_patch=profiler_patch,
             beat_extractor=beat_extractor,
             cleaner=cleaner,
+            relation_deduper=relation_deduper,
         )
 
         scenes_processed = 0

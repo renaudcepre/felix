@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 from felix.graph.repository import (
     create_issue,
+    create_member_of,
     create_narrative_beat,
     get_character_profile,
     get_relation_types_for_pair,
@@ -28,11 +29,34 @@ from felix.ingest.cleaner import clean_scene_text
 from felix.ingest.loader import load_scene
 from felix.ingest.models import NarrativeBeat
 from felix.ingest.profiler import extract_scene_beats, patch_character_profile, profile_character
-from felix.ingest.resolution import ImportStatus, _emit
+from felix.ingest.resolution import ImportStatus, _emit, resolve_group_entity
 from felix.ingest.resolver import AmbiguousMatch, fuzzy_match_entity
 from rapidfuzz import fuzz
 
 logger = logging.getLogger("felix.ingest")
+
+
+async def _check_relation_semantic(
+    deduper: Any,
+    char_a: str,
+    char_b: str,
+    existing: str,
+    candidate: str,
+    char_profile: dict,
+) -> str:
+    background = char_profile.get("background") or ""
+    arc = char_profile.get("arc") or ""
+    prompt = (
+        f"Character A: {char_a}\n"
+        f"Character B: {char_b}\n"
+        f"Existing relation: {existing}\n"
+        f"Candidate relation: {candidate}\n"
+        f"Character A background: {background}\n"
+        f"Character A arc: {arc}"
+    )
+    result = await deduper.run(prompt)
+    verdict = result.output.strip().lower()
+    return "merge" if "merge" in verdict else "keep_both"
 
 
 def make_scene_id(stem: str, chunk_idx: int, total_chunks: int) -> str:
@@ -52,6 +76,29 @@ class SceneOrchestrator:
     profiler_patch: Any = None
     beat_extractor: Any = None
     cleaner: Any = None
+    relation_deduper: Any = None
+
+    async def _is_relation_duplicate(
+        self,
+        new_rel: str,
+        existing_rels: list[str],
+        char_a_name: str,
+        char_b_name: str,
+        char_profile: dict,
+    ) -> bool:
+        if not existing_rels:
+            return False
+        best = max(existing_rels, key=lambda ex: fuzz.ratio(new_rel.lower(), ex.lower()))
+        score = fuzz.ratio(new_rel.lower(), best.lower())
+        if score >= 90:  # noqa: PLR2004
+            return True  # évident textuellement, pas de LLM
+        if self.relation_deduper:
+            verdict = await _check_relation_semantic(
+                self.relation_deduper, char_a_name, char_b_name,
+                best, new_rel, char_profile,
+            )
+            return verdict == "merge"
+        return False
 
     async def _emit_status(self, status: ImportStatus) -> None:
         if self.ctx.queue:
@@ -98,7 +145,7 @@ class SceneOrchestrator:
                 scene_id=scene_id,
                 title=analysis.title,
                 summary=analysis.summary,
-                characters=[{"name": c.name, "role": c.role} for c in analysis.characters],
+                characters=[{"name": c.name, "role": c.role, "type": c.character_type} for c in analysis.characters],
                 location=analysis.location.name,
                 era=analysis.era,
                 date=analysis.approximate_date,
@@ -109,7 +156,7 @@ class SceneOrchestrator:
         await self._emit_status(ImportStatus.RESOLVING)
         scene_issues: list[dict] = []
 
-        resolved_chars = await self.resolver.resolve_characters(analysis, scene_text, scene_id, scene_issues)
+        resolved_chars, resolved_groups = await self.resolver.resolve_characters(analysis, scene_text, scene_id, scene_issues)
         resolved_location = await self.resolver.resolve_location(analysis, scene_id, scene_issues)
 
         for rc, _, _ in resolved_chars:
@@ -129,6 +176,7 @@ class SceneOrchestrator:
             analysis,
             resolved_chars,
             resolved_location,
+            resolved_groups,
         )
 
         if ctx.queue:
@@ -143,6 +191,10 @@ class SceneOrchestrator:
             "characters": [
                 {"name": rc.name, "id": rc.id, "role": role}
                 for rc, role, _desc in resolved_chars
+            ],
+            "groups": [
+                {"name": rg.name, "id": rg.id, "role": role}
+                for rg, role, _desc in resolved_groups
             ],
             "location": {"name": resolved_location.name, "id": resolved_location.id},
         }
@@ -305,15 +357,19 @@ class SceneOrchestrator:
                         other_name = other_match.best_name
                     else:
                         if other_match.is_new:
+                            # Check if it's a known group → create MEMBER_OF
+                            group_match = resolve_group_entity(rel.other_name, ctx.group_registry)
+                            if not group_match.is_new:
+                                await create_member_of(ctx.driver, char_id, group_match.id)
                             continue
                         other_id = other_match.id
                         other_name = other_match.name
                     if other_id != char_id:
                         a, b = sorted([char_id, other_id])
                         existing_rels = await get_relation_types_for_pair(ctx.driver, a, b)
-                        is_duplicate = any(
-                            fuzz.ratio(rel.relation.lower(), ex.lower()) >= 75  # noqa: PLR2004
-                            for ex in existing_rels
+                        is_duplicate = await self._is_relation_duplicate(
+                            rel.relation, existing_rels,
+                            char_name, other_name, existing_profile,
                         )
                         if not is_duplicate:
                             era = existing_profile.get("era") or ctx.char_details.get(char_id, {}).get("era")

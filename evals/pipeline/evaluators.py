@@ -343,6 +343,46 @@ class MinChunkCount(Evaluator[str, PipelineQueryResult]):
 
 
 @dataclass
+class GroupIdsPresent(Evaluator[str, PipelineQueryResult]):
+    """Check that all expected group IDs are present in the Group nodes.
+
+    expected_output: comma-separated slugified group IDs.
+    Example: "les-drones,les-pillards"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, float | str]:
+        if not ctx.expected_output:
+            return {}
+        expected = {s.strip() for s in ctx.expected_output.split(",")}
+        found = set(ctx.output.group_ids)
+        present = expected & found
+        missing = expected - found
+        score = len(present) / len(expected) if expected else 1.0
+        result: dict[str, float | str] = {"group_id_recall": score}
+        if missing:
+            result["missing_group_ids"] = ", ".join(sorted(missing))
+        return result
+
+
+@dataclass
+class GroupAbsent(Evaluator[str, PipelineQueryResult]):
+    """Check that an ID is NOT in the group_ids list (negative test).
+
+    expected_output: slugified ID that must not be a Group.
+    Example: "pixel"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool]:
+        target = (ctx.expected_output or "").strip()
+        found = target in ctx.output.group_ids
+        return {"group_absent_pass": not found}
+
+
+@dataclass
 class AllLocationsContainKeyword(Evaluator[str, PipelineQueryResult]):
     """Check that ALL locations contain the expected keyword (tests deduplication).
 

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from felix.ingest.models import SceneAnalysis
 
 from felix.graph.repository import add_character_alias, add_location_alias
-from felix.ingest.resolver import AmbiguousMatch, ResolvedEntity, fuzzy_match_entity, slugify
+from felix.ingest.resolver import AmbiguousMatch, ResolvedEntity, _normalize, fuzzy_match_entity, slugify
 
 EventQueue = asyncio.Queue[dict[str, Any]]
 EmitFn = Callable[..., Awaitable[None]] | None
@@ -160,6 +160,16 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
     return ResolvedEntity(id=match.best_id, name=match.best_name)
 
 
+def resolve_group_entity(name: str, group_registry: dict[str, str]) -> ResolvedEntity:
+    """Résolution simplifiée pour groupes : exact match normalisé ou nouveau slug."""
+    norm = _normalize(name)
+    for gid, gname in group_registry.items():
+        if _normalize(gname) == norm:
+            return ResolvedEntity(id=gid, name=gname)
+    new_id = slugify(name)
+    return ResolvedEntity(id=new_id, name=name, is_new=True)
+
+
 async def _resolve_characters(  # noqa: PLR0913
     analysis: SceneAnalysis,
     scene_text: str,
@@ -169,11 +179,24 @@ async def _resolve_characters(  # noqa: PLR0913
     scene_id: str,
     issues: list[dict],
     driver: AsyncDriver,
+    group_registry: dict[str, str],
     queue: EventQueue | None = None,
     pending_clarifications: dict[str, ClarificationSlot] | None = None,
-) -> list[tuple[ResolvedEntity, str, str | None]]:
+) -> tuple[list[tuple[ResolvedEntity, str, str | None]], list[tuple[ResolvedEntity, str, str | None]]]:
     resolved_chars: list[tuple[ResolvedEntity, str, str | None]] = []
+    resolved_groups: list[tuple[ResolvedEntity, str, str | None]] = []
+
     for ec in analysis.characters:
+        if ec.character_type == "group":
+            resolved = resolve_group_entity(ec.name, group_registry)
+            if resolved.is_new:
+                group_registry[resolved.id] = resolved.name
+            if queue:
+                action = "created" if resolved.is_new else "linked"
+                await _emit(queue, "entity_resolved", name=ec.name, action=action)
+            resolved_groups.append((resolved, ec.role, ec.description))
+            continue
+
         match = fuzzy_match_entity(ec.name, char_registry, char_aliases)
         if isinstance(match, AmbiguousMatch):
             context = ec.description or _find_excerpt(ec.name, scene_text)
@@ -205,7 +228,8 @@ async def _resolve_characters(  # noqa: PLR0913
                     score=round(resolved.score, 2) if resolved.score is not None else None,
                 )
         resolved_chars.append((resolved, ec.role, ec.description))
-    return resolved_chars
+
+    return resolved_chars, resolved_groups
 
 
 async def _resolve_location(  # noqa: PLR0913
@@ -314,6 +338,7 @@ class EntityResolutionService:
     loc_registry: dict[str, str]
     loc_aliases: dict[str, list[str]]
     char_details: dict[str, dict]
+    group_registry: dict[str, str]
     queue: EventQueue | None = None
     pending_clarifications: dict[str, ClarificationSlot] | None = None
 
@@ -323,7 +348,7 @@ class EntityResolutionService:
         scene_text: str,
         scene_id: str,
         issues: list[dict],
-    ) -> list[tuple[ResolvedEntity, str, str | None]]:
+    ) -> tuple[list[tuple[ResolvedEntity, str, str | None]], list[tuple[ResolvedEntity, str, str | None]]]:
         return await _resolve_characters(
             analysis,
             scene_text,
@@ -333,6 +358,7 @@ class EntityResolutionService:
             scene_id,
             issues,
             self.driver,
+            self.group_registry,
             self.queue,
             self.pending_clarifications,
         )
