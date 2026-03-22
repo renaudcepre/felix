@@ -29,7 +29,7 @@ from felix.ingest.cleaner import clean_scene_text
 from felix.ingest.loader import load_scene
 from felix.ingest.models import NarrativeBeat
 from felix.ingest.profiler import extract_scene_beats, patch_character_profile, profile_character
-from felix.ingest.resolution import ImportStatus, _emit, resolve_group_entity
+from felix.ingest.resolution import CLARIFICATION_TIMEOUT, ClarificationSlot, ImportStatus, _emit, resolve_group_entity
 from felix.ingest.resolver import AmbiguousMatch, fuzzy_match_entity
 from rapidfuzz import fuzz
 
@@ -56,7 +56,9 @@ async def _check_relation_semantic(
     )
     result = await deduper.run(prompt)
     verdict = result.output.strip().lower()
-    return "merge" if "merge" in verdict else "keep_both"
+    if verdict in ("merge", "keep_both", "unsure"):
+        return verdict
+    return "keep_both"
 
 
 def make_scene_id(stem: str, chunk_idx: int, total_chunks: int) -> str:
@@ -78,6 +80,46 @@ class SceneOrchestrator:
     cleaner: Any = None
     relation_deduper: Any = None
 
+    async def _clarify_relation_dedup(
+        self,
+        char_a_name: str,
+        char_b_name: str,
+        existing_rel: str,
+        candidate_rel: str,
+    ) -> str:
+        queue = self.ctx.queue
+        pending = self.ctx.pending_clarifications
+        if not queue or pending is None:
+            return "keep_both"
+
+        clarification_id = str(uuid.uuid4())
+        slot = ClarificationSlot()
+        pending[clarification_id] = slot
+
+        await _emit(
+            queue,
+            "clarification_needed",
+            id=clarification_id,
+            question=(
+                f"Relation entre '{char_a_name}' et '{char_b_name}' : "
+                f"'{existing_rel}' et '{candidate_rel}' décrivent-elles le même lien ?"
+            ),
+            entity_name=char_a_name,
+            entity_context=f"Relation with {char_b_name}",
+            existing_relation=existing_rel,
+            candidate_relation=candidate_rel,
+            options=["merge", "keep_both"],
+        )
+
+        try:
+            await asyncio.wait_for(slot.event.wait(), timeout=CLARIFICATION_TIMEOUT)
+        except TimeoutError:
+            slot.answer = "keep_both"
+        finally:
+            pending.pop(clarification_id, None)
+
+        return slot.answer if slot.answer in ("merge", "keep_both") else "keep_both"
+
     async def _is_relation_duplicate(
         self,
         new_rel: str,
@@ -97,6 +139,10 @@ class SceneOrchestrator:
                 self.relation_deduper, char_a_name, char_b_name,
                 best, new_rel, char_profile,
             )
+            if verdict == "unsure":
+                verdict = await self._clarify_relation_dedup(
+                    char_a_name, char_b_name, best, new_rel,
+                )
             return verdict == "merge"
         return False
 
@@ -117,7 +163,7 @@ class SceneOrchestrator:
         *,
         scene_id: str | None = None,
         chunk_text: str | None = None,
-    ) -> tuple[list[dict], dict, list[tuple[Any, str, str | None]], str]:
+    ) -> tuple[list[dict], dict, list[tuple[Any, str, str | None, str | None]], str]:
         ctx = self.ctx
         if scene_id is None:
             scene_id = f"scene-{scene_file.stem}"
@@ -159,7 +205,7 @@ class SceneOrchestrator:
         resolved_chars, resolved_groups = await self.resolver.resolve_characters(analysis, scene_text, scene_id, scene_issues)
         resolved_location = await self.resolver.resolve_location(analysis, scene_id, scene_issues)
 
-        for rc, _, _ in resolved_chars:
+        for rc, _, _, _ in resolved_chars:
             if rc.is_new:
                 ctx.progress.new_characters.append(rc.name)
         if resolved_location.is_new:
@@ -190,11 +236,11 @@ class SceneOrchestrator:
             "date": analysis.approximate_date,
             "characters": [
                 {"name": rc.name, "id": rc.id, "role": role}
-                for rc, role, _desc in resolved_chars
+                for rc, role, _desc, _ctx in resolved_chars
             ],
             "groups": [
                 {"name": rg.name, "id": rg.id, "role": role}
-                for rg, role, _desc in resolved_groups
+                for rg, role, _desc, _ctx in resolved_groups
             ],
             "location": {"name": resolved_location.name, "id": resolved_location.id},
         }
@@ -289,7 +335,7 @@ class SceneOrchestrator:
 
     async def profile_scene_characters(  # noqa: PLR0912
         self,
-        resolved_chars: list[tuple[Any, str, str | None]],
+        resolved_chars: list[tuple[Any, str, str | None, str | None]],
         scene_id: str,
         scene_text: str,
         scene_title: str,
@@ -302,11 +348,11 @@ class SceneOrchestrator:
 
         scene_beats: list[NarrativeBeat] = []
         if self.beat_extractor:
-            active_names = [rc.name for rc, role, _ in resolved_chars if role != "mentioned"]
+            active_names = [rc.name for rc, role, _, _ in resolved_chars if role != "mentioned"]
             if active_names:
                 scene_beats = await self._extract_and_store_beats(scene_id, scene_text, active_names)
 
-        for rc, role, desc in resolved_chars:
+        for rc, role, desc, _ctx in resolved_chars:
             if role == "mentioned":
                 continue
 

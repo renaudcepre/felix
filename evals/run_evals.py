@@ -58,7 +58,9 @@ from evals.pipeline.evaluators import (
     MinRelationsCount,
     NoIssueDescriptionContains,
     ProfileNotContainsKeyword,
+    RelationTextNotContainsKeyword,
     RelationWithCharPresent,
+    MaxRelationCount,
     SceneDateContainsKeywords,
 )
 from evals.pipeline.task import make_pipeline_task
@@ -1019,6 +1021,91 @@ PROFILER_ATTRIBUTION_DATASET: Dataset[str, Any] = Dataset(
     ],
 )
 
+PROFILER_RELATIONS_DATASET: Dataset[str, Any] = Dataset(
+    cases=[
+        # --- extraction des personnages ---
+        Case(
+            name="rel_characters_extracted",
+            inputs="characters",
+            expected_output="borin,elara,darya",
+            metadata={"category": "extraction"},
+            evaluators=[CharacterIdsPresent()],
+        ),
+        # --- co-presence: Darya ne doit PAS avoir de relation generique avec Borin/Elara ---
+        Case(
+            name="rel_no_copresence_darya",
+            inputs="relations:darya",
+            expected_output="present,participant,banquet,scene,together,seen,share,travel,route,accompan",
+            metadata={"category": "relations", "difficulty": "hard"},
+            evaluators=[RelationTextNotContainsKeyword()],
+        ),
+        Case(
+            name="rel_no_copresence_borin",
+            inputs="relations:borin",
+            expected_output="present,participant,banquet,scene,together,seen",
+            metadata={"category": "relations", "difficulty": "medium"},
+            evaluators=[RelationTextNotContainsKeyword()],
+        ),
+        # --- dedup: Borin-Elara ne doit pas avoir plus de 2 relations distinctes ---
+        Case(
+            name="rel_dedup_borin_elara",
+            inputs="relation_count:borin,elara",
+            expected_output="2",
+            metadata={"category": "relations", "difficulty": "hard"},
+            evaluators=[MaxRelationCount()],
+        ),
+        # --- attribution age: Elara ne doit PAS avoir l'age de Borin (52) ---
+        Case(
+            name="rel_elara_not_borin_age",
+            inputs="age:elara",
+            expected_output="cinquante,52,fifty",
+            metadata={"category": "attribution", "difficulty": "hard"},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- attribution age: Elara ne doit PAS avoir l'age de Darya (30) ---
+        Case(
+            name="rel_elara_not_darya_age",
+            inputs="age:elara",
+            expected_output="trente,30,thirty",
+            metadata={"category": "attribution", "difficulty": "hard"},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- attribution physique: Borin ne doit PAS heriter de la cicatrice de Darya ---
+        Case(
+            name="rel_borin_not_darya_scar",
+            inputs="profile:borin",
+            expected_output="cicatrice,scar,menton,chin",
+            metadata={"category": "attribution", "difficulty": "hard"},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- attribution age: Borin DOIT avoir son age ---
+        Case(
+            name="rel_borin_has_age",
+            inputs="age:borin",
+            expected_output="cinquante,52",
+            metadata={"category": "attribution", "difficulty": "easy"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- attribution age: Darya DOIT avoir son age ---
+        Case(
+            name="rel_darya_has_age",
+            inputs="age:darya",
+            expected_output="trente,30",
+            metadata={"category": "attribution", "difficulty": "easy"},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- relation mentor existe bien ---
+        Case(
+            name="rel_mentor_exists",
+            inputs="relations:elara",
+            expected_output="borin",
+            metadata={"category": "relations"},
+            evaluators=[RelationWithCharPresent()],
+        ),
+    ],
+)
+
+
 GROUPS_DATASET: Dataset[str, Any] = Dataset(
     cases=[
         # --- Pixel est un individu, pas un groupe ---
@@ -1075,6 +1162,7 @@ SUITES: dict[str, tuple[Dataset, Any, str]] = {
     "pipeline-convoi":             (CONVOI_DATASET,                make_pipeline_task("convoi"),                "Pipeline Eval (Convoi)"),
     "pipeline-segmentation":       (SEGMENTATION_DATASET,          make_pipeline_task("segmentation"),          "Pipeline Eval (Segmentation)"),
     "pipeline-profiler-attribution": (PROFILER_ATTRIBUTION_DATASET, make_pipeline_task("profiler_attribution"), "Pipeline Eval (Profiler Attribution)"),
+    "pipeline-profiler-relations":   (PROFILER_RELATIONS_DATASET,   make_pipeline_task("profiler_relations"),    "Pipeline Eval (Profiler Relations)"),
     "pipeline-groups":             (GROUPS_DATASET,                make_pipeline_task("groups"),                "Pipeline Eval (Groups/Factions)"),
     "ingest":                      (INGEST_DATASET,                 analyze_scene_task,                          "Ingest Eval"),
     "chatbot":                     (CHATBOT_DATASET,                felix_task,                                  "Chat Agent Eval"),

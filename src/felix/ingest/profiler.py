@@ -31,10 +31,16 @@ RULES:
 - If a field is unknown in both the profile and the scene, return null.
 - Invent nothing: every piece of information must be traceable to the profile or the scene text.
 
-ATTRIBUTION RULE (when an "Events involving <character>" section is present):
-- For `arc` and `background`: only use events where this character is explicitly listed as subject or object.
-- Do NOT attribute to this character any event that happens to someone else in the scene, even if mentioned nearby.
-- The scene text provides context (dialogue, atmosphere) — not additional events to attribute.
+ATTRIBUTION RULE:
+- ALL fields (age, physical, background, arc, traits, relations) must describe THIS character only.
+- Do NOT attribute to this character any detail (age, appearance, trait, relationship) that belongs to another character, even if mentioned in the same scene.
+- If the scene says "Bilbo is eleventy-one years old" and you are profiling Pippin, do NOT set Pippin's age to "eleventy-one".
+- When an "Events involving <character>" section is present, use ONLY those events for `arc` and `background`.
+- The scene text provides context (dialogue, atmosphere) — not additional details to attribute to every character present.
+
+For relations: do NOT add co-presence as a relation. Two characters appearing in the same scene is not a relationship.
+BAD: "both present at the council", "participant in the battle"
+GOOD: "fellow member of the Fellowship", "rival for the throne"
 
 One sentence per field maximum. Be concise and factual.
 """
@@ -69,6 +75,9 @@ Fields to fill:
   - relation: free-form description of the relationship (e.g. "colleague at Helios-3 relay", \
 "mentor", "rival", "father", "companion AI"). Be precise and contextual.
   List only relationships clearly present in the texts.
+  Do NOT list co-presence as a relation. Two characters being in the same scene is not a relationship.
+  BAD: "both present at the council", "participant in the battle", "seen together at the inn"
+  GOOD: "fellow member of the Fellowship", "rival for the throne", "father"
 
 Be concise and factual.
 """
@@ -104,6 +113,58 @@ def create_profiler_agent(
         instructions=PROFILER_PROMPT,
         output_type=CharacterProfile,
         model_settings=ModelSettings(temperature=0.1),
+        retries=2,
+    )
+
+
+RELATION_DEDUP_PROMPT = """\
+You are checking if two relationship descriptions refer to the same relationship.
+
+You receive:
+- Character A and Character B names
+- An existing relation already stored in the database
+- A new candidate relation to potentially add
+- The current profile of Character A (background and arc) for context
+
+Answer with exactly one word:
+- "merge" if the candidate describes the same relationship as the existing one (same nature, same bond)
+- "keep_both" if they describe clearly distinct aspects worth preserving
+- "unsure" if you cannot confidently decide — they might overlap but you are not certain
+
+Examples:
+  Existing: "companion met at the Council of Elrond"
+  Candidate: "ally forged through shared battle"
+  → keep_both  (different moments, complementary aspects)
+
+  Existing: "fellow traveler on the quest"
+  Candidate: "companion on the quest to Mordor"
+  → merge  (same relationship, different wording)
+
+  Existing: "childhood friend"
+  Candidate: "old acquaintance from the village"
+  → unsure  (could be same bond or distinct relationships)
+
+  Existing: "companion"
+  Candidate: "travel companion"
+  → merge  (same bond, the candidate just adds a generic qualifier)
+
+  Existing: "ally in battle"
+  Candidate: "ally"
+  → merge  (same bond, one is more general than the other)
+
+Output ONLY "merge", "keep_both", or "unsure". No explanation.
+"""
+
+
+def create_relation_dedup_agent(
+    model_name: str | None = None, base_url: str | None = None
+) -> Agent[None, str]:
+    model: Model = _build_model(model_name, base_url)
+    return Agent(
+        model,
+        instructions=RELATION_DEDUP_PROMPT,
+        output_type=str,
+        model_settings=ModelSettings(temperature=0.0),
         retries=2,
     )
 
@@ -154,7 +215,9 @@ async def patch_character_profile(
 ) -> CharacterProfile:
     parts = [f"Character: {name}\n"]
     parts.append("=== Current profile ===")
-    for field in ("age", "physical", "background", "arc", "traits"):
+    # background and arc are accumulated at DB level — omit them here so the LLM
+    # only extracts what the new scene adds, avoiding duplication on concatenation.
+    for field in ("age", "physical", "traits"):
         val = existing_profile.get(field)
         if val:
             parts.append(f"- {field}: {val}")

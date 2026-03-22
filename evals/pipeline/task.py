@@ -137,6 +137,7 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
       - "next_chunk_links:<stem>"      → number of NEXT_CHUNK links for that file stem
       - "traits:<char_id>"            → raw traits field for that character
       - "arc:<char_id>"               → raw arc field for that character
+      - "age:<char_id>"               → raw age field for that character
     """
     if query == "characters":
         rows = await repository.list_all_characters(driver)
@@ -233,6 +234,11 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
         char_id = query[len("arc:"):]
         row = await repository.get_character_profile(driver, char_id)
         return PipelineQueryResult(background=row.get("arc") if row else None)
+
+    if query.startswith("age:"):
+        char_id = query[len("age:"):]
+        row = await repository.get_character_profile(driver, char_id)
+        return PipelineQueryResult(background=row.get("age") if row else None)
 
     if query.startswith("chunk_count:"):
         stem = query[len("chunk_count:"):]

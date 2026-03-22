@@ -181,18 +181,20 @@ async def upsert_group_in_scene(
     scene_id: str,
     role: str | None,
     description: str | None,
+    context: str | None = None,
 ) -> None:
     async def _write(tx: AsyncManagedTransaction) -> None:
         await tx.run(
             """
             MATCH (g:Group {id: $gid}), (s:Scene {id: $sid})
             MERGE (g)-[r:PRESENT_IN]->(s)
-            SET r.role = $role, r.description = $description
+            SET r.role = $role, r.description = $description, r.context = $context
             """,
             gid=group_id,
             sid=scene_id,
             role=role or "",
             description=description,
+            context=context,
         )
 
     async with driver.session() as session:
@@ -313,18 +315,20 @@ async def upsert_character_fragment(
     scene_id: str,
     role: str | None,
     description: str | None,
+    context: str | None = None,
 ) -> None:
     async def _write(tx: AsyncManagedTransaction) -> None:
         await tx.run(
             """
             MATCH (c:Character {id: $cid}), (s:Scene {id: $sid})
             MERGE (c)-[r:PRESENT_IN]->(s)
-            SET r.role = $role, r.description = $description
+            SET r.role = $role, r.description = $description, r.context = $context
             """,
             cid=character_id,
             sid=scene_id,
             role=role or "",
             description=description,
+            context=context,
         )
 
     async with driver.session() as session:
@@ -339,7 +343,7 @@ async def get_character_fragments(
             """
             MATCH (c:Character {id: $cid})-[r:PRESENT_IN]->(s:Scene)
             RETURN s.id AS scene_id, r.role AS role, r.description AS description,
-                   s.title AS scene_title
+                   r.context AS context, s.title AS scene_title
             ORDER BY s.filename
             """,
             cid=character_id,
@@ -356,7 +360,8 @@ async def list_all_character_fragments(driver: AsyncDriver) -> list[dict[str, An
             """
             MATCH (c:Character)-[r:PRESENT_IN]->(s:Scene)
             RETURN c.id AS character_id, s.id AS scene_id,
-                   r.role AS role, r.description AS description
+                   r.role AS role, r.description AS description,
+                   r.context AS context
             """
         )
         return [dict(r) for r in await result.data()]

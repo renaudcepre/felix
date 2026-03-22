@@ -27,9 +27,9 @@ async def load_scene(  # noqa: PLR0913
     filename: str,
     scene_text: str,
     analysis: Any,
-    resolved_chars: list[tuple[ResolvedEntity, str, str | None]],
+    resolved_chars: list[tuple[ResolvedEntity, str, str | None, str | None]],
     resolved_location: ResolvedEntity,
-    resolved_groups: list[tuple[ResolvedEntity, str, str | None]] | None = None,
+    resolved_groups: list[tuple[ResolvedEntity, str, str | None, str | None]] | None = None,
 ) -> None:
     # 1. Upsert location (MERGE — must exist before scene AT_LOCATION)
     await upsert_location_minimal(driver, {
@@ -51,24 +51,24 @@ async def load_scene(  # noqa: PLR0913
     })
 
     # 3. Upsert characters (MERGE) + fragments (PRESENT_IN)
-    for resolved_char, role, description in resolved_chars:
+    for resolved_char, role, description, context in resolved_chars:
         await upsert_character_minimal(driver, {
             "id": resolved_char.id,
             "name": resolved_char.name,
             "era": analysis.era,
         })
         await upsert_character_fragment(
-            driver, resolved_char.id, scene_id, role, description
+            driver, resolved_char.id, scene_id, role, description, context
         )
 
     # 3b. Upsert groups (MERGE :Group) + PRESENT_IN
-    for resolved_group, role, description in (resolved_groups or []):
+    for resolved_group, role, description, context in (resolved_groups or []):
         await upsert_group_minimal(driver, {
             "id": resolved_group.id,
             "name": resolved_group.name,
             "era": analysis.era,
         })
-        await upsert_group_in_scene(driver, resolved_group.id, scene_id, role, description)
+        await upsert_group_in_scene(driver, resolved_group.id, scene_id, role, description, context)
 
     # 4. Upsert timeline event
     date = analysis.approximate_date
@@ -87,7 +87,7 @@ async def load_scene(  # noqa: PLR0913
     })
 
     # 5. Upsert character events
-    for resolved_char, role, _desc in resolved_chars:
+    for resolved_char, role, _desc, _ctx in resolved_chars:
         await upsert_character_event(
             driver, resolved_char.id, f"evt-{scene_id}", role
         )
@@ -98,7 +98,7 @@ async def load_scene(  # noqa: PLR0913
         "era": analysis.era,
         "location_id": resolved_location.id,
     }
-    for resolved_char, _role, _desc in resolved_chars:
+    for resolved_char, _role, _desc, _ctx in resolved_chars:
         metadata[f"char_{resolved_char.id}"] = True
 
     collection.upsert(

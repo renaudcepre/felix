@@ -383,6 +383,49 @@ class GroupAbsent(Evaluator[str, PipelineQueryResult]):
 
 
 @dataclass
+class RelationTextNotContainsKeyword(Evaluator[str, PipelineQueryResult]):
+    """Check that NO relation text contains any of the expected keywords (co-presence filter).
+
+    expected_output: comma-separated keywords, ALL must be absent from all relation texts.
+    Example: "present,participant,scene,together"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | str]:
+        if not ctx.expected_output:
+            return {}
+        keywords = [k.strip().lower() for k in ctx.expected_output.split(",") if k.strip()]
+        relations = ctx.output.relations
+        found: list[str] = []
+        for r in relations:
+            text = (r.get("relation") or "").lower()
+            for kw in keywords:
+                if kw in text:
+                    found.append(f"{kw} in '{r.get('relation')}'")
+        result: dict[str, bool | str] = {"no_copresence": not found}
+        if found:
+            result["offending_relations"] = "; ".join(found[:3])
+        return result
+
+
+@dataclass
+class MaxRelationCount(Evaluator[str, PipelineQueryResult]):
+    """Check that the relation count for a pair is at most N (dedup test).
+
+    expected_output: max allowed count as a string.
+    Example: "2"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | int]:
+        max_count = int(ctx.expected_output or 1)
+        count = ctx.output.fragment_count
+        return {"dedup_ok": count <= max_count, "relation_count_got": count}
+
+
+@dataclass
 class AllLocationsContainKeyword(Evaluator[str, PipelineQueryResult]):
     """Check that ALL locations contain the expected keyword (tests deduplication).
 

@@ -197,7 +197,24 @@ def main(
                     summary_text = Text()
                     summary_text.append(f"🕒 {ts}  ", style="cyan")
                     summary_text.append(f"📦 {suite}", style="green")
-                    
+
+                    # Git & timing metadata (backward-compatible)
+                    date = entry.get('date')
+                    commit = entry.get('commit')
+                    branch = entry.get('branch')
+                    duration_s = entry.get('duration_s')
+                    if date:
+                        summary_text.append(f"\n📅 {date}  ", style="dim")
+                    if commit or branch:
+                        git_parts = []
+                        if commit:
+                            git_parts.append(commit)
+                        if branch:
+                            git_parts.append(branch)
+                        summary_text.append(f"🔀 {' @ '.join(git_parts)}  ", style="dim")
+                    if duration_s is not None:
+                        summary_text.append(f"⏱ {duration_s}s", style="dim")
+
                     # Add cases if present
                     if 'cases' in entry:
                         cases = entry['cases']
@@ -207,16 +224,22 @@ def main(
                         summary_text.append(f"\n🤖 {model}  ", style="blue")
                         summary_text.append(f"✓ {passed}/{total}", style="yellow")
                         
+                        case_durations = entry.get('case_durations', {})
+
                         # Add passed cases
                         summary_text.append(f"\n\nPassed cases ({len(passed_cases)}):", style="green")
                         for case in passed_cases:
-                            summary_text.append(f"\n  • {case}", style="green")
-                        
+                            dur = case_durations.get(case)
+                            dur_str = f"  ({dur}s)" if dur is not None else ""
+                            summary_text.append(f"\n  • {case}{dur_str}", style="green")
+
                         # Add failed cases if any
                         if failed_cases:
                             summary_text.append(f"\n\nFailed cases ({len(failed_cases)}):", style="red")
                             for case in failed_cases:
-                                summary_text.append(f"\n  • {case}", style="red")
+                                dur = case_durations.get(case)
+                                dur_str = f"  ({dur}s)" if dur is not None else ""
+                                summary_text.append(f"\n  • {case}{dur_str}", style="red")
                     else:
                         summary_text.append(f"\n🤖 {model}  ", style="blue")
                         summary_text.append(f"✓ {passed}/{total}", style="yellow")

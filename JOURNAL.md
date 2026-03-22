@@ -1,5 +1,54 @@
 # Journal de developpement — Felix
 
+## Enrichir history.jsonl avec métadonnées git et timing — 2026-03-22
+
+`history.jsonl` ne contenait que `ts`, `suite`, `model`, `passed`, `total`, `cases`. Ajout de métadonnées pour la traçabilité.
+
+**Runner** (`evals/_runner.py`) :
+- `_git_info()` : retourne commit (short) et branche via `subprocess`.
+- `run_suite_async()` : mesure `suite_duration` autour du `asyncio.gather`.
+- `_append_history()` : nouveaux champs `date` (ISO 8601), `commit`, `branch`, `duration_s` (durée totale suite), `case_durations` (dict nom → secondes par case).
+
+**Viewer** (`tools/view_history.py`) :
+- Affiche `date`, `commit @ branch`, `duration_s` quand présents.
+- Durée individuelle par case entre parenthèses.
+- Backward-compatible via `.get()`.
+
+## #38 Ajouter "unsure" + clarification utilisateur à la dedup relations — 2026-03-21
+
+Le pipeline de dedup relations avait 2 tiers (fuzzy ≥90 auto-merge, LLM merge/keep_both). Ajout d'un 3ème étage : quand le LLM hésite, demander à l'utilisateur.
+
+**Prompt** (`profiler.py`) : `RELATION_DEDUP_PROMPT` étendu avec "unsure" comme 3ème sortie + exemple few-shot ("childhood friend" / "old acquaintance from the village" → unsure).
+
+**Orchestrator** (`orchestrator.py`) :
+- `_check_relation_semantic` : retour ternaire (merge/keep_both/unsure) au lieu du binaire.
+- Import `ClarificationSlot` et `CLARIFICATION_TIMEOUT` depuis `resolution.py`.
+- Nouvelle méthode `_clarify_relation_dedup` sur `SceneOrchestrator` : émet `clarification_needed` avec les 2 descriptions de relation, attend la réponse utilisateur (timeout → "keep_both" conservateur).
+- `_is_relation_duplicate` : intercale la clarification quand le verdict LLM est "unsure".
+
+**Ce qui ne change pas** : seuils fuzzy (90/55), `ClarificationSlot`, endpoint `POST /import/clarify`, event SSE, signature `_is_relation_duplicate -> bool`.
+
+## #23 Contexte personnage pour la résolution d'entités — 2026-03-20
+
+Ajout d'un champ `context` dédié sur `ExtractedCharacter` pour capturer ce que fait le personnage dans la scène (actions, répliques, interactions), séparé du `description` (traits physiques).
+
+**Modèle** (`models.py`) : `context: str | None = None` ajouté à `ExtractedCharacter`.
+
+**Prompt** (`analyzer.py`) : section `SCENE CONTEXT` ajoutée au `CHARACTER_PROMPT` avec 4 exemples few-shot (participant, mentioned, witness, mentioned en passant).
+
+**Résolution** (`resolution.py`) :
+- Contexte de clarification : `ec.context` utilisé à la place de `ec.description` pour le dialog de désambiguïsation.
+- Tuples passent de 3 à 4 éléments : `(resolved, role, description, context)`.
+- Types annotations mis à jour dans `_resolve_characters` et `EntityResolutionService`.
+
+**Loader** (`loader.py`) : unpack 4 éléments, `context` passé à `upsert_character_fragment` et `upsert_group_in_scene`.
+
+**Repository** (`repository.py`) :
+- `upsert_character_fragment` et `upsert_group_in_scene` : paramètre `context=None`, persisté sur `r.context` de la relation `PRESENT_IN`.
+- `get_character_fragments` et `list_all_character_fragments` : `r.context` ajouté au RETURN.
+
+**Orchestrator** (`orchestrator.py`) : tous les unpacks de tuples mis à jour (4 éléments), type annotation de `process_scene` et `profile_scene_characters` alignés.
+
 ## #37 Groups/Factions : nœud `:Group` + `MEMBER_OF` — 2026-03-20
 
 Implémentation du plan #37. Les collectifs (orcs, drones, Nazgûl, Fellowship) sont maintenant des nœuds `:Group` distincts des `:Character`, évitant les profils vides et la pollution du registre.

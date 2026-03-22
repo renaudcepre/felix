@@ -72,6 +72,18 @@ PHYSICAL DESCRIPTION:
 actions performed in the scene ("hand on the wheel", "sitting", "bleeding").
 - If no permanent physical trait is mentioned, leave description null or describe only role/profession.
 
+SCENE CONTEXT (separate from physical description):
+- Summarize what this character DOES in this scene: key actions, dialogue topics, interactions with others.
+- This field is used for entity disambiguation — it should help distinguish two characters with similar names.
+- Keep it to 1-2 sentences max.
+- If the character is only "mentioned" with no scene actions, use their mention context.
+
+Examples:
+  Character "Voss" in a cockpit scene → context: "Pilots the ship through the asteroid field, argues with Elena about the route"
+  Character "Marcus" mentioned in dialogue → context: "Mentioned by Lena as the doctor who treated her wounds on Titan"
+  Character "Elena" witnessing a fight → context: "Watches the confrontation between Voss and the guards from the corridor"
+  Character "Old Tom" mentioned in passing → context: "Mentioned by Sarah as her late grandfather who built the cabin"
+
 CHARACTER TYPE:
 - "individual": any entity with a unique proper name, OR an unnamed entity acting alone
   ("the guard", "the creature", "the android"). Default.

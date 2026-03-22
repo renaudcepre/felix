@@ -182,9 +182,12 @@ async def _resolve_characters(  # noqa: PLR0913
     group_registry: dict[str, str],
     queue: EventQueue | None = None,
     pending_clarifications: dict[str, ClarificationSlot] | None = None,
-) -> tuple[list[tuple[ResolvedEntity, str, str | None]], list[tuple[ResolvedEntity, str, str | None]]]:
-    resolved_chars: list[tuple[ResolvedEntity, str, str | None]] = []
-    resolved_groups: list[tuple[ResolvedEntity, str, str | None]] = []
+) -> tuple[
+    list[tuple[ResolvedEntity, str, str | None, str | None]],
+    list[tuple[ResolvedEntity, str, str | None, str | None]],
+]:
+    resolved_chars: list[tuple[ResolvedEntity, str, str | None, str | None]] = []
+    resolved_groups: list[tuple[ResolvedEntity, str, str | None, str | None]] = []
 
     for ec in analysis.characters:
         if ec.character_type == "group":
@@ -194,12 +197,12 @@ async def _resolve_characters(  # noqa: PLR0913
             if queue:
                 action = "created" if resolved.is_new else "linked"
                 await _emit(queue, "entity_resolved", name=ec.name, action=action)
-            resolved_groups.append((resolved, ec.role, ec.description))
+            resolved_groups.append((resolved, ec.role, ec.description, ec.context))
             continue
 
         match = fuzzy_match_entity(ec.name, char_registry, char_aliases)
         if isinstance(match, AmbiguousMatch):
-            context = ec.description or _find_excerpt(ec.name, scene_text)
+            context = ec.context or _find_excerpt(ec.name, scene_text)
             resolved = await _handle_ambiguous_character(
                 ec.name,
                 context,
@@ -227,7 +230,7 @@ async def _resolve_characters(  # noqa: PLR0913
                     linked_to=resolved.name if not resolved.is_new else None,
                     score=round(resolved.score, 2) if resolved.score is not None else None,
                 )
-        resolved_chars.append((resolved, ec.role, ec.description))
+        resolved_chars.append((resolved, ec.role, ec.description, ec.context))
 
     return resolved_chars, resolved_groups
 
@@ -348,7 +351,10 @@ class EntityResolutionService:
         scene_text: str,
         scene_id: str,
         issues: list[dict],
-    ) -> tuple[list[tuple[ResolvedEntity, str, str | None]], list[tuple[ResolvedEntity, str, str | None]]]:
+    ) -> tuple[
+        list[tuple[ResolvedEntity, str, str | None, str | None]],
+        list[tuple[ResolvedEntity, str, str | None, str | None]],
+    ]:
         return await _resolve_characters(
             analysis,
             scene_text,

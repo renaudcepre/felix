@@ -9,6 +9,7 @@ class ExtractedCharacter(BaseModel):
     name: str
     role: Literal["participant", "witness", "mentioned"]
     description: str | None = None
+    context: str | None = None
     character_type: Literal["individual", "group"] = "individual"
 
 

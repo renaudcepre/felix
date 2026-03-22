@@ -6,6 +6,8 @@ import asyncio
 import datetime
 import json
 import os
+import subprocess
+import time
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -71,6 +73,19 @@ def setup_model_env(
 console = Console()
 
 RESULTS_DIR = Path(__file__).parent / "results"
+
+
+def _git_info() -> dict[str, str]:
+    """Return current commit hash (short) and branch name."""
+    def _run(cmd: list[str]) -> str:
+        try:
+            return subprocess.check_output(cmd, text=True, timeout=5).strip()
+        except Exception:
+            return "unknown"
+    return {
+        "commit": _run(["git", "rev-parse", "--short", "HEAD"]),
+        "branch": _run(["git", "branch", "--show-current"]),
+    }
 
 
 def _write_case_file(rc: Any, suite_dir: Path) -> None:
@@ -158,6 +173,7 @@ async def run_suite_async(
     """Run all cases in parallel within the current event loop."""
     import inspect
 
+    t0 = time.monotonic()
     resolved_task_fn = task_fn
     if inspect.iscoroutinefunction(task_fn) and not inspect.signature(task_fn).parameters:
         console.print("[dim]Initializing pipeline...[/dim]")
@@ -165,6 +181,7 @@ async def run_suite_async(
     console.print(f"\n[bold cyan]Starting {len(active_dataset.cases)} cases in parallel[/bold cyan]")
     tasks = [_run_case(c, active_dataset, resolved_task_fn) for c in active_dataset.cases]
     results = await asyncio.gather(*tasks)
+    suite_duration = time.monotonic() - t0
     all_report_cases = [rc for rc, _ in results if rc]
     all_failures = [f for _, failures in results for f in failures]
 
@@ -183,7 +200,7 @@ async def run_suite_async(
     color = "green" if passed == total else "yellow" if passed >= total * 0.8 else "red"
     console.print(f"\n[{color}]{passed}/{total} passed[/{color}]  [dim]→ {suite_dir}[/dim]")
 
-    _append_history(report_name, ts, all_report_cases)
+    _append_history(report_name, ts, all_report_cases, suite_duration)
 
     return EvaluationReport(name=report_name, cases=all_report_cases, failures=all_failures)
 
@@ -195,21 +212,29 @@ def _case_passed(rc: Any) -> bool:
     return all(v.value for v in rc.assertions.values()) if rc.assertions else True
 
 
-def _append_history(suite: str, ts: str, cases: list[Any]) -> None:
+def _append_history(suite: str, ts: str, cases: list[Any], suite_duration: float) -> None:
     """Append a single-line JSON entry to history.jsonl."""
     model = os.environ.get("FLX_EVAL_MODEL", "unknown")
     case_results: dict[str, bool] = {}
+    case_durations: dict[str, float] = {}
     for rc in cases:
         case_results[rc.name] = _case_passed(rc)
+        case_durations[rc.name] = round(rc.task_duration, 2)
 
+    git = _git_info()
     passed = sum(1 for v in case_results.values() if v)
     entry = {
         "ts": ts,
+        "date": datetime.datetime.now().isoformat(),
+        "commit": git["commit"],
+        "branch": git["branch"],
         "suite": suite,
         "model": model,
         "passed": passed,
         "total": len(case_results),
+        "duration_s": round(suite_duration, 2),
         "cases": case_results,
+        "case_durations": case_durations,
     }
     HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
     with HISTORY_FILE.open("a", encoding="utf-8") as f:
