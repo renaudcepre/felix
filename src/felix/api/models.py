@@ -9,6 +9,25 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 
+class CharacterCreate(BaseModel):
+    name: str
+    era: str
+
+
+class CharacterProfileUpdate(BaseModel):
+    age: str | None = None
+    physical: str | None = None
+    background: str | None = None
+    arc: str | None = None
+    traits: str | None = None
+
+
+class RelationUpsert(BaseModel):
+    relation_type: str
+    description: str | None = None
+    era: str | None = None
+
+
 class CharacterSummary(BaseModel):
     id: str
     name: str

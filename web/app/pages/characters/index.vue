@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const { characters, status } = useCharacters()
+const { characters, status, createCharacter } = useCharacters()
+const router = useRouter()
 
 const eraFilter = ref<string | null>(null)
 
@@ -19,6 +20,32 @@ const eraOptions = computed(() => [
   { label: 'Toutes les epoques', value: null },
   ...eras.value.map(e => ({ label: e, value: e })),
 ])
+
+// --- Add character ---
+const showAdd = ref(false)
+const newName = ref('')
+const newEra = ref('')
+const creating = ref(false)
+const createError = ref('')
+
+async function addCharacter() {
+  if (!newName.value.trim() || !newEra.value.trim()) return
+  creating.value = true
+  createError.value = ''
+  try {
+    const created = await createCharacter({ name: newName.value.trim(), era: newEra.value.trim() })
+    showAdd.value = false
+    newName.value = ''
+    newEra.value = ''
+    router.push(`/characters/${created.id}`)
+  }
+  catch (e: any) {
+    createError.value = e?.data?.detail || 'Erreur lors de la creation'
+  }
+  finally {
+    creating.value = false
+  }
+}
 </script>
 
 <template>
@@ -32,15 +59,50 @@ const eraOptions = computed(() => [
           {{ filtered.length }} personnage{{ filtered.length > 1 ? 's' : '' }}
         </p>
       </div>
-      <USelect
-        v-if="eras.length"
-        v-model="eraFilter"
-        :items="eraOptions"
-        value-key="value"
-        class="w-48"
-        placeholder="Filtrer par epoque"
-      />
+      <div class="flex items-center gap-2">
+        <USelect
+          v-if="eras.length"
+          v-model="eraFilter"
+          :items="eraOptions"
+          value-key="value"
+          class="w-48"
+          placeholder="Filtrer par epoque"
+        />
+        <UButton
+          icon="i-lucide-plus"
+          color="primary"
+          label="Ajouter"
+          @click="showAdd = true"
+        />
+      </div>
     </div>
+
+    <!-- Add character form -->
+    <UCard v-if="showAdd">
+      <div class="space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <UFormField label="Nom">
+            <UInput v-model="newName" placeholder="Nom du personnage" autofocus />
+          </UFormField>
+          <UFormField label="Epoque">
+            <UInput v-model="newEra" placeholder="ex: 1940s, 2030s" />
+          </UFormField>
+        </div>
+        <p v-if="createError" class="text-sm text-error">
+          {{ createError }}
+        </p>
+        <div class="flex gap-2 justify-end">
+          <UButton variant="ghost" color="neutral" label="Annuler" @click="showAdd = false" />
+          <UButton
+            color="primary"
+            label="Creer"
+            :loading="creating"
+            :disabled="!newName.trim() || !newEra.trim()"
+            @click="addCharacter"
+          />
+        </div>
+      </div>
+    </UCard>
 
     <div v-if="status === 'pending'" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <USkeleton v-for="i in 8" :key="i" class="h-20" />

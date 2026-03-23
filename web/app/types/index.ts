@@ -1,3 +1,22 @@
+export interface CharacterCreate {
+  name: string
+  era: string
+}
+
+export interface CharacterProfileUpdate {
+  age?: string | null
+  physical?: string | null
+  background?: string | null
+  arc?: string | null
+  traits?: string | null
+}
+
+export interface RelationUpsert {
+  relation_type: string
+  description?: string | null
+  era?: string | null
+}
+
 export interface CharacterSummary {
   id: string
   name: string

@@ -154,6 +154,62 @@ async def patch_character_profile_fields(
         await session.execute_write(_write)
 
 
+async def overwrite_character_profile_fields(
+    driver: AsyncDriver, char_id: str, fields: dict[str, str | None]
+) -> bool:
+    """SET direct des champs profil — édition manuelle, pas merge LLM."""
+    allowed = {"age", "physical", "background", "arc", "traits"}
+    params: dict[str, Any] = {"id": char_id}
+    for f in allowed:
+        params[f"{f}_set"] = f in fields
+        params[f] = fields.get(f)
+
+    async def _write(tx: AsyncManagedTransaction) -> bool:
+        result = await tx.run(
+            """
+            MATCH (c:Character {id: $id})
+            SET c.age        = CASE WHEN $age_set THEN $age ELSE c.age END,
+                c.physical   = CASE WHEN $physical_set THEN $physical ELSE c.physical END,
+                c.background = CASE WHEN $background_set THEN $background ELSE c.background END,
+                c.arc        = CASE WHEN $arc_set THEN $arc ELSE c.arc END,
+                c.traits     = CASE WHEN $traits_set THEN $traits ELSE c.traits END
+            RETURN c.id AS id
+            """,
+            **params,
+        )
+        record = await result.single()
+        return record is not None
+
+    async with driver.session() as session:
+        return await session.execute_write(_write)
+
+
+async def delete_character_relation(
+    driver: AsyncDriver,
+    char_id_a: str,
+    char_id_b: str,
+    relation_type: str,
+) -> bool:
+    a, b = sorted([char_id_a, char_id_b])
+
+    async def _write(tx: AsyncManagedTransaction) -> bool:
+        result = await tx.run(
+            """
+            MATCH (a:Character {id: $a})-[r:RELATED_TO {relation_type: $type}]-(b:Character {id: $b})
+            DELETE r
+            RETURN count(r) AS deleted
+            """,
+            a=a,
+            b=b,
+            type=relation_type,
+        )
+        record = await result.single()
+        return record is not None and record["deleted"] > 0
+
+    async with driver.session() as session:
+        return await session.execute_write(_write)
+
+
 # ---------------------------------------------------------------------------
 # Groups
 # ---------------------------------------------------------------------------

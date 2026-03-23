@@ -1,7 +1,90 @@
 <script setup lang="ts">
+import type { CharacterProfileUpdate, RelationUpsert } from '~/types'
+
 const route = useRoute()
 const id = route.params.id as string
-const { character, status } = useCharacter(id)
+const { character, status, updateCharacter, upsertRelation, deleteRelation } = useCharacter(id)
+const { characters: allCharacters } = useCharacters()
+
+// --- Edit mode state ---
+const editing = ref(false)
+const saving = ref(false)
+const editForm = ref<CharacterProfileUpdate>({})
+
+function startEditing() {
+  if (!character.value) return
+  editForm.value = {
+    age: character.value.age,
+    physical: character.value.physical,
+    background: character.value.background,
+    arc: character.value.arc,
+    traits: character.value.traits,
+  }
+  editing.value = true
+}
+
+function cancelEditing() {
+  editing.value = false
+  editForm.value = {}
+}
+
+async function saveProfile() {
+  if (!character.value) return
+  const original = character.value
+  const modified: CharacterProfileUpdate = {}
+  const fields = ['age', 'physical', 'background', 'arc', 'traits'] as const
+  for (const f of fields) {
+    if (editForm.value[f] !== original[f]) {
+      modified[f] = editForm.value[f] ?? null
+    }
+  }
+  if (Object.keys(modified).length === 0) {
+    editing.value = false
+    return
+  }
+  saving.value = true
+  try {
+    await updateCharacter(modified)
+    editing.value = false
+  }
+  finally {
+    saving.value = false
+  }
+}
+
+// --- Relation management ---
+const showAddRelation = ref(false)
+const newRelation = ref<RelationUpsert>({ relation_type: '', description: null, era: null })
+const selectedCharId = ref('')
+const savingRelation = ref(false)
+
+const otherCharacters = computed(() => {
+  if (!allCharacters.value) return []
+  return allCharacters.value
+    .filter(c => c.id !== id)
+    .map(c => ({ label: c.name, value: c.id }))
+})
+
+async function addRelation() {
+  if (!selectedCharId.value || !newRelation.value.relation_type) return
+  savingRelation.value = true
+  try {
+    await upsertRelation(selectedCharId.value, newRelation.value)
+    showAddRelation.value = false
+    newRelation.value = { relation_type: '', description: null, era: null }
+    selectedCharId.value = ''
+  }
+  finally {
+    savingRelation.value = false
+  }
+}
+
+async function removeRelation(otherName: string, relationType: string) {
+  // Trouver l'ID du personnage par son nom
+  const other = allCharacters.value?.find(c => c.name === otherName)
+  if (!other) return
+  await deleteRelation(other.id, relationType)
+}
 </script>
 
 <template>
@@ -24,35 +107,45 @@ const { character, status } = useCharacter(id)
       <UCard class="tape-effect">
         <div class="space-y-6">
           <!-- Header -->
-          <div class="flex items-center gap-4">
-            <UAvatar
-              :text="character.name[0]"
-              size="xl"
-              color="primary"
-            />
-            <div>
-              <h1 class="text-2xl font-bold">
-                {{ character.name }}
-              </h1>
-              <div class="flex gap-2 mt-1">
-                <UBadge
-                  :color="character.era.includes('1940') ? 'warning' : 'info'"
-                  variant="subtle"
-                >
-                  {{ character.era }}
-                </UBadge>
-                <UBadge v-if="character.status" variant="subtle" color="neutral">
-                  {{ character.status }}
-                </UBadge>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <UAvatar
+                :text="character.name[0]"
+                size="xl"
+                color="primary"
+              />
+              <div>
+                <h1 class="text-2xl font-bold">
+                  {{ character.name }}
+                </h1>
+                <div class="flex gap-2 mt-1">
+                  <UBadge
+                    :color="character.era.includes('1940') ? 'warning' : 'info'"
+                    variant="subtle"
+                  >
+                    {{ character.era }}
+                  </UBadge>
+                  <UBadge v-if="character.status" variant="subtle" color="neutral">
+                    {{ character.status }}
+                  </UBadge>
+                </div>
+                <p v-if="character.aliases.length" class="text-sm text-muted mt-1">
+                  Alias : {{ character.aliases.join(', ') }}
+                </p>
               </div>
-              <p v-if="character.aliases.length" class="text-sm text-muted mt-1">
-                Alias : {{ character.aliases.join(', ') }}
-              </p>
             </div>
+            <UButton
+              v-if="!editing"
+              icon="i-lucide-pencil"
+              variant="soft"
+              color="primary"
+              label="Modifier"
+              @click="startEditing"
+            />
           </div>
 
-          <!-- Details grid -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- View mode -->
+          <div v-if="!editing" class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div v-if="character.age">
               <p class="text-xs font-semibold text-muted uppercase tracking-wide">
                 Age
@@ -94,16 +187,52 @@ const { character, status } = useCharacter(id)
               </p>
             </div>
           </div>
+
+          <!-- Edit mode -->
+          <div v-else class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <UFormField label="Age">
+                <UInput v-model="editForm.age" placeholder="Age du personnage" />
+              </UFormField>
+              <UFormField label="Physique">
+                <UInput v-model="editForm.physical" placeholder="Description physique" />
+              </UFormField>
+            </div>
+            <UFormField label="Background">
+              <UTextarea v-model="editForm.background" placeholder="Background" :rows="4" autoresize />
+            </UFormField>
+            <UFormField label="Arc">
+              <UTextarea v-model="editForm.arc" placeholder="Arc narratif" :rows="4" autoresize />
+            </UFormField>
+            <UFormField label="Traits">
+              <UInput v-model="editForm.traits" placeholder="Traits de caractere" />
+            </UFormField>
+            <div class="flex gap-2 justify-end">
+              <UButton variant="ghost" color="neutral" label="Annuler" @click="cancelEditing" />
+              <UButton color="primary" label="Enregistrer" :loading="saving" @click="saveProfile" />
+            </div>
+          </div>
         </div>
       </UCard>
 
       <!-- Relations -->
-      <UCard v-if="character.relations.length">
+      <UCard>
         <template #header>
-          <h2 class="font-semibold">
-            Relations
-          </h2>
+          <div class="flex items-center justify-between">
+            <h2 class="font-semibold">
+              Relations
+            </h2>
+            <UButton
+              v-if="!showAddRelation"
+              icon="i-lucide-plus"
+              variant="soft"
+              size="xs"
+              label="Ajouter"
+              @click="showAddRelation = true"
+            />
+          </div>
         </template>
+
         <div class="space-y-3">
           <div
             v-for="(rel, i) in character.relations"
@@ -116,11 +245,53 @@ const { character, status } = useCharacter(id)
                 {{ rel.relation_type }}
               </UBadge>
             </div>
-            <div class="text-sm text-muted text-right">
-              <span v-if="rel.era">{{ rel.era }}</span>
-              <p v-if="rel.description" class="text-xs">
-                {{ rel.description }}
-              </p>
+            <div class="flex items-center gap-2">
+              <div class="text-sm text-muted text-right">
+                <span v-if="rel.era">{{ rel.era }}</span>
+                <p v-if="rel.description" class="text-xs">
+                  {{ rel.description }}
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-x"
+                variant="ghost"
+                color="error"
+                size="xs"
+                @click="removeRelation(rel.other_name, rel.relation_type)"
+              />
+            </div>
+          </div>
+
+          <p v-if="!character.relations.length && !showAddRelation" class="text-sm text-muted">
+            Aucune relation
+          </p>
+
+          <!-- Add relation form -->
+          <div v-if="showAddRelation" class="border border-default rounded-lg p-4 space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <UFormField label="Personnage">
+                <USelect
+                  v-model="selectedCharId"
+                  :items="otherCharacters"
+                  placeholder="Choisir un personnage"
+                />
+              </UFormField>
+              <UFormField label="Type de relation">
+                <UInput v-model="newRelation.relation_type" placeholder="ex: frere, allie, rival" />
+              </UFormField>
+            </div>
+            <UFormField label="Description">
+              <UInput v-model="newRelation.description" placeholder="Description (optionnel)" />
+            </UFormField>
+            <div class="flex gap-2 justify-end">
+              <UButton variant="ghost" color="neutral" label="Annuler" @click="showAddRelation = false" />
+              <UButton
+                color="primary"
+                label="Ajouter"
+                :loading="savingRelation"
+                :disabled="!selectedCharId || !newRelation.relation_type"
+                @click="addRelation"
+              />
             </div>
           </div>
         </div>

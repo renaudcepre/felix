@@ -19,7 +19,7 @@ dev-up:
 api:
     uv run felix-api
 
-# Lance uniquement le frontend Nuxt avec hot reload (port 3000)
+# Lance uniquement le frontend Nuxt avec hot reload (port 3007)
 web:
     cd web && pnpm dev
 
