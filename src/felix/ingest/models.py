@@ -49,12 +49,12 @@ class NarrativeBeat(BaseModel):
 
 
 class ConsistencyIssue(BaseModel):
-    type: Literal["timeline_inconsistency", "character_contradiction", "missing_info", "profile_contradiction", "missing_evidence"]
+    type: Literal["timeline_inconsistency", "character_contradiction", "missing_info", "profile_contradiction"]
     severity: Literal["error", "warning"]
     scene_id: str
     entity_id: str | None = None
     description: str
-    suggestion: str
+    suggestion: str = ""
 
 
 class ConsistencyReport(BaseModel):

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const { loading: importLoading } = useImport()
+const settingsOpen = ref(false)
 
 const subtitles = [
   'Fiction\'s Encyclopedic Lore & Information eXpert',
@@ -60,7 +61,18 @@ const items = computed(() => [[{
       </div>
 
       <UNavigationMenu :items="items" orientation="horizontal" />
+
+      <div class="ml-auto shrink-0">
+        <UButton
+          variant="ghost"
+          icon="i-lucide-settings"
+          size="sm"
+          @click="settingsOpen = true"
+        />
+      </div>
     </div>
+
+    <SettingsPanel v-model:open="settingsOpen" />
   </header>
 </template>
 

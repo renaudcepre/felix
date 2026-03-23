@@ -64,50 +64,25 @@ def _find_evidence(
     return evidence
 
 ENTITY_CHECK_PROMPT = """\
-You verify screenplay character profile edits against scene evidence.
+You check if a character profile edit is CONTRADICTED by a scene.
 
-INPUT:
-- "character_id": the character being checked
-- "proposed_changes": fields the author wants to modify
-- "evidence": for each proposed field, a list of matching excerpts found in the original scene text. \
-This was computed by text search — if a field has evidence entries, the proposed text IS in the scenes.
-- "scene_fragments": scenes with "raw_text" for additional context
+A contradiction means: the scene explicitly says the OPPOSITE about this character.
+"Not mentioned" is NOT a contradiction. The screenwriter can add whatever they want.
 
-DECISION PROCESS:
-1. Check "evidence" for each proposed field.
-2. If evidence[field] is NOT EMPTY → the proposed change is SUPPORTED by scenes → no issue.
-3. If evidence[field] IS EMPTY → check if the proposed text contradicts any raw_text \
-(profile_contradiction) or is a specific unsupported claim (missing_evidence).
-4. When in doubt → no issue.
+For each proposed change, answer: does any scene say the OPPOSITE about this character?
+- YES → report the issue, quote the scene passage that says the opposite.
+- NO → do not report. This includes: new details, rewordings, style changes, details about \
+other characters, information in a different language that means the same thing.
 
-CRITICAL: If a field has entries in "evidence", it means the text was found in scenes. Do NOT report it.
+ONLY check the character in "character_name". Ignore other characters in the scenes.
 
-EXAMPLES:
-
-Example 1 — HAS EVIDENCE (return issues=[]):
-proposed background: "Meteorologue en poste sur la station Boreos-4"
-evidence.background: [{"scene_id": "s1", "matching_excerpt": "Ravi Okonkwo, meteorologue en poste"}]
-→ Text found in scene → SUPPORTED → issues=[]
-
-Example 2 — CONTRADICTION (return 1 issue):
-proposed arc: "Ravi refuse de lancer l'alerte cyclone"
-evidence.arc: [] (empty)
-raw_text says: "Il declencha l'alerte." (he triggered the alert)
-→ Proposed says he refused, scene says he triggered → profile_contradiction
-
-Example 3 — UNSUPPORTED (return 1 issue):
-proposed background: "Decorated veteran of the Mars campaign"
-evidence.background: [] (empty)
-No raw_text mentions Mars or military.
-→ missing_evidence
-
-OUTPUT FORMAT for each issue:
-- type: "profile_contradiction" or "missing_evidence"
-- severity: "error" or "warning"
-- scene_id: scene where contradiction is found (null for missing_evidence)
+OUTPUT: list of issues. Empty list if no contradiction found.
+Each issue needs:
+- type: "profile_contradiction"
+- severity: "error"
+- scene_id: which scene
 - entity_id: the character_id
-- description: explain what contradicts or what is unsupported
-- suggestion: how to fix
+- description: quote the exact scene passage that says the OPPOSITE
 """
 
 
@@ -171,14 +146,21 @@ async def check_character_consistency(
     if not unsupported_fields:
         return ConsistencyReport(issues=[])
 
+    # Show the LLM what changed: previous value → proposed value
+    diff = {
+        field: {"before": profile.get(field), "after": value}
+        for field, value in unsupported_fields.items()
+    }
+
     payload = {
         "character_id": char_id,
+        "character_name": profile.get("name", char_id),
         "current_profile": {
             k: v
             for k, v in profile.items()
             if k in ("name", "age", "physical", "background", "arc", "traits", "era")
         },
-        "proposed_changes": unsupported_fields,
+        "proposed_changes": diff,
         "relations": [
             {"other_name": r["other_name"], "relation_type": r["relation_type"]}
             for r in relations

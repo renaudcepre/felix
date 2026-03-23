@@ -17,6 +17,7 @@ setup_logfire()
 from felix.agent.chat_agent import create_agent
 from felix.api.deps import BaseUrl, ImportState, ModelName
 from felix.api.routes import characters, chat, export, ingest, locations, timeline
+from felix.api.routes import settings as settings_routes
 from felix.config import settings
 from felix.graph.driver import close_driver, get_driver, setup_constraints
 from felix.vectorstore.store import get_collection
@@ -60,6 +61,7 @@ app.include_router(timeline.router)
 app.include_router(chat.router)
 app.include_router(ingest.router)
 app.include_router(export.router)
+app.include_router(settings_routes.router)
 
 
 @app.get("/api/health")

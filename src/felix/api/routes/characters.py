@@ -117,8 +117,17 @@ async def check_consistency(
     if not fields:
         return ConsistencyReport(issues=[])
 
+    # Only check fields that actually differ from the current profile
+    # Normalize: strip whitespace, treat empty strings as None
+    def _norm(val: str | None) -> str | None:
+        return val.strip() or None if isinstance(val, str) else val
+
+    changed = {k: v for k, v in fields.items() if _norm(v) != _norm(profile.get(k))}
+    if not changed:
+        return ConsistencyReport(issues=[])
+
     return await check_character_consistency(
-        driver, char_id, fields, model_name, base_url
+        driver, char_id, changed, model_name, base_url
     )
 
 

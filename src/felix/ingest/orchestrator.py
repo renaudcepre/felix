@@ -144,6 +144,8 @@ class SceneOrchestrator:
         score = fuzz.ratio(new_rel.lower(), best.lower())
         if score >= 90:  # noqa: PLR2004
             return True  # évident textuellement, pas de LLM
+        if score < 30:  # noqa: PLR2004
+            return False  # clairement distincts, pas de LLM
         if self.relation_deduper:
             verdict = await _check_relation_semantic(
                 self.relation_deduper, char_a_name, char_b_name,

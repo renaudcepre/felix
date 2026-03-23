@@ -36,9 +36,11 @@ EXAMPLE: "Who is at the relay station?"
 
 
 def create_agent(
-    model_name: str | None = None, base_url: str | None = None
+    model_name: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
 ) -> Agent[FelixDeps, str]:
-    model = build_model(model_name, base_url)
+    model = build_model(model_name, base_url, api_key=api_key)
 
     agent = Agent(
         model,
