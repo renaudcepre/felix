@@ -8,7 +8,8 @@ import pytest
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
-from felix.graph.repository import get_scene_summaries_by_ids, patch_character_profile_fields, upsert_scene
+from felix.graph.repositories.characters import patch_character_profile_fields
+from felix.graph.repositories.scenes import get_scene_summaries_by_ids, upsert_scene
 from felix.ingest.models import CharacterProfile
 from felix.ingest.profiler import patch_character_profile
 

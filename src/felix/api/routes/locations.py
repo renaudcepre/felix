@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from felix.api.deps import Neo4jDriver
 from felix.api.models import LocationDetail, LocationSummary, SceneSummary
-from felix.graph.repository import get_location_detail, list_all_locations
+from felix.graph.repositories.locations import get_location_detail, list_all_locations
 
 router = APIRouter(prefix="/api/locations", tags=["locations"])
 

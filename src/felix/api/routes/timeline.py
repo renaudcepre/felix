@@ -4,7 +4,7 @@ from fastapi import APIRouter
 
 from felix.api.deps import Neo4jDriver
 from felix.api.models import TimelineEvent
-from felix.graph.repository import get_timeline_rows
+from felix.graph.repositories.timeline import get_timeline_rows
 
 router = APIRouter(prefix="/api/timeline", tags=["timeline"])
 

@@ -12,13 +12,13 @@ if TYPE_CHECKING:
 
 import chromadb
 
-from felix.graph.repository import (
+from felix.graph.repositories.characters import (
     get_character_fragments,
     get_character_profile,
     get_character_relations,
-    list_issues,
-    list_scenes,
 )
+from felix.graph.repositories.issues import list_issues
+from felix.graph.repositories.scenes import list_scenes
 from felix.ingest.models import (
     CharacterProfile,
     ConsistencyIssue,

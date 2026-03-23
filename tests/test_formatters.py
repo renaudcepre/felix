@@ -5,7 +5,13 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
-from felix.graph import formatters, repository
+from felix.graph import formatters
+from felix.graph.repositories.characters import (
+    get_character_profile,
+    get_character_relations,
+    list_all_characters,
+)
+from felix.graph.repositories.timeline import get_timeline_rows
 
 
 # --- find_character ---
@@ -108,7 +114,7 @@ async def test_get_timeline_includes_characters(seeded_driver: AsyncDriver) -> N
 
 
 async def test_list_all_characters(seeded_driver: AsyncDriver) -> None:
-    rows = await repository.list_all_characters(seeded_driver)
+    rows = await list_all_characters(seeded_driver)
     assert len(rows) == 5
     names = [r["name"] for r in rows]
     assert "Marie Dupont" in names
@@ -116,7 +122,7 @@ async def test_list_all_characters(seeded_driver: AsyncDriver) -> None:
 
 
 async def test_list_all_characters_has_era(seeded_driver: AsyncDriver) -> None:
-    rows = await repository.list_all_characters(seeded_driver)
+    rows = await list_all_characters(seeded_driver)
     eras = {r["era"] for r in rows}
     assert "1940s" in eras
     assert "1970s" in eras
@@ -126,7 +132,7 @@ async def test_list_all_characters_has_era(seeded_driver: AsyncDriver) -> None:
 
 
 async def test_get_character_profile(seeded_driver: AsyncDriver) -> None:
-    row = await repository.get_character_profile(seeded_driver, "marie-dupont")
+    row = await get_character_profile(seeded_driver, "marie-dupont")
     assert row is not None
     assert row["name"] == "Marie Dupont"
     assert row["era"] == "1940s"
@@ -134,7 +140,7 @@ async def test_get_character_profile(seeded_driver: AsyncDriver) -> None:
 
 
 async def test_get_character_profile_not_found(seeded_driver: AsyncDriver) -> None:
-    row = await repository.get_character_profile(seeded_driver, "nonexistent")
+    row = await get_character_profile(seeded_driver, "nonexistent")
     assert row is None
 
 
@@ -142,7 +148,7 @@ async def test_get_character_profile_not_found(seeded_driver: AsyncDriver) -> No
 
 
 async def test_get_character_relations(seeded_driver: AsyncDriver) -> None:
-    rels = await repository.get_character_relations(seeded_driver, "marie-dupont")
+    rels = await get_character_relations(seeded_driver, "marie-dupont")
     assert len(rels) == 3
     types = {r["relation_type"] for r in rels}
     assert "spouse" in types
@@ -150,7 +156,7 @@ async def test_get_character_relations(seeded_driver: AsyncDriver) -> None:
 
 
 async def test_get_character_relations_empty(seeded_driver: AsyncDriver) -> None:
-    rels = await repository.get_character_relations(seeded_driver, "nonexistent")
+    rels = await get_character_relations(seeded_driver, "nonexistent")
     assert rels == []
 
 
@@ -158,7 +164,7 @@ async def test_get_character_relations_empty(seeded_driver: AsyncDriver) -> None
 
 
 async def test_get_timeline_rows_all(seeded_driver: AsyncDriver) -> None:
-    rows = await repository.get_timeline_rows(seeded_driver)
+    rows = await get_timeline_rows(seeded_driver)
     assert len(rows) == 10
     assert all(isinstance(r, dict) for r in rows)
     assert "date" in rows[0]
@@ -166,13 +172,13 @@ async def test_get_timeline_rows_all(seeded_driver: AsyncDriver) -> None:
 
 
 async def test_get_timeline_rows_filter_era(seeded_driver: AsyncDriver) -> None:
-    rows = await repository.get_timeline_rows(seeded_driver, era="1970s")
+    rows = await get_timeline_rows(seeded_driver, era="1970s")
     assert len(rows) == 2
     assert all(r["era"] == "1970s" for r in rows)
 
 
 async def test_get_timeline_rows_has_characters(seeded_driver: AsyncDriver) -> None:
-    rows = await repository.get_timeline_rows(
+    rows = await get_timeline_rows(
         seeded_driver, date_from="1942-06-01", date_to="1942-06-30"
     )
     assert len(rows) == 1

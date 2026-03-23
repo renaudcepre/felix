@@ -13,7 +13,7 @@ from felix.api.models import (
 )
 from felix.ingest.entity_checker import check_character_consistency
 from felix.ingest.models import ConsistencyReport
-from felix.graph.repository import (
+from felix.graph.repositories.characters import (
     delete_character_relation,
     get_character_profile,
     get_character_relations,

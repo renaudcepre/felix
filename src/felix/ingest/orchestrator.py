@@ -12,17 +12,16 @@ if TYPE_CHECKING:
     from felix.ingest.pipeline import _PipelineContext
     from felix.ingest.resolution import EntityResolutionService
 
-from felix.graph.repository import (
-    create_issue,
-    create_member_of,
-    create_narrative_beat,
+from felix.graph.repositories.beats import create_narrative_beat, link_beat_character
+from felix.graph.repositories.characters import (
     get_character_profile,
     get_relation_types_for_pair,
-    link_beat_character,
     patch_character_profile_fields,
     update_character_profile,
     upsert_character_relation,
 )
+from felix.graph.repositories.groups import create_member_of
+from felix.graph.repositories.issues import create_issue
 from felix.ingest.analyzer import analyze_scene
 from felix.ingest.checker import check_scene_consistency
 from felix.ingest.cleaner import clean_scene_text

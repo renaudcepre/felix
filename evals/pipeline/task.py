@@ -20,7 +20,21 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from felix.graph.driver import close_driver, get_driver, setup_constraints
-from felix.graph import repository
+from felix.graph.repositories.characters import (
+    get_character_fragments,
+    get_character_profile,
+    get_relation_types_for_pair,
+    list_all_character_relations,
+    list_all_characters,
+)
+from felix.graph.repositories.groups import list_all_groups
+from felix.graph.repositories.issues import list_issues
+from felix.graph.repositories.locations import list_all_locations
+from felix.graph.repositories.scenes import (
+    count_next_chunk_links_for_stem,
+    count_scenes_for_stem,
+    get_scene_summaries_by_ids,
+)
 from felix.ingest.entity_checker import check_character_consistency
 from felix.ingest.pipeline import ImportProgress, run_import_pipeline
 
@@ -143,11 +157,11 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
       - "entity_check:<char_id>:<json>" → run entity consistency check, return issues
     """
     if query == "characters":
-        rows = await repository.list_all_characters(driver)
+        rows = await list_all_characters(driver)
         return PipelineQueryResult(character_ids=[r["id"] for r in rows])
 
     if query == "groups":
-        rows = await repository.list_all_groups(driver)
+        rows = await list_all_groups(driver)
         return PipelineQueryResult(group_ids=[r["id"] for r in rows])
 
     if query.startswith("member_of:"):
@@ -161,11 +175,11 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
         return PipelineQueryResult(group_ids=[r["id"] for r in rows])
 
     if query == "locations":
-        rows = await repository.list_all_locations(driver)
+        rows = await list_all_locations(driver)
         return PipelineQueryResult(location_names=[r["name"] for r in rows])
 
     if query == "irina_profile":
-        row = await repository.get_character_profile(driver, "irina-voss")
+        row = await get_character_profile(driver, "irina-voss")
         if row:
             parts = [v for v in (row.get("background"), row.get("arc"), row.get("traits")) if v]
             return PipelineQueryResult(background=" | ".join(parts) if parts else None)
@@ -173,33 +187,33 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
 
     if query.startswith("profile:"):
         char_id = query[len("profile:"):]
-        row = await repository.get_character_profile(driver, char_id)
+        row = await get_character_profile(driver, char_id)
         if row:
             parts = [v for v in (row.get("background"), row.get("arc"), row.get("traits")) if v]
             return PipelineQueryResult(background=" | ".join(parts) if parts else None)
         return PipelineQueryResult()
 
     if query == "irina_fragments":
-        fragments = await repository.get_character_fragments(driver, "irina-voss")
+        fragments = await get_character_fragments(driver, "irina-voss")
         return PipelineQueryResult(fragment_count=len(fragments))
 
     if query.startswith("fragments:"):
         char_id = query[len("fragments:"):]
-        fragments = await repository.get_character_fragments(driver, char_id)
+        fragments = await get_character_fragments(driver, char_id)
         return PipelineQueryResult(fragment_count=len(fragments))
 
     if query.startswith("active_fragments:"):
         char_id = query[len("active_fragments:"):]
-        fragments = await repository.get_character_fragments(driver, char_id)
+        fragments = await get_character_fragments(driver, char_id)
         return PipelineQueryResult(fragment_count=sum(1 for f in fragments if f.get("role") == "participant"))
 
     if query == "relations":
-        rows = await repository.list_all_character_relations(driver)
+        rows = await list_all_character_relations(driver)
         return PipelineQueryResult(relations=[{"a": r["character_id_a"], "b": r["character_id_b"], "relation": r["relation_type"]} for r in rows])
 
     if query.startswith("issues:"):
         scene_id = query[len("issues:"):]
-        all_issues = await repository.list_issues(driver)
+        all_issues = await list_issues(driver)
         filtered = [i for i in all_issues if i.get("scene_id") == scene_id]
         return PipelineQueryResult(issues=[{"type": i["type"], "severity": i["severity"], "description": i["description"]} for i in filtered])
 
@@ -207,50 +221,50 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
         parts = query[len("relation_count:"):].split(",")
         if len(parts) == 2:  # noqa: PLR2004
             a, b = sorted(parts)
-            rels = await repository.get_relation_types_for_pair(driver, a, b)
+            rels = await get_relation_types_for_pair(driver, a, b)
             return PipelineQueryResult(fragment_count=len(rels))
         return PipelineQueryResult()
 
     if query.startswith("scene_date:"):
         scene_id = query[len("scene_date:"):]
-        summaries = await repository.get_scene_summaries_by_ids(driver, [scene_id])
+        summaries = await get_scene_summaries_by_ids(driver, [scene_id])
         if summaries:
             return PipelineQueryResult(scene_date=summaries[0].get("date"))
         return PipelineQueryResult()
 
     if query == "all_issues":
-        all_issues = await repository.list_issues(driver)
+        all_issues = await list_issues(driver)
         return PipelineQueryResult(issues=[{"type": i["type"], "severity": i["severity"], "description": i["description"], "scene_id": i.get("scene_id")} for i in all_issues])
 
     if query.startswith("relations:"):
         char_id = query[len("relations:"):]
-        rows = await repository.list_all_character_relations(driver)
+        rows = await list_all_character_relations(driver)
         filtered = [r for r in rows if r["character_id_a"] == char_id or r["character_id_b"] == char_id]
         return PipelineQueryResult(relations=[{"a": r["character_id_a"], "b": r["character_id_b"], "relation": r["relation_type"]} for r in filtered])
 
     if query.startswith("traits:"):
         char_id = query[len("traits:"):]
-        row = await repository.get_character_profile(driver, char_id)
+        row = await get_character_profile(driver, char_id)
         return PipelineQueryResult(background=row.get("traits") if row else None)
 
     if query.startswith("arc:"):
         char_id = query[len("arc:"):]
-        row = await repository.get_character_profile(driver, char_id)
+        row = await get_character_profile(driver, char_id)
         return PipelineQueryResult(background=row.get("arc") if row else None)
 
     if query.startswith("age:"):
         char_id = query[len("age:"):]
-        row = await repository.get_character_profile(driver, char_id)
+        row = await get_character_profile(driver, char_id)
         return PipelineQueryResult(background=row.get("age") if row else None)
 
     if query.startswith("chunk_count:"):
         stem = query[len("chunk_count:"):]
-        count = await repository.count_scenes_for_stem(driver, stem)
+        count = await count_scenes_for_stem(driver, stem)
         return PipelineQueryResult(fragment_count=count)
 
     if query.startswith("next_chunk_links:"):
         stem = query[len("next_chunk_links:"):]
-        count = await repository.count_next_chunk_links_for_stem(driver, stem)
+        count = await count_next_chunk_links_for_stem(driver, stem)
         return PipelineQueryResult(fragment_count=count)
 
     if query.startswith("entity_check:"):

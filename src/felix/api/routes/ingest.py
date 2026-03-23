@@ -28,7 +28,8 @@ from felix.api.models import (
     IssueUpdate,
     SceneSummary,
 )
-from felix.graph.repository import get_issue_by_id, list_issues, list_scenes, update_issue_resolved
+from felix.graph.repositories.issues import get_issue_by_id, list_issues, update_issue_resolved
+from felix.graph.repositories.scenes import list_scenes
 from felix.config import SCENE_FILE_EXTENSIONS
 from felix.ingest.pipeline import (
     ClarificationSlot,

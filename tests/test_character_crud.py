@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 from felix.api.deps import get_base_url, get_driver, get_model_name
 from felix.api.routes.characters import router
-from felix.graph.repository import (
+from felix.graph.repositories.characters import (
     delete_character_relation,
     overwrite_character_profile_fields,
     upsert_character_relation,
@@ -132,7 +132,7 @@ async def test_delete_relation_keeps_other_relations(seeded_driver: AsyncDriver)
     await _insert_relation(seeded_driver, "alice", "bob", "collegue")
     await delete_character_relation(seeded_driver, "alice", "bob", "allie")
     # collegue should still exist
-    from felix.graph.repository import get_relation_types_for_pair
+    from felix.graph.repositories.characters import get_relation_types_for_pair
 
     types = await get_relation_types_for_pair(seeded_driver, "alice", "bob")
     assert "collegue" in types

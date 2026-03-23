@@ -12,7 +12,8 @@ if TYPE_CHECKING:
 
     from felix.ingest.models import SceneAnalysis
 
-from felix.graph.repository import add_character_alias, add_location_alias
+from felix.graph.repositories.characters import add_character_alias
+from felix.graph.repositories.locations import add_location_alias
 from felix.ingest.resolver import AmbiguousMatch, ResolvedEntity, _normalize, fuzzy_match_entity, slugify
 
 EventQueue = asyncio.Queue[dict[str, Any]]

@@ -11,12 +11,12 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
 from felix.agent.chat_agent import _build_model
-from felix.graph.repository import (
+from felix.graph.repositories.characters import (
     get_character_fragments,
     get_character_profile,
     get_character_relations,
-    get_scene_summaries_by_ids,
 )
+from felix.graph.repositories.scenes import get_scene_summaries_by_ids
 from felix.ingest.models import ConsistencyReport
 
 if TYPE_CHECKING:

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
 
-from felix.graph import repository
+from felix.graph.repositories.timeline import get_timeline_rows
 
 
 def _format_character_profile(row: dict, relations: list[dict], fragments: list[dict]) -> str:
@@ -152,7 +152,7 @@ async def get_timeline(
     date_to: str | None = None,
     location: str | None = None,
 ) -> str:
-    rows = await repository.get_timeline_rows(
+    rows = await get_timeline_rows(
         driver, era=era, date_from=date_from, date_to=date_to, location=location
     )
 

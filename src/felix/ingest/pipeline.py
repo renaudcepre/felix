@@ -13,14 +13,11 @@ if TYPE_CHECKING:
 
 from felix.config import SCENE_FILE_EXTENSIONS, settings
 from felix.graph.checks import check_bilocalization
-from felix.graph.repository import (
-    create_issue,
-    delete_issues_for_scenes,
-    get_scene_ids_for_stems,
-    list_all_characters_full,
-    list_all_groups,
-    list_all_locations,
-)
+from felix.graph.repositories.characters import list_all_characters_full
+from felix.graph.repositories.groups import list_all_groups
+from felix.graph.repositories.issues import create_issue, delete_issues_for_scenes
+from felix.graph.repositories.locations import list_all_locations
+from felix.graph.repositories.scenes import get_scene_ids_for_stems
 from felix.graph.writer import delete_scenes, link_next_chunk, write_scene
 from felix.ingest.analyzer import create_analyzer_agent
 from felix.ingest.checker import create_checker_agents
