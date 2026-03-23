@@ -9,8 +9,11 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from felix.ingest.models import NarrativeBeat
     from felix.ingest.pipeline import _PipelineContext
     from felix.ingest.resolution import EntityResolutionService
+
+from rapidfuzz import fuzz
 
 from felix.graph.repositories.beats import create_narrative_beat, link_beat_character
 from felix.graph.repositories.characters import (
@@ -26,11 +29,19 @@ from felix.ingest.analyzer import analyze_scene
 from felix.ingest.checker import check_scene_consistency
 from felix.ingest.cleaner import clean_scene_text
 from felix.ingest.loader import load_scene
-from felix.ingest.models import NarrativeBeat
-from felix.ingest.profiler import extract_scene_beats, patch_character_profile, profile_character
-from felix.ingest.resolution import CLARIFICATION_TIMEOUT, ClarificationSlot, ImportStatus, _emit, resolve_group_entity
+from felix.ingest.profiler import (
+    extract_scene_beats,
+    patch_character_profile,
+    profile_character,
+)
+from felix.ingest.resolution import (
+    CLARIFICATION_TIMEOUT,
+    ClarificationSlot,
+    ImportStatus,
+    emit,
+    resolve_group_entity,
+)
 from felix.ingest.resolver import AmbiguousMatch, fuzzy_match_entity
-from rapidfuzz import fuzz
 
 logger = logging.getLogger("felix.ingest")
 
@@ -95,7 +106,7 @@ class SceneOrchestrator:
         slot = ClarificationSlot()
         pending[clarification_id] = slot
 
-        await _emit(
+        await emit(
             queue,
             "clarification_needed",
             id=clarification_id,
@@ -147,7 +158,7 @@ class SceneOrchestrator:
 
     async def _emit_status(self, status: ImportStatus) -> None:
         if self.ctx.queue:
-            await _emit(
+            await emit(
                 self.ctx.queue,
                 "status_change",
                 status=status,
@@ -184,7 +195,7 @@ class SceneOrchestrator:
         analysis = await analyze_scene(self.analyzer, scene_text)
 
         if ctx.queue:
-            await _emit(
+            await emit(
                 ctx.queue,
                 "scene_analyzed",
                 scene_id=scene_id,
@@ -225,7 +236,7 @@ class SceneOrchestrator:
         )
 
         if ctx.queue:
-            await _emit(ctx.queue, "scene_loaded", scene_id=scene_id)
+            await emit(ctx.queue, "scene_loaded", scene_id=scene_id)
 
         summary = {
             "scene_id": scene_id,
@@ -253,7 +264,7 @@ class SceneOrchestrator:
         await self._emit_status(ImportStatus.CHECKING)
 
         if ctx.queue:
-            await _emit(
+            await emit(
                 ctx.queue,
                 "check_started",
                 scene_id=scene_summary["scene_id"],
@@ -267,8 +278,8 @@ class SceneOrchestrator:
         except Exception as e:
             logger.exception("Consistency check failed for scene: %s", scene_summary["scene_id"])
             if ctx.queue:
-                await _emit(ctx.queue, "consistency_error", error=str(e))
-                await _emit(ctx.queue, "check_complete", issue_count=0)
+                await emit(ctx.queue, "consistency_error", error=str(e))
+                await emit(ctx.queue, "check_complete", issue_count=0)
             return
 
         for ci in report.issues:
@@ -284,7 +295,7 @@ class SceneOrchestrator:
             await create_issue(ctx.driver, issue)
             ctx.progress.issues_found += 1
             if ctx.queue:
-                await _emit(
+                await emit(
                     ctx.queue,
                     "issue_found",
                     type=ci.type,
@@ -293,7 +304,7 @@ class SceneOrchestrator:
                 )
 
         if ctx.queue:
-            await _emit(ctx.queue, "check_complete", issue_count=len(report.issues))
+            await emit(ctx.queue, "check_complete", issue_count=len(report.issues))
 
     async def _resolve_beat_participant(
         self, beat_id: str, name: str, role: str
@@ -371,7 +382,7 @@ class SceneOrchestrator:
                 }
 
                 if ctx.queue:
-                    await _emit(ctx.queue, "profiling_character", name=char_name, id=char_id, scene_title=scene_title)
+                    await emit(ctx.queue, "profiling_character", name=char_name, id=char_id, scene_title=scene_title)
 
                 char_known_names = [n for n in known_names if n != char_name]
                 char_name_lower = char_name.lower()
@@ -427,7 +438,7 @@ class SceneOrchestrator:
                 ]
 
                 if ctx.queue:
-                    await _emit(
+                    await emit(
                         ctx.queue,
                         "character_profiled",
                         name=char_name,
@@ -438,4 +449,4 @@ class SceneOrchestrator:
             except Exception as e:
                 logger.exception("Profiling failed for character: %s", char_name)
                 if ctx.queue:
-                    await _emit(ctx.queue, "profiling_error", name=char_name, id=char_id, error=str(e))
+                    await emit(ctx.queue, "profiling_error", name=char_name, id=char_id, error=str(e))

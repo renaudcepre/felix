@@ -3,10 +3,10 @@ from __future__ import annotations
 from felix.ingest.resolver import (
     AmbiguousMatch,
     ResolvedEntity,
-    _normalize,
     fuzzy_match_entity,
     slugify,
 )
+from felix.ingest.utils import normalize
 
 EXISTING = {
     "marie-dupont": "Marie Dupont",
@@ -35,8 +35,8 @@ def test_slugify_special_chars() -> None:
 
 
 def test_normalize_strips_accents() -> None:
-    assert _normalize("Rene") == "rene"
-    assert _normalize("Benoit") == "benoit"
+    assert normalize("Rene") == "rene"
+    assert normalize("Benoit") == "benoit"
 
 
 def test_exact_match() -> None:

@@ -15,7 +15,10 @@ from felix.graph.repositories.characters import (
 from felix.graph.repositories.groups import upsert_group_in_scene, upsert_group_minimal
 from felix.graph.repositories.locations import upsert_location_minimal
 from felix.graph.repositories.scenes import upsert_scene
-from felix.graph.repositories.timeline import upsert_character_event, upsert_timeline_event
+from felix.graph.repositories.timeline import (
+    upsert_character_event,
+    upsert_timeline_event,
+)
 
 
 async def load_scene(  # noqa: PLR0913

@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 from felix.config import settings
 from felix.ingest.utils import estimate_tokens
+
 _EPSILON = 1e-8
 _MIN_BLOCKS = 2
 

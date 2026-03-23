@@ -32,10 +32,9 @@ from felix.ingest.pipeline import (
     ClarificationSlot,
     ImportProgress,
     ImportStatus,
-    _handle_ambiguous_character,
-    _resolve_location,
     run_import_pipeline,
 )
+from felix.ingest.resolution import handle_ambiguous_character, resolve_location
 from felix.ingest.resolver import AmbiguousMatch
 
 SCENE_1 = SceneAnalysis(
@@ -412,7 +411,7 @@ async def test_duplicate_suspect_resolved_true_when_user_confirms():
 
     with patch("felix.ingest.resolution.add_character_alias", new=AsyncMock()):
         await asyncio.gather(
-            _handle_ambiguous_character(
+            handle_ambiguous_character(
                 name="Marie D.",
                 context=None,
                 match=match,
@@ -444,7 +443,7 @@ async def test_duplicate_suspect_resolved_false_on_timeout():
         patch("felix.ingest.resolution.CLARIFICATION_TIMEOUT", 0.01),
         patch("felix.ingest.resolution.add_character_alias", new=AsyncMock()),
     ):
-        await _handle_ambiguous_character(
+        await handle_ambiguous_character(
             name="Marie D.",
             context=None,
             match=match,
@@ -495,7 +494,7 @@ async def test_location_duplicate_suspect_resolved_true_when_user_confirms():
         amb = AmbiguousMatch(best_id="planque-de-lyon", best_name="Planque de Lyon", score=0.86)
         with patch("felix.ingest.resolution.fuzzy_match_entity", return_value=amb):
             await asyncio.gather(
-                _resolve_location(
+                resolve_location(
                     analysis=analysis,
                     loc_registry=loc_registry,
                     loc_aliases={},

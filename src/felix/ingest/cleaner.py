@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
-from felix.agent.chat_agent import _build_model
+from felix.llm import build_model
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
@@ -39,7 +39,7 @@ Do not summarize, do not translate, do not add anything.
 def create_cleaner_agent(
     model_name: str | None = None, base_url: str | None = None
 ) -> Agent[None, str]:
-    model: Model = _build_model(model_name, base_url)
+    model: Model = build_model(model_name, base_url)
     return Agent(
         model,
         instructions=CLEANER_PROMPT,

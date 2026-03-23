@@ -1,16 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pydantic_ai import Agent
-from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.models.openai import OpenAIModel
-from pydantic_ai.providers.mistral import MistralProvider
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
-
-if TYPE_CHECKING:
-    from pydantic_ai.models import Model
 
 from felix.agent.deps import FelixDeps
 from felix.agent.tools import (
@@ -19,7 +10,7 @@ from felix.agent.tools import (
     get_timeline,
     search_scenes,
 )
-from felix.config import settings
+from felix.llm import build_model
 
 SYSTEM_PROMPT = """\
 You are Felix, a screenplay continuity assistant for a French multi-era thriller.
@@ -44,31 +35,10 @@ EXAMPLE: "Who is at the relay station?"
 """
 
 
-def _build_model(
-    model_name: str | None = None,
-    base_url: str | None = None,
-    api_key: str | None = None,
-) -> Model:
-    name = model_name or settings.llm_model
-    url = base_url if base_url is not None else settings.llm_base_url
-
-    if url:
-        is_together = "together" in url
-        key = api_key or (settings.together_key if is_together else settings.llm_api_key) or "lm-studio"
-        return OpenAIModel(
-            name,
-            provider=OpenAIProvider(base_url=url, api_key=key),
-        )
-    return MistralModel(
-        name,
-        provider=MistralProvider(api_key=settings.llm_api_key),
-    )
-
-
 def create_agent(
     model_name: str | None = None, base_url: str | None = None
 ) -> Agent[FelixDeps, str]:
-    model = _build_model(model_name, base_url)
+    model = build_model(model_name, base_url)
 
     agent = Agent(
         model,

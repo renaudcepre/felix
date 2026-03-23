@@ -1,5 +1,16 @@
 # Journal de developpement — Felix
 
+## Quick wins REVIEW.md Phase 1 — 2026-03-23
+
+Batch de 6 corrections issues de la code review :
+
+1. **`datetime.now(UTC)`** dans `cli.py` — fix du datetime naïf dans l'export
+2. **`Literal`** pour `ConsistencyIssue.type/severity` dans `ingest/models.py`
+3. **Embedding model unifié** — `store.py` utilise `settings.segmenter_embedding_model`
+4. **`normalize()` centralisée** dans `ingest/utils.py` — supprime les doublons dans `resolver.py` et `entity_checker.py`
+5. **`build_model`** déplacée de `chat_agent.py` vers `src/felix/llm.py` — 5 importeurs mis à jour
+6. **Préfixe `_` retiré** de `emit`, `handle_ambiguous_character`, `resolve_characters`, `resolve_location` dans `resolution.py`
+
 ## TypedDict pour les retours repository — 2026-03-23
 
 Typage structuré des retours de lecture dans `src/felix/graph/repositories/` — remplace `dict[str, Any]` par des `TypedDict` spécifiques.

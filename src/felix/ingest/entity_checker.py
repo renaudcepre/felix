@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
-import unicodedata
 from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
-from felix.agent.chat_agent import _build_model
 from felix.graph.repositories.characters import (
     get_character_fragments,
     get_character_profile,
@@ -18,17 +16,14 @@ from felix.graph.repositories.characters import (
 )
 from felix.graph.repositories.scenes import get_scene_summaries_by_ids
 from felix.ingest.models import ConsistencyReport
+from felix.ingest.utils import normalize
+from felix.llm import build_model
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
 logger = logging.getLogger("felix.ingest.entity_checker")
 
-
-def _normalize(text: str) -> str:
-    """Lowercase + strip accents for fuzzy matching."""
-    nfkd = unicodedata.normalize("NFKD", text.lower())
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def _find_evidence(
@@ -47,7 +42,7 @@ def _find_evidence(
         # Extract multi-word phrases only (3-5 word n-grams)
         # Do NOT match individual words — they cause false positives on contradictions
         # (e.g. "refuse de transmettre" matches "transmettre" alone)
-        words = _normalize(value).split()
+        words = normalize(value).split()
         phrases = []
         for length in (5, 4, 3):
             for i in range(len(words) - length + 1):
@@ -55,12 +50,12 @@ def _find_evidence(
 
         matches: list[dict[str, str]] = []
         for scene_id, raw_text in raw_texts:
-            normalized_raw = _normalize(raw_text)
+            normalized_raw = normalize(raw_text)
             matched_phrases = [p for p in phrases if p in normalized_raw]
             if matched_phrases:
                 # Find the most relevant line
                 for line in raw_text.split("\n"):
-                    if any(p in _normalize(line) for p in matched_phrases):
+                    if any(p in normalize(line) for p in matched_phrases):
                         matches.append({"scene_id": scene_id, "matching_excerpt": line.strip()})
                         break
                 else:
@@ -191,7 +186,7 @@ async def check_character_consistency(
         "scene_fragments": scene_data,
     }
 
-    model = _build_model(model_name, base_url)
+    model = build_model(model_name, base_url)
     agent: Agent[None, ConsistencyReport] = Agent(
         model,
         instructions=ENTITY_CHECK_PROMPT,

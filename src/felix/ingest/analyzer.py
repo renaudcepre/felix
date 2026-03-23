@@ -9,8 +9,8 @@ from pydantic import BaseModel
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.settings import ModelSettings
 
-from felix.agent.chat_agent import _build_model
 from felix.ingest.models import ExtractedCharacter, ExtractedLocation, SceneAnalysis
+from felix.llm import build_model
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
@@ -115,7 +115,7 @@ class AnalyzerAgents:
 def create_analyzer_agent(
     model_name: str | None = None, base_url: str | None = None
 ) -> AnalyzerAgents:
-    model: Model = _build_model(model_name, base_url)
+    model: Model = build_model(model_name, base_url)
 
     meta_agent: Agent[None, _SceneMeta] = Agent(
         model,

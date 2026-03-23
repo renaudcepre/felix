@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     import chromadb
     from neo4j import AsyncDriver
 
+from pydantic_ai.exceptions import ModelHTTPError
+
 from felix.config import SCENE_FILE_EXTENSIONS, settings
 from felix.graph.checks import check_bilocalization
 from felix.graph.repositories.characters import list_all_characters_full
@@ -34,12 +36,9 @@ from felix.ingest.resolution import (
     EntityResolutionService,
     EventQueue,
     ImportStatus,
-    _emit,
-    _handle_ambiguous_character,
-    _resolve_location,
+    emit,
 )
 from felix.ingest.segmenter import TextSegmenter
-from pydantic_ai.exceptions import ModelHTTPError
 
 logger = logging.getLogger("felix.ingest")
 
@@ -147,12 +146,12 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
             progress.error = f"Aucun fichier texte dans {scenes_dir}"
             progress.status = ImportStatus.ERROR
             if queue:
-                await _emit(queue, "error", message=progress.error)
+                await emit(queue, "error", message=progress.error)
             return
 
         progress.total_scenes = len(scene_files)
         if queue:
-            await _emit(
+            await emit(
                 queue,
                 "status_change",
                 status=ImportStatus.PENDING,
@@ -170,7 +169,7 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
 
         # Expand each file into (file, chunk_idx, total_chunks, chunk_text)
         if queue:
-            await _emit(queue, "status_change", status=ImportStatus.SEGMENTING, total_scenes=len(scene_files), processed_scenes=0, current_scene="")
+            await emit(queue, "status_change", status=ImportStatus.SEGMENTING, total_scenes=len(scene_files), processed_scenes=0, current_scene="")
         segmenter = TextSegmenter(
             max_tokens=settings.segmenter_max_tokens,
             overlap_ratio=settings.segmenter_overlap_ratio,
@@ -179,19 +178,19 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         scene_units: list[tuple[Path, int, int, str]] = []
         for scene_file in scene_files:
             if queue:
-                await _emit(queue, "segmenting_file", filename=scene_file.name)
+                await emit(queue, "segmenting_file", filename=scene_file.name)
             raw_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
             chunks = await asyncio.to_thread(segmenter.segment, raw_text)
             if len(chunks) > 1 and queue:
-                await _emit(queue, "file_segmented", filename=scene_file.name, chunk_count=len(chunks))
+                await emit(queue, "file_segmented", filename=scene_file.name, chunk_count=len(chunks))
             for i, chunk in enumerate(chunks):
                 scene_units.append((scene_file, i, len(chunks), chunk))
         if queue:
-            await _emit(queue, "segmentation_complete", file_count=len(scene_files), scene_count=len(scene_units))
+            await emit(queue, "segmentation_complete", file_count=len(scene_files), scene_count=len(scene_units))
 
         progress.total_scenes = len(scene_units)
         if queue:
-            await _emit(
+            await emit(
                 queue,
                 "status_change",
                 status=ImportStatus.PENDING,
@@ -270,24 +269,24 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 progress.failed_scenes += 1
                 progress.processed_scenes += 1
                 if queue:
-                    await _emit(queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
+                    await emit(queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
             except Exception as e:
                 logger.exception("Scene processing failed: %s", scene_file.name)
                 progress.failed_scenes += 1
                 progress.processed_scenes += 1
                 if queue:
-                    await _emit(queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
+                    await emit(queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
 
         if scenes_processed == 0:
             progress.error = f"Toutes les scenes ont echoue ({progress.failed_scenes}/{progress.total_scenes})"
             progress.status = ImportStatus.ERROR
             if queue:
-                await _emit(queue, "error", message=progress.error)
+                await emit(queue, "error", message=progress.error)
             return
 
         progress.status = ImportStatus.DONE
         if queue:
-            await _emit(
+            await emit(
                 queue,
                 "done",
                 total_issues=progress.issues_found,
@@ -300,6 +299,6 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         progress.error = str(e)
         progress.status = ImportStatus.ERROR
         if queue:
-            await _emit(queue, "error", message=str(e))
+            await emit(queue, "error", message=str(e))
     finally:
         await asyncio.to_thread(shutil.rmtree, scenes_dir, True)

@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
-from felix.agent.chat_agent import _build_model
 from felix.ingest.models import CharacterProfile, NarrativeBeat
+from felix.llm import build_model
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
@@ -107,7 +107,7 @@ Extract all significant physical actions and decisions. Ignore atmosphere and se
 def create_profiler_agent(
     model_name: str | None = None, base_url: str | None = None
 ) -> Agent[None, CharacterProfile]:
-    model: Model = _build_model(model_name, base_url)
+    model: Model = build_model(model_name, base_url)
     return Agent(
         model,
         instructions=PROFILER_PROMPT,
@@ -159,7 +159,7 @@ Output ONLY "merge", "keep_both", or "unsure". No explanation.
 def create_relation_dedup_agent(
     model_name: str | None = None, base_url: str | None = None
 ) -> Agent[None, str]:
-    model: Model = _build_model(model_name, base_url)
+    model: Model = build_model(model_name, base_url)
     return Agent(
         model,
         instructions=RELATION_DEDUP_PROMPT,
@@ -172,7 +172,7 @@ def create_relation_dedup_agent(
 def create_beat_extractor_agent(
     model_name: str | None = None, base_url: str | None = None
 ) -> Agent[None, list[NarrativeBeat]]:
-    model: Model = _build_model(model_name, base_url)
+    model: Model = build_model(model_name, base_url)
     return Agent(
         model,
         instructions=BEAT_EXTRACTOR_PROMPT,
@@ -185,7 +185,7 @@ def create_beat_extractor_agent(
 def create_profiler_patch_agent(
     model_name: str | None = None, base_url: str | None = None
 ) -> Agent[None, CharacterProfile]:
-    model: Model = _build_model(model_name, base_url)
+    model: Model = build_model(model_name, base_url)
     return Agent(
         model,
         instructions=PROFILER_PATCH_PROMPT,

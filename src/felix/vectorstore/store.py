@@ -7,7 +7,7 @@ from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunct
 
 from felix.config import settings
 
-_EMBEDDING_MODEL = "BAAI/bge-m3"
+_EMBEDDING_MODEL = settings.segmenter_embedding_model
 
 
 def _get_embedding_function() -> SentenceTransformerEmbeddingFunction:

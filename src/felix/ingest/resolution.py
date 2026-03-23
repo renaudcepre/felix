@@ -14,7 +14,13 @@ if TYPE_CHECKING:
 
 from felix.graph.repositories.characters import add_character_alias
 from felix.graph.repositories.locations import add_location_alias
-from felix.ingest.resolver import AmbiguousMatch, ResolvedEntity, _normalize, fuzzy_match_entity, slugify
+from felix.ingest.resolver import (
+    AmbiguousMatch,
+    ResolvedEntity,
+    fuzzy_match_entity,
+    slugify,
+)
+from felix.ingest.utils import normalize
 
 EventQueue = asyncio.Queue[dict[str, Any]]
 EmitFn = Callable[..., Awaitable[None]] | None
@@ -41,7 +47,7 @@ class ClarificationSlot:
     answer: str = ""
 
 
-async def _emit(queue: EventQueue, event: str, **data: Any) -> None:
+async def emit(queue: EventQueue, event: str, **data: Any) -> None:
     await queue.put({"event": event, **data})
 
 
@@ -54,7 +60,7 @@ def _find_excerpt(name: str, scene_text: str) -> str | None:
     return None
 
 
-async def _handle_ambiguous_character(  # noqa: PLR0913
+async def handle_ambiguous_character(  # noqa: PLR0913
     name: str,
     context: str | None,
     match: AmbiguousMatch,
@@ -73,7 +79,7 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
         pending_clarifications[clarification_id] = slot
 
         candidate_info = char_details.get(match.best_id, {})
-        await _emit(
+        await emit(
             queue,
             "clarification_needed",
             id=clarification_id,
@@ -111,7 +117,7 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
                 ),
                 "suggestion": None,
             })
-            await _emit(queue, "entity_resolved", name=name, action="created")
+            await emit(queue, "entity_resolved", name=name, action="created")
             return resolved
 
         was_timeout = slot.answer == "link" and not slot.event.is_set()
@@ -135,7 +141,7 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
             if was_timeout
             else None,
         })
-        await _emit(
+        await emit(
             queue,
             "entity_resolved",
             name=name,
@@ -163,15 +169,15 @@ async def _handle_ambiguous_character(  # noqa: PLR0913
 
 def resolve_group_entity(name: str, group_registry: dict[str, str]) -> ResolvedEntity:
     """Résolution simplifiée pour groupes : exact match normalisé ou nouveau slug."""
-    norm = _normalize(name)
+    norm = normalize(name)
     for gid, gname in group_registry.items():
-        if _normalize(gname) == norm:
+        if normalize(gname) == norm:
             return ResolvedEntity(id=gid, name=gname)
     new_id = slugify(name)
     return ResolvedEntity(id=new_id, name=name, is_new=True)
 
 
-async def _resolve_characters(  # noqa: PLR0913
+async def resolve_characters(  # noqa: PLR0913
     analysis: SceneAnalysis,
     scene_text: str,
     char_registry: dict[str, str],
@@ -197,14 +203,14 @@ async def _resolve_characters(  # noqa: PLR0913
                 group_registry[resolved.id] = resolved.name
             if queue:
                 action = "created" if resolved.is_new else "linked"
-                await _emit(queue, "entity_resolved", name=ec.name, action=action)
+                await emit(queue, "entity_resolved", name=ec.name, action=action)
             resolved_groups.append((resolved, ec.role, ec.description, ec.context))
             continue
 
         match = fuzzy_match_entity(ec.name, char_registry, char_aliases)
         if isinstance(match, AmbiguousMatch):
             context = ec.context or _find_excerpt(ec.name, scene_text)
-            resolved = await _handle_ambiguous_character(
+            resolved = await handle_ambiguous_character(
                 ec.name,
                 context,
                 match,
@@ -223,7 +229,7 @@ async def _resolve_characters(  # noqa: PLR0913
                 char_registry[resolved.id] = resolved.name
             if queue:
                 action = "created" if resolved.is_new else "linked"
-                await _emit(
+                await emit(
                     queue,
                     "entity_resolved",
                     name=ec.name,
@@ -236,7 +242,7 @@ async def _resolve_characters(  # noqa: PLR0913
     return resolved_chars, resolved_groups
 
 
-async def _resolve_location(  # noqa: PLR0913
+async def resolve_location(  # noqa: PLR0913
     analysis: SceneAnalysis,
     loc_registry: dict[str, str],
     loc_aliases: dict[str, list[str]],
@@ -253,7 +259,7 @@ async def _resolve_location(  # noqa: PLR0913
             slot = ClarificationSlot()
             pending_clarifications[clarification_id] = slot
 
-            await _emit(
+            await emit(
                 queue,
                 "clarification_needed",
                 id=clarification_id,
@@ -275,7 +281,7 @@ async def _resolve_location(  # noqa: PLR0913
             if slot.answer == "new":
                 new_id = slugify(analysis.location.name)
                 loc_registry[new_id] = analysis.location.name
-                await _emit(queue, "entity_resolved", name=analysis.location.name, action="created")
+                await emit(queue, "entity_resolved", name=analysis.location.name, action="created")
                 return ResolvedEntity(id=new_id, name=analysis.location.name, is_new=True)
 
             was_timeout = slot.answer == "link" and not slot.event.is_set()
@@ -295,7 +301,7 @@ async def _resolve_location(  # noqa: PLR0913
                 ),
                 "suggestion": None,
             })
-            await _emit(
+            await emit(
                 queue,
                 "entity_resolved",
                 name=analysis.location.name,
@@ -324,7 +330,7 @@ async def _resolve_location(  # noqa: PLR0913
         loc_registry[match.id] = match.name
     if queue:
         action = "created" if match.is_new else "linked"
-        await _emit(
+        await emit(
             queue,
             "entity_resolved",
             name=analysis.location.name,
@@ -356,7 +362,7 @@ class EntityResolutionService:
         list[tuple[ResolvedEntity, str, str | None, str | None]],
         list[tuple[ResolvedEntity, str, str | None, str | None]],
     ]:
-        return await _resolve_characters(
+        return await resolve_characters(
             analysis,
             scene_text,
             self.char_registry,
@@ -376,7 +382,7 @@ class EntityResolutionService:
         scene_id: str,
         issues: list[dict],
     ) -> ResolvedEntity:
-        return await _resolve_location(
+        return await resolve_location(
             analysis,
             self.loc_registry,
             self.loc_aliases,

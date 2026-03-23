@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 import re
-import unicodedata
 from dataclasses import dataclass, field
+
 from rapidfuzz import fuzz
+
+from felix.ingest.utils import normalize
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +32,7 @@ class AmbiguousMatch:
 
 
 def slugify(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", _normalize(name)).strip("-")
-
-
-def _normalize(name: str) -> str:
-    nfkd = unicodedata.normalize("NFKD", name)
-    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower().strip()
+    return re.sub(r"[^a-z0-9]+", "-", normalize(name)).strip("-")
 
 
 def _has_different_first_name(norm_a: str, norm_b: str) -> bool:
@@ -76,7 +73,7 @@ def _collect_candidates(
 ) -> list[tuple[str, str, float]]:
     candidates: list[tuple[str, str, float]] = []
     for eid, ename in existing.items():
-        norm_existing = _normalize(ename)
+        norm_existing = normalize(ename)
         if _has_different_first_name(norm, norm_existing):
             continue
         score = _coverage_score(norm, norm_existing)
@@ -85,7 +82,7 @@ def _collect_candidates(
         ):
             candidates.append((eid, ename, score))
         for alias in aliases.get(eid, []):
-            norm_alias = _normalize(alias)
+            norm_alias = normalize(alias)
             if _has_different_first_name(norm, norm_alias):
                 continue
             alias_score = _coverage_score(norm, norm_alias)
@@ -103,17 +100,17 @@ def fuzzy_match_entity(
     aliases: dict[str, list[str]] | None = None,
 ) -> ResolvedEntity | AmbiguousMatch:
     aliases = aliases or {}
-    norm = _normalize(name)
+    norm = normalize(name)
 
     # Exact match on normalized name
     for eid, ename in existing.items():
-        if _normalize(ename) == norm:
+        if normalize(ename) == norm:
             return ResolvedEntity(id=eid, name=ename)
 
     # Exact match on alias
     for eid, alias_list in aliases.items():
         for alias in alias_list:
-            if _normalize(alias) == norm:
+            if normalize(alias) == norm:
                 return ResolvedEntity(id=eid, name=existing[eid])
 
     # Fuzzy matching

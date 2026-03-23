@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Any
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
-from felix.agent.chat_agent import _build_model
 from felix.graph.repositories.scenes import get_scene_summaries_by_ids
 from felix.ingest.models import ConsistencyReport
+from felix.llm import build_model
 
 if TYPE_CHECKING:
     import chromadb
@@ -88,7 +88,7 @@ def _create_checker_agent(
     model_name: str | None = None,
     base_url: str | None = None,
 ) -> Agent[None, ConsistencyReport]:
-    model: Model = _build_model(model_name, base_url)
+    model: Model = build_model(model_name, base_url)
     return Agent(
         model,
         instructions=prompt,

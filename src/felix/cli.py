@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -11,21 +11,24 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from felix.telemetry import setup_logfire
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
 from felix.config import settings
+from felix.graph.driver import close_driver, get_driver, setup_constraints
+from felix.graph.repositories.beats import list_all_narrative_beats
 from felix.graph.repositories.characters import (
     list_all_character_fragments,
     list_all_character_relations,
     list_all_characters_full,
 )
-from felix.graph.repositories.beats import list_all_narrative_beats
 from felix.graph.repositories.issues import list_issues
 from felix.graph.repositories.locations import list_all_locations
 from felix.graph.repositories.scenes import list_all_scenes_full
-from felix.graph.repositories.timeline import list_all_character_events, list_all_timeline_events
-from felix.graph.driver import close_driver, get_driver, setup_constraints
+from felix.graph.repositories.timeline import (
+    list_all_character_events,
+    list_all_timeline_events,
+)
+from felix.telemetry import setup_logfire
 from felix.vectorstore.store import get_collection
 
 console = Console()
@@ -95,7 +98,7 @@ async def _export_graph() -> dict:
     await setup_constraints(driver)
     try:
         return {
-            "exported_at": datetime.now().isoformat(),
+            "exported_at": datetime.now(UTC).isoformat(),
             "characters": await list_all_characters_full(driver),
             "locations": await list_all_locations(driver),
             "scenes": await list_all_scenes_full(driver),
@@ -116,7 +119,7 @@ def export() -> None:
     data = asyncio.run(_export_graph())
     exports_dir = Path("exports")
     exports_dir.mkdir(exist_ok=True)
-    filename = exports_dir / f"export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filename = exports_dir / f"export_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.json"
     def _default(o: object) -> str:
         return str(o)
 
