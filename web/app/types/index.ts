@@ -88,6 +88,19 @@ export interface Issue {
   created_at: string | null
 }
 
+export interface ConsistencyIssue {
+  type: string
+  severity: string
+  scene_id: string | null
+  entity_id: string | null
+  description: string
+  suggestion: string
+}
+
+export interface ConsistencyCheckResponse {
+  issues: ConsistencyIssue[]
+}
+
 export interface ImportProgress {
   status: string
   total_scenes: number

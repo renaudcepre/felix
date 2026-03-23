@@ -1,4 +1,4 @@
-import type { CharacterCreate, CharacterDetail, CharacterProfileUpdate, CharacterSummary, Relation, RelationUpsert } from '~/types'
+import type { CharacterCreate, CharacterDetail, CharacterProfileUpdate, CharacterSummary, ConsistencyCheckResponse, ConsistencyIssue, Relation, RelationUpsert } from '~/types'
 
 export function useCharacters() {
   const { data: characters, status, refresh } = useFetch<CharacterSummary[]>('/api/characters')
@@ -31,5 +31,13 @@ export function useCharacter(id: string) {
     await refresh()
   }
 
-  return { character, status, refresh, updateCharacter, upsertRelation, deleteRelation }
+  async function checkConsistency(fields: CharacterProfileUpdate): Promise<ConsistencyIssue[]> {
+    const resp = await $fetch<ConsistencyCheckResponse>(
+      `/api/characters/${id}/check-consistency`,
+      { method: 'POST', body: fields },
+    )
+    return resp.issues
+  }
+
+  return { character, status, refresh, updateCharacter, upsertRelation, deleteRelation, checkConsistency }
 }

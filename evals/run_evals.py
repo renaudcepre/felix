@@ -43,6 +43,9 @@ from evals.pipeline.evaluators import (
     BackgroundContainsKeywords,
     CharacterAbsent,
     CharacterIdsPresent,
+    EntityCheckHasIssueType,
+    EntityCheckNoIssueAboutEntity,
+    EntityCheckNoIssues,
     ExactFragmentCount,
     ExactIssueCountByType,
     GroupAbsent,
@@ -351,6 +354,139 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
             metadata={"category": "amnesia", "difficulty": "hard"},
             evaluators=[BackgroundContainsKeywords(min_match=2)],
         ),
+        # --- appearances (exact) ---
+        Case(
+            name="kofi_exact_appearances",
+            inputs="fragments:kofi-adu",
+            expected_output="2",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[ExactFragmentCount()],
+        ),
+        Case(
+            name="hana_exact_appearances",
+            inputs="fragments:hana-nakamura",
+            expected_output="1",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[ExactFragmentCount()],
+        ),
+        Case(
+            name="lena_nak_appearances",
+            inputs="fragments:lena-nakamura",
+            expected_output="2",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[ExactFragmentCount()],
+        ),
+        # --- profiling (secondaires) ---
+        Case(
+            name="hana_profile_background",
+            inputs="profile:hana-nakamura",
+            expected_output="technicien,helios,soeur,famille",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="lena_nak_profile_background",
+            inputs="profile:lena-nakamura",
+            expected_output="helios,transfert,soeur,station",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="chen_escalation_nairobi",
+            inputs="profile:chen-wei",
+            expected_output="nairobi,escalade,centre,controle",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- relations (non testées) ---
+        Case(
+            name="hana_kenji_relation",
+            inputs="relations:hana-nakamura",
+            expected_output="kenji-nakamura",
+            metadata={"category": "relations", "tags": ["relations"]},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        Case(
+            name="irina_yuna_relation",
+            inputs="relations:irina-voss",
+            expected_output="yuna-park",
+            metadata={"category": "relations", "tags": ["relations"]},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        # --- dates (scènes non testées) ---
+        Case(
+            name="scene01_date_mars_2157",
+            inputs="scene_date:scene-01_signal",
+            expected_output="2157,mars",
+            metadata={"category": "dates", "tags": ["dates"]},
+            evaluators=[SceneDateContainsKeywords(min_match=2)],
+        ),
+        Case(
+            name="scene02_date_mars_2157",
+            inputs="scene_date:scene-02_rapport",
+            expected_output="2157,mars",
+            metadata={"category": "dates", "tags": ["dates"]},
+            evaluators=[SceneDateContainsKeywords(min_match=2)],
+        ),
+        Case(
+            name="scene04_date_2157",
+            inputs="scene_date:scene-04_famille",
+            expected_output="2157",
+            metadata={"category": "dates", "tags": ["dates"]},
+            evaluators=[SceneDateContainsKeywords()],
+        ),
+        Case(
+            name="scene07_date_avril",
+            inputs="scene_date:scene-07_reldate",
+            expected_output="avril",
+            metadata={"category": "dates", "tags": ["dates"]},
+            evaluators=[SceneDateContainsKeywords()],
+        ),
+        # --- issues ---
+        Case(
+            name="no_bilocalization_helios",
+            inputs="all_issues",
+            expected_output="0",
+            metadata={"category": "issues", "tags": ["issues"]},
+            evaluators=[ExactIssueCountByType(issue_type="bilocalization")],
+        ),
+        Case(
+            name="scene3_leak_classified",
+            inputs="issues:scene-03_intrusion",
+            expected_output="classif,confidentiel,secret,fuite",
+            metadata={"category": "issues", "tags": ["issues"]},
+            evaluators=[IssueDescriptionContains()],
+        ),
+        # --- attribution ---
+        Case(
+            name="kofi_no_kepler_in_profile",
+            inputs="profile:kofi-adu",
+            expected_output="kepler",
+            metadata={"category": "attribution", "tags": ["attribution", "profiling"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- no-pipe (personnages non couverts) ---
+        Case(
+            name="kofi_traits_no_pipe",
+            inputs="traits:kofi-adu",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="chen_traits_no_pipe",
+            inputs="traits:chen-wei",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="hana_arc_no_pipe",
+            inputs="arc:hana-nakamura",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
     ],
 )
 
@@ -446,6 +582,118 @@ CONVOI_DATASET: Dataset[str, Any] = Dataset(
             metadata={"category": "relations"},
             evaluators=[RelationWithCharPresent()],
         ),
+        # --- entity check ---
+        Case(
+            name="convoi_ec_lena_arc_contradiction",
+            inputs='entity_check:lena-voss:{"arc": "Lena refuse de transmettre le signal et garde le secret pour elle"}',
+            expected_output="profile_contradiction",
+            metadata={"category": "entity_check", "difficulty": "medium"},
+            evaluators=[EntityCheckHasIssueType()],
+        ),
+        Case(
+            name="convoi_ec_lena_plausible_extension",
+            inputs='entity_check:lena-voss:{"background": "Ingenieure des transmissions sur le poste de relais orbital Helios-3"}',
+            expected_output="",
+            metadata={"category": "entity_check", "difficulty": "medium"},
+            evaluators=[EntityCheckNoIssues()],
+        ),
+        Case(
+            name="convoi_ec_no_location_as_character",
+            inputs='entity_check:lena-voss:{"background": "Ingenieure en transit vers Neo-Santiago apres sa rotation sur Helios-3"}',
+            expected_output="neo-santiago",
+            metadata={"category": "entity_check", "difficulty": "hard"},
+            evaluators=[EntityCheckNoIssueAboutEntity()],
+        ),
+        # --- profiling ---
+        Case(
+            name="convoi_marco_profile",
+            inputs="profile:marco-ruiz",
+            expected_output="routier,camion,fusil,minerai,transport,impulsion",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=2)],
+        ),
+        Case(
+            name="convoi_lena_profile",
+            inputs="profile:lena-voss",
+            expected_output="ingenieur,transmission,signal,orbital,relais",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=2)],
+        ),
+        Case(
+            name="convoi_pixel_profile",
+            inputs="profile:pixel",
+            expected_output="drone,classe,spectral,analyse,ia",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- dates ---
+        Case(
+            name="convoi_scene2_date",
+            inputs="scene_date:scene-test-002-le-convoi",
+            expected_output="2061",
+            metadata={"category": "dates", "tags": ["dates"]},
+            evaluators=[SceneDateContainsKeywords()],
+        ),
+        Case(
+            name="convoi_scene3_date",
+            inputs="scene_date:scene-test-003-la-frequence",
+            expected_output="2061",
+            metadata={"category": "dates", "tags": ["dates"]},
+            evaluators=[SceneDateContainsKeywords()],
+        ),
+        # --- relations ---
+        Case(
+            name="convoi_pixel_lena_relation",
+            inputs="relations:pixel",
+            expected_output="lena-voss",
+            metadata={"category": "relations", "tags": ["relations"]},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        # --- attribution ---
+        Case(
+            name="convoi_lena_no_weapon",
+            inputs="profile:lena-voss",
+            expected_output="fusil,impulsion,arme",
+            metadata={"category": "attribution", "tags": ["attribution"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="convoi_marco_no_signal",
+            inputs="profile:marco-ruiz",
+            expected_output="spectral,frequence,transmission",
+            metadata={"category": "attribution", "tags": ["attribution"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- appearances ---
+        Case(
+            name="convoi_pixel_appearances",
+            inputs="fragments:pixel",
+            expected_output="2",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[MinFragmentCount()],
+        ),
+        # --- no-pipe ---
+        Case(
+            name="convoi_marco_traits_no_pipe",
+            inputs="traits:marco-ruiz",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="convoi_lena_arc_no_pipe",
+            inputs="arc:lena-voss",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="convoi_pixel_traits_no_pipe",
+            inputs="traits:pixel",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
     ],
 )
 
@@ -511,6 +759,82 @@ SEGMENTATION_DATASET: Dataset[str, Any] = Dataset(
             expected_output="aurore",
             metadata={"category": "extraction"},
             evaluators=[LocationContainsKeyword()],
+        ),
+        # --- profiling ---
+        Case(
+            name="seg_finn_callisto_profile",
+            inputs="profile:finn-osei",
+            expected_output="callisto,navigation,securite",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="seg_daria_luna_profile",
+            inputs="profile:daria-kovacs",
+            expected_output="luna,tunnel,agricole,operatrice",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="seg_luno_profile",
+            inputs="profile:luno",
+            expected_output="ia,systeme,station,controle",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- appearances ---
+        Case(
+            name="seg_finn_fragments",
+            inputs="fragments:finn-osei",
+            expected_output="1",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[MinFragmentCount()],
+        ),
+        Case(
+            name="seg_luno_fragments",
+            inputs="fragments:luno",
+            expected_output="1",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[MinFragmentCount()],
+        ),
+        # --- relations ---
+        Case(
+            name="seg_daria_finn_relation",
+            inputs="relations:daria-kovacs",
+            expected_output="finn-osei",
+            metadata={"category": "relations", "tags": ["relations"]},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        # --- attribution ---
+        Case(
+            name="seg_daria_no_callisto",
+            inputs="profile:daria-kovacs",
+            expected_output="callisto",
+            metadata={"category": "attribution", "tags": ["attribution"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- traits ---
+        Case(
+            name="seg_finn_taciturn",
+            inputs="profile:finn-osei",
+            expected_output="silencieu,taciturne,calme,peu,reserve",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- no-pipe ---
+        Case(
+            name="seg_finn_traits_no_pipe",
+            inputs="traits:finn-osei",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="seg_daria_arc_no_pipe",
+            inputs="arc:daria-kovacs",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
         ),
     ],
 )
@@ -1018,6 +1342,97 @@ PROFILER_ATTRIBUTION_DATASET: Dataset[str, Any] = Dataset(
             metadata={"category": "profiling", "difficulty": "medium"},
             evaluators=[ProfileNotContainsKeyword()],
         ),
+        # --- appearances ---
+        Case(
+            name="attr_mira_appearances",
+            inputs="fragments:mira",
+            expected_output="2",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[MinFragmentCount()],
+        ),
+        # --- profiling ---
+        Case(
+            name="attr_gandalf_profile",
+            inputs="profile:gandalf",
+            expected_output="magicien,baton,nazgul,staff,lumiere",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="attr_mira_profile",
+            inputs="profile:mira",
+            expected_output="archer,arc,vorn,fleche",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="attr_aldric_profile",
+            inputs="profile:aldric",
+            expected_output="guerrier,garde,miren,epee",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- attribution negative (cross-character) ---
+        Case(
+            name="attr_mira_not_stabbed",
+            inputs="profile:mira",
+            expected_output="morgul,poignard,bless,lame",
+            metadata={"category": "attribution", "tags": ["attribution"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="attr_gandalf_not_guard",
+            inputs="profile:gandalf",
+            expected_output="garde,miren,epee,sword",
+            metadata={"category": "attribution", "tags": ["attribution"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="attr_aldric_not_archer",
+            inputs="profile:aldric",
+            expected_output="arc,archer,fleche,arrow",
+            metadata={"category": "attribution", "tags": ["attribution"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- relations ---
+        Case(
+            name="attr_gandalf_aldric_relation",
+            inputs="relations:gandalf",
+            expected_output="aldric",
+            metadata={"category": "relations", "tags": ["relations"]},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        Case(
+            name="attr_mira_aldric_relation",
+            inputs="relations:mira",
+            expected_output="aldric",
+            metadata={"category": "relations", "tags": ["relations"]},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        # --- locations ---
+        Case(
+            name="attr_location_miren",
+            inputs="locations",
+            expected_output="miren",
+            metadata={"category": "extraction", "tags": ["extraction", "spatial"]},
+            evaluators=[LocationContainsKeyword()],
+        ),
+        # --- dates ---
+        Case(
+            name="attr_scene_date_3001",
+            inputs="scene_date:scene-01_le_conseil",
+            expected_output="3001",
+            metadata={"category": "dates", "tags": ["dates"]},
+            evaluators=[SceneDateContainsKeywords()],
+        ),
+        # --- issues ---
+        Case(
+            name="attr_no_errors",
+            inputs="all_issues",
+            expected_output="0",
+            metadata={"category": "issues", "tags": ["issues"]},
+            evaluators=[MaxIssueSeverityCount(severity="error")],
+        ),
     ],
 )
 
@@ -1102,6 +1517,103 @@ PROFILER_RELATIONS_DATASET: Dataset[str, Any] = Dataset(
             metadata={"category": "relations"},
             evaluators=[RelationWithCharPresent()],
         ),
+        # --- profiling ---
+        Case(
+            name="rel_borin_profile",
+            inputs="profile:borin",
+            expected_output="forgeron,forge,cheveux,gris,calleu,montagne",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=2)],
+        ),
+        Case(
+            name="rel_elara_profile",
+            inputs="profile:elara",
+            expected_output="espion,ombre,lame,silence,discret",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="rel_darya_profile",
+            inputs="profile:darya",
+            expected_output="herboriste,yeux,vert,cicatrice,menton,itinerant",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=2)],
+        ),
+        # --- appearances ---
+        Case(
+            name="rel_borin_three_scenes",
+            inputs="fragments:borin",
+            expected_output="3",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[MinFragmentCount()],
+        ),
+        Case(
+            name="rel_elara_three_scenes",
+            inputs="fragments:elara",
+            expected_output="3",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[MinFragmentCount()],
+        ),
+        Case(
+            name="rel_darya_two_scenes",
+            inputs="fragments:darya",
+            expected_output="2",
+            metadata={"category": "appearances", "tags": ["appearances"]},
+            evaluators=[MinFragmentCount()],
+        ),
+        # --- relations ---
+        Case(
+            name="rel_borin_darya_relation",
+            inputs="relations:borin",
+            expected_output="darya",
+            metadata={"category": "relations", "tags": ["relations"]},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        # --- attribution negative ---
+        Case(
+            name="rel_darya_no_forge",
+            inputs="profile:darya",
+            expected_output="forge,hache,enclume,forgeron",
+            metadata={"category": "attribution", "tags": ["attribution"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="rel_elara_no_scar",
+            inputs="profile:elara",
+            expected_output="cicatrice,menton,herboriste",
+            metadata={"category": "attribution", "tags": ["attribution"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        # --- locations ---
+        Case(
+            name="rel_location_thornwall",
+            inputs="locations",
+            expected_output="thornwall",
+            metadata={"category": "extraction", "tags": ["extraction", "spatial"]},
+            evaluators=[LocationContainsKeyword()],
+        ),
+        # --- no-pipe ---
+        Case(
+            name="rel_borin_traits_no_pipe",
+            inputs="traits:borin",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="rel_elara_arc_no_pipe",
+            inputs="arc:elara",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
+        Case(
+            name="rel_darya_traits_no_pipe",
+            inputs="traits:darya",
+            expected_output="|",
+            metadata={"category": "no-pipe", "tags": ["no-pipe"]},
+            evaluators=[ProfileNotContainsKeyword()],
+        ),
     ],
 )
 
@@ -1154,8 +1666,65 @@ GROUPS_DATASET: Dataset[str, Any] = Dataset(
             metadata={"category": "groups", "difficulty": "easy"},
             evaluators=[CharacterIdsPresent()],
         ),
+        # --- profiling ---
+        Case(
+            name="groups_lena_profile",
+            inputs="profile:lena-voss",
+            expected_output="controle,ecran,securite,supervise",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        Case(
+            name="groups_pixel_profile",
+            inputs="profile:pixel",
+            expected_output="ia,drone,classe,anomalie,energie",
+            metadata={"category": "profiling", "tags": ["profiling"]},
+            evaluators=[BackgroundContainsKeywords(min_match=1)],
+        ),
+        # --- relations ---
+        Case(
+            name="groups_pixel_lena_relation",
+            inputs="relations:pixel",
+            expected_output="lena-voss",
+            metadata={"category": "relations", "tags": ["relations"]},
+            evaluators=[RelationWithCharPresent()],
+        ),
+        # --- locations ---
+        Case(
+            name="groups_location_helios",
+            inputs="locations",
+            expected_output="helios",
+            metadata={"category": "extraction", "tags": ["extraction", "spatial"]},
+            evaluators=[LocationContainsKeyword()],
+        ),
+        # --- negative ---
+        Case(
+            name="groups_gardes_not_character",
+            inputs="characters",
+            expected_output="gardes",
+            metadata={"category": "negative", "tags": ["negative", "extraction"]},
+            evaluators=[CharacterAbsent()],
+        ),
     ],
 )
+
+_TAG_GROUPS: dict[str, list[str]] = {
+    "dates": ["timeline", "relative_date", "dates"],
+    "profiling": ["profiling", "character_arc", "amnesia"],
+    "issues": ["issues", "consistency"],
+}
+"""Virtual tags that match multiple categories."""
+
+
+def _case_has_tag(case: Any, tag: str) -> bool:
+    """Check if a case matches a tag (via explicit tags list or category)."""
+    meta = case.metadata or {}
+    cat = meta.get("category", "")
+    categories = _TAG_GROUPS.get(tag, [tag])
+    if cat in categories:
+        return True
+    return tag in meta.get("tags", [])
+
 
 SUITES: dict[str, tuple[Dataset, Any, str]] = {
     "pipeline":                    (PIPELINE_DATASET,              make_pipeline_task("helios"),                "Pipeline Eval (Helios)"),
@@ -1187,6 +1756,8 @@ def main(
     case: Annotated[str | None, typer.Option("--case", help="Run only this case (requires --suite)")] = None,
     history: Annotated[bool, typer.Option("--history", help="Show past run results and exit")] = False,
     diff: Annotated[bool, typer.Option("--diff", help="Compare the last two runs for the suite")] = False,
+    tag: Annotated[str | None, typer.Option("--tag", help="Filter cases by tag across suites (e.g. dates, profiling, attribution, no-pipe)")] = None,
+    list_tags: Annotated[bool, typer.Option("--list-tags", help="List all available tags and exit")] = False,
 ) -> None:
     """[bold cyan]Felix[/bold cyan] — eval runner."""
     # Registered first → runs last (LIFO): all other atexit handlers execute
@@ -1207,6 +1778,23 @@ def main(
         _show_history(suite, diff=diff)
         raise typer.Exit()
 
+    if list_tags:
+        all_tags: set[str] = set()
+        target = {suite: SUITES[suite]} if suite and suite in SUITES else SUITES
+        for _, (ds, _, _) in target.items():
+            for c in ds.cases:
+                meta = c.metadata or {}
+                if meta.get("category"):
+                    all_tags.add(meta["category"])
+                all_tags.update(meta.get("tags", []))
+        # Add virtual tag groups
+        for vt in _TAG_GROUPS:
+            if any(cat in all_tags for cat in _TAG_GROUPS[vt]):
+                all_tags.add(vt)
+        for t in sorted(all_tags):
+            console.print(f"  [cyan]{t}[/cyan]")
+        raise typer.Exit()
+
     if suite and suite not in SUITES:
         console.print(f"[red]Unknown suite '{suite}'.[/red] Available: {', '.join(SUITES)}")
         raise typer.Exit(1)
@@ -1215,13 +1803,19 @@ def main(
 
     if list_cases:
         for suite_name, (ds, _, title) in suites_to_run.items():
+            cases = [c for c in ds.cases if _case_has_tag(c, tag)] if tag else ds.cases
+            if not cases:
+                continue
             table = Table(title=title, show_header=True, header_style="bold magenta")
             table.add_column("Name", style="cyan")
             table.add_column("Category", style="yellow")
+            table.add_column("Tags", style="green")
             table.add_column("Input", style="dim")
-            for c in ds.cases:
-                cat = (c.metadata or {}).get("category", "")
-                table.add_row(c.name, str(cat), str(c.inputs)[:60])
+            for c in cases:
+                meta = c.metadata or {}
+                cat = meta.get("category", "")
+                tags_str = ", ".join(meta.get("tags", []))
+                table.add_row(c.name, str(cat), tags_str, str(c.inputs)[:60])
             console.print(table)
         raise typer.Exit()
 
@@ -1249,7 +1843,14 @@ def main(
                 if not cases:
                     console.print(f"[red]Case '{case}' not found.[/red] Use [cyan]--list[/cyan] to see available cases.")
                     raise typer.Exit(1)
-                active_ds = ds.__class__(cases=cases)
+                active_ds = ds.__class__(cases=cases, evaluators=ds.evaluators)
+            elif tag:
+                tagged = [c for c in ds.cases if _case_has_tag(c, tag)]
+                if not tagged:
+                    if len(suites_to_run) > 1:
+                        console.print(f"  [dim]No cases with tag '{tag}' in {suite_name}, skipping.[/dim]")
+                    continue
+                active_ds = ds.__class__(cases=tagged, evaluators=ds.evaluators)
             else:
                 active_ds = ds
 

@@ -79,25 +79,25 @@ SCENE CONTEXT (separate from physical description):
 - If the character is only "mentioned" with no scene actions, use their mention context.
 
 Examples:
-  Character "Voss" in a cockpit scene → context: "Pilots the ship through the asteroid field, argues with Elena about the route"
-  Character "Marcus" mentioned in dialogue → context: "Mentioned by Lena as the doctor who treated her wounds on Titan"
-  Character "Elena" witnessing a fight → context: "Watches the confrontation between Voss and the guards from the corridor"
-  Character "Old Tom" mentioned in passing → context: "Mentioned by Sarah as her late grandfather who built the cabin"
+  Character "Haruki" in a cockpit scene → context: "Pilots the ship through the asteroid field, argues with Nadia about the route"
+  Character "Oleg" mentioned in dialogue → context: "Mentioned by Priya as the doctor who treated her wounds on Titan"
+  Character "Nadia" witnessing a fight → context: "Watches the confrontation between Haruki and the guards from the corridor"
+  Character "Old Tom" mentioned in passing → context: "Mentioned by Camille as her late grandfather who built the cabin"
 
 CHARACTER TYPE:
 - "individual": any entity with a unique proper name, OR an unnamed entity acting alone
   ("the guard", "the creature", "the android"). Default.
 - "group": a collective that refers to multiple entities simultaneously:
   factions, armies, species, organizations, unnamed collectives
-  ("the orcs", "the Nazgûl", "the Fellowship", "the drones", "the guards").
+  ("the orcs", "the raiders", "the rebels", "the drones", "the guards").
   Use "group" when the name is inherently plural or refers to a collective force.
 
 Examples:
-  "Pixel" (named drone) → individual
+  "Spark" (named drone) → individual
   "the drones" → group
-  "the Fellowship of the Ring" → group
-  "a Black Rider" → individual  (one Nazgûl acting alone)
-  "the Nazgûl" → group
+  "the Merchant Guild" → group
+  "a lone raider" → individual  (one person acting alone)
+  "the raiders" → group
 
 RULES:
 - Invent NOTHING. Extract only what is in the text.

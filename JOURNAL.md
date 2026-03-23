@@ -1,5 +1,54 @@
 # Journal de developpement — Felix
 
+## Expansion massive des evals + système de tags — 2026-03-23
+
+**+70 nouveaux cas de test** répartis sur les 6 suites pipeline (129 → 199 total). L'objectif : maximiser le ROI de chaque import de scénario (opération coûteuse) en testant beaucoup plus de choses une fois l'import fait.
+
+**Système de tags** ajouté au CLI :
+- `--tag <tag>` filtre les cases par thème cross-suites (ex: `--tag dates` lance tous les tests de dates sur toutes les suites)
+- `--list-tags` liste tous les tags disponibles
+- `--list --tag <tag>` preview des cases filtrées avant exécution
+- Matching hybride : category du case OU tags explicites, avec tag groups virtuels (`dates` matche `timeline` + `relative_date`)
+- Combinable avec `--suite` : `--suite pipeline --tag profiling`
+
+**Nouveaux cas par suite :**
+- Helios : +18 (appearances exactes Nakamura, profils secondaires, dates scènes 1/2/4/7, no-bilocalization, attribution Kofi/Kepler, no-pipe)
+- Convoi : +12 (profils Marco/Lena/Pixel, dates scènes 2/3, relation Pixel-Lena, attribution croisée arme/signal, no-pipe)
+- Segmentation : +10 (profils Finn/Daria/Luno, traits Finn taciturne, relation Daria-Finn, attribution Callisto → Finn pas Daria, no-pipe)
+- Attribution : +12 (profils Gandalf/Mira/Aldric, attribution croisée 3-way, relations, location Miren, date 3001, no errors)
+- Relations : +13 (profils Borin/Elara/Darya, appearances 3 scènes, relation Borin-Darya, attribution forge/cicatrice, location Thornwall, no-pipe)
+- Groups : +5 (profils Lena/Pixel, relation Pixel-Lena, location Helios, gardes pas personnage)
+
+**Tags principaux :** `profiling`, `attribution`, `dates`, `appearances`, `relations`, `no-pipe`, `extraction`, `issues`, `spatial`, `negative`
+
+Plan détaillé : `plans/evals-expansion.md`
+
+## Consistency check avant save (personnages) — 2026-03-23
+
+Bouton "Vérifier" dans le frontend : l'auteur peut checker ses modifications de profil personnage contre les scènes avant d'enregistrer.
+
+**Backend** (`src/felix/ingest/entity_checker.py` — nouveau) :
+- Approche hybride code + LLM : `_find_evidence()` fait un pré-matching textuel (n-grammes 3-5 mots) du proposed change contre le `raw_text` des scènes Neo4j. Si tous les champs matchent, retourne `issues=[]` sans appeler le LLM. Seuls les champs sans evidence textuelle sont envoyés au LLM pour analyse sémantique (contradiction / missing_evidence).
+- Le raw_text des scènes (texte brut du scénario) est récupéré depuis les noeuds Scene pour servir de source de vérité.
+
+**API** (`src/felix/api/routes/characters.py`) : `POST /{char_id}/check-consistency` — prend un `CharacterProfileUpdate`, retourne un `ConsistencyReport`. 404 si personnage inexistant, issues=[] si body vide.
+
+**Frontend** :
+- `web/app/types/index.ts` : `ConsistencyIssue`, `ConsistencyCheckResponse`
+- `web/app/composables/useCharacters.ts` : `checkConsistency()`
+- `web/app/pages/characters/[id].vue` : bouton "Vérifier" (jaune, `i-lucide-shield-check`) avant "Enregistrer", affichage des issues en `UAlert` (error/warning), message succès si 0 issues, reset au cancel/save.
+
+**Tests** : 4 tests unitaires dans `test_character_crud.py` (404, empty body, mock agent calls, returns issues).
+
+**Evals** : 3 cases ajoutées dans `CONVOI_DATASET` (pas de suite séparée — evals organisées par scénario importé) :
+- `convoi_ec_lena_arc_contradiction` — contradiction d'arc détectée (LLM)
+- `convoi_ec_lena_plausible_extension` — extension cohérente, 0 issues (text matching)
+- `convoi_ec_no_location_as_character` — lieu pas traité comme personnage (text matching)
+
+Score convoi : 14/15 (le fail `convoi_bilocalization_exact_count` est pré-existant).
+
+**Pipeline eval infra** : query key `entity_check:<char_id>:<json>` ajouté dans `evals/pipeline/task.py`. Evaluators `EntityCheckHasIssueType`, `EntityCheckNoIssueAboutEntity`, `EntityCheckNoIssues` dans `evals/pipeline/evaluators.py`.
+
 ## Enrichir history.jsonl avec métadonnées git et timing — 2026-03-22
 
 `history.jsonl` ne contenait que `ts`, `suite`, `model`, `passed`, `total`, `cases`. Ajout de métadonnées pour la traçabilité.

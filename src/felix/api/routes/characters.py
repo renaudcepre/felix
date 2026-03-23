@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from felix.api.deps import Neo4jDriver
+from felix.api.deps import BaseUrl, ModelName, Neo4jDriver
 from felix.api.models import (
     CharacterCreate,
     CharacterDetail,
@@ -11,6 +11,8 @@ from felix.api.models import (
     Relation,
     RelationUpsert,
 )
+from felix.ingest.entity_checker import check_character_consistency
+from felix.ingest.models import ConsistencyReport
 from felix.graph.repository import (
     delete_character_relation,
     get_character_profile,
@@ -97,6 +99,27 @@ async def delete_relation_endpoint(
     deleted = await delete_character_relation(driver, char_id_a, char_id_b, relation_type)
     if not deleted:
         raise HTTPException(status_code=404, detail="Relation not found")
+
+
+@router.post("/{char_id}/check-consistency")
+async def check_consistency(
+    char_id: str,
+    body: CharacterProfileUpdate,
+    driver: Neo4jDriver,
+    model_name: ModelName,
+    base_url: BaseUrl,
+) -> ConsistencyReport:
+    profile = await get_character_profile(driver, char_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Character not found")
+
+    fields = {k: v for k, v in body.model_dump().items() if k in body.model_fields_set}
+    if not fields:
+        return ConsistencyReport(issues=[])
+
+    return await check_character_consistency(
+        driver, char_id, fields, model_name, base_url
+    )
 
 
 async def _build_character_detail(driver: Neo4jDriver, char_id: str) -> CharacterDetail:

@@ -11,13 +11,16 @@ if TYPE_CHECKING:
 
     from neo4j import AsyncDriver
 
-from felix.api.deps import get_driver
+from unittest.mock import AsyncMock, patch
+
+from felix.api.deps import get_base_url, get_driver, get_model_name
 from felix.api.routes.characters import router
 from felix.graph.repository import (
     delete_character_relation,
     overwrite_character_profile_fields,
     upsert_character_relation,
 )
+from felix.ingest.models import ConsistencyIssue, ConsistencyReport
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +149,8 @@ async def client(seeded_driver: AsyncDriver) -> AsyncGenerator[AsyncClient]:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_driver] = lambda: seeded_driver
+    app.dependency_overrides[get_model_name] = lambda: "test-model"
+    app.dependency_overrides[get_base_url] = lambda: None
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
@@ -279,3 +284,67 @@ async def test_delete_relation_requires_type(seeded_driver: AsyncDriver, client:
     await _insert_character(seeded_driver, "bob")
     resp = await client.delete("/api/characters/alice/relations/bob")
     assert resp.status_code == 422
+
+
+# --- POST /api/characters/{char_id}/check-consistency ---
+
+
+async def test_check_consistency_404(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/api/characters/inconnu/check-consistency", json={"age": "20"}
+    )
+    assert resp.status_code == 404
+
+
+async def test_check_consistency_empty_body(
+    seeded_driver: AsyncDriver, client: AsyncClient
+) -> None:
+    await _insert_character(seeded_driver, "clara", age="30 ans")
+    resp = await client.post("/api/characters/clara/check-consistency", json={})
+    assert resp.status_code == 200
+    assert resp.json()["issues"] == []
+
+
+@patch("felix.api.routes.characters.check_character_consistency")
+async def test_check_consistency_calls_agent(
+    mock_check: AsyncMock, seeded_driver: AsyncDriver, client: AsyncClient
+) -> None:
+    await _insert_character(seeded_driver, "clara", age="30 ans")
+    mock_check.return_value = ConsistencyReport(issues=[])
+
+    resp = await client.post(
+        "/api/characters/clara/check-consistency", json={"age": "25 ans"}
+    )
+    assert resp.status_code == 200
+
+    mock_check.assert_called_once()
+    call_kwargs = mock_check.call_args
+    assert call_kwargs[1].get("char_id") or call_kwargs[0][1] == "clara"
+
+
+@patch("felix.api.routes.characters.check_character_consistency")
+async def test_check_consistency_returns_issues(
+    mock_check: AsyncMock, seeded_driver: AsyncDriver, client: AsyncClient
+) -> None:
+    await _insert_character(seeded_driver, "clara", age="30 ans")
+    mock_check.return_value = ConsistencyReport(
+        issues=[
+            ConsistencyIssue(
+                type="profile_contradiction",
+                severity="error",
+                scene_id="scene-1",
+                entity_id="clara",
+                description="Age contradicts scene evidence",
+                suggestion="Keep age as 30 ans",
+            )
+        ]
+    )
+
+    resp = await client.post(
+        "/api/characters/clara/check-consistency", json={"age": "15 ans"}
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["issues"]) == 1
+    assert data["issues"][0]["type"] == "profile_contradiction"
+    assert data["issues"][0]["severity"] == "error"

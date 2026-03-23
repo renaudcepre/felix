@@ -7,6 +7,7 @@ which returns a coroutine builder capturing the initialized driver.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import tempfile
@@ -20,6 +21,7 @@ from rich.console import Console
 
 from felix.graph.driver import close_driver, get_driver, setup_constraints
 from felix.graph import repository
+from felix.ingest.entity_checker import check_character_consistency
 from felix.ingest.pipeline import ImportProgress, run_import_pipeline
 
 _console = Console()
@@ -138,6 +140,7 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
       - "traits:<char_id>"            → raw traits field for that character
       - "arc:<char_id>"               → raw arc field for that character
       - "age:<char_id>"               → raw age field for that character
+      - "entity_check:<char_id>:<json>" → run entity consistency check, return issues
     """
     if query == "characters":
         rows = await repository.list_all_characters(driver)
@@ -249,6 +252,22 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
         stem = query[len("next_chunk_links:"):]
         count = await repository.count_next_chunk_links_for_stem(driver, stem)
         return PipelineQueryResult(fragment_count=count)
+
+    if query.startswith("entity_check:"):
+        rest = query[len("entity_check:"):]
+        char_id, json_str = rest.split(":", 1)
+        proposed = json.loads(json_str)
+        model_name = os.environ.get("FLX_EVAL_MODEL")
+        base_url = os.environ.get("FLX_EVAL_BASE_URL", "")
+        report = await check_character_consistency(
+            driver, char_id, proposed, model_name, base_url or None,
+        )
+        return PipelineQueryResult(
+            issues=[
+                {"type": i.type, "severity": i.severity, "description": i.description, "entity_id": i.entity_id}
+                for i in report.issues
+            ]
+        )
 
     return PipelineQueryResult()
 

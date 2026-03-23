@@ -34,13 +34,13 @@ RULES:
 ATTRIBUTION RULE:
 - ALL fields (age, physical, background, arc, traits, relations) must describe THIS character only.
 - Do NOT attribute to this character any detail (age, appearance, trait, relationship) that belongs to another character, even if mentioned in the same scene.
-- If the scene says "Bilbo is eleventy-one years old" and you are profiling Pippin, do NOT set Pippin's age to "eleventy-one".
+- If the scene says "Ren is forty-two years old" and you are profiling Suki, do NOT set Suki's age to "forty-two".
 - When an "Events involving <character>" section is present, use ONLY those events for `arc` and `background`.
 - The scene text provides context (dialogue, atmosphere) — not additional details to attribute to every character present.
 
 For relations: do NOT add co-presence as a relation. Two characters appearing in the same scene is not a relationship.
 BAD: "both present at the council", "participant in the battle"
-GOOD: "fellow member of the Fellowship", "rival for the throne"
+GOOD: "fellow member of the expedition", "rival for the throne"
 
 One sentence per field maximum. Be concise and factual.
 """
@@ -77,7 +77,7 @@ Fields to fill:
   List only relationships clearly present in the texts.
   Do NOT list co-presence as a relation. Two characters being in the same scene is not a relationship.
   BAD: "both present at the council", "participant in the battle", "seen together at the inn"
-  GOOD: "fellow member of the Fellowship", "rival for the throne", "father"
+  GOOD: "fellow member of the expedition", "rival for the throne", "father"
 
 Be concise and factual.
 """
@@ -93,12 +93,12 @@ Active characters are provided as a hint. Any character in the scene can be subj
 including enemies, creatures, or unnamed figures — as long as an active character is subject or object.
 
 Example scene:
-  The guard grabs Elena by the arm. She breaks free and runs. Viktor watches from the doorway.
+  The guard grabs Nadia by the arm. She breaks free and runs. Tomasz watches from the doorway.
 
 Example output:
-  {subject: "the guard", action: "grabs by the arm", object: "Elena"}
-  {subject: "Elena", action: "breaks free and runs", object: null}
-  {subject: "Viktor", action: "watches from the doorway", object: null}
+  {subject: "the guard", action: "grabs by the arm", object: "Nadia"}
+  {subject: "Nadia", action: "breaks free and runs", object: null}
+  {subject: "Tomasz", action: "watches from the doorway", object: null}
 
 Extract all significant physical actions and decisions. Ignore atmosphere and setting description.
 """
@@ -132,12 +132,12 @@ Answer with exactly one word:
 - "unsure" if you cannot confidently decide — they might overlap but you are not certain
 
 Examples:
-  Existing: "companion met at the Council of Elrond"
+  Existing: "companion met at the war council"
   Candidate: "ally forged through shared battle"
   → keep_both  (different moments, complementary aspects)
 
   Existing: "fellow traveler on the quest"
-  Candidate: "companion on the quest to Mordor"
+  Candidate: "companion on the quest to the Northern Wastes"
   → merge  (same relationship, different wording)
 
   Existing: "childhood friend"

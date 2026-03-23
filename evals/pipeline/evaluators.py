@@ -444,3 +444,56 @@ class AllLocationsContainKeyword(Evaluator[str, PipelineQueryResult]):
         if failing:
             result["locations_not_matching"] = ", ".join(failing)
         return result
+
+
+@dataclass
+class EntityCheckHasIssueType(Evaluator[str, PipelineQueryResult]):
+    """Check that at least one issue has the expected type (entity consistency check).
+
+    expected_output: issue type to look for.
+    Example: "profile_contradiction"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool]:
+        kw = (ctx.expected_output or "").strip()
+        found = any(kw in i.get("type", "") for i in ctx.output.issues)
+        return {"entity_check_type_found": found}
+
+
+@dataclass
+class EntityCheckNoIssueAboutEntity(Evaluator[str, PipelineQueryResult]):
+    """Check that NO issue references a given entity_id (location-as-character bug).
+
+    expected_output: entity_id substring that must NOT appear.
+    Example: "neo-santiago"
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | str]:
+        kw = normalize(ctx.expected_output or "")
+        offending = [
+            i for i in ctx.output.issues
+            if kw in normalize(i.get("entity_id") or "")
+            or kw in normalize(i.get("description") or "")
+        ]
+        result: dict[str, bool | str] = {"no_entity_match": not offending}
+        if offending:
+            result["offending_entity"] = offending[0].get("description", "")[:80]
+        return result
+
+
+@dataclass
+class EntityCheckNoIssues(Evaluator[str, PipelineQueryResult]):
+    """Check that no issues were returned (clean check).
+
+    expected_output: ignored.
+    """
+
+    def evaluate(
+        self, ctx: EvaluatorContext[str, PipelineQueryResult]
+    ) -> dict[str, bool | int]:
+        count = len(ctx.output.issues)
+        return {"no_issues": count == 0, "issue_count": count}

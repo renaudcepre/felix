@@ -25,7 +25,7 @@ KEEP everything else, especially:
 - Any line containing durations, dates, career facts, or biographical details:
   Example: "It's the first time in eighteen months that..." → KEEP
   Example: "In fifteen years of career she had never seen..." → KEEP
-  Example: "Hana adjusts a panel when her sister enters the room." → KEEP (introduces a relationship)
+  Example: "Priya adjusts a panel when her sister enters the room." → KEEP (introduces a relationship)
 - Actions that advance the plot or reveal character motivation
 - Any action involving conflict, decision, revelation, or relationship
 

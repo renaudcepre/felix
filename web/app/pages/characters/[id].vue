@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import type { CharacterProfileUpdate, RelationUpsert } from '~/types'
+import type { CharacterProfileUpdate, ConsistencyIssue, RelationUpsert } from '~/types'
 
 const route = useRoute()
 const id = route.params.id as string
-const { character, status, updateCharacter, upsertRelation, deleteRelation } = useCharacter(id)
+const { character, status, updateCharacter, upsertRelation, deleteRelation, checkConsistency } = useCharacter(id)
 const { characters: allCharacters } = useCharacters()
 
 // --- Edit mode state ---
 const editing = ref(false)
 const saving = ref(false)
 const editForm = ref<CharacterProfileUpdate>({})
+const checking = ref(false)
+const checkIssues = ref<ConsistencyIssue[]>([])
+const checkDone = ref(false)
 
 function startEditing() {
   if (!character.value) return
@@ -23,9 +26,15 @@ function startEditing() {
   editing.value = true
 }
 
+function resetCheck() {
+  checkIssues.value = []
+  checkDone.value = false
+}
+
 function cancelEditing() {
   editing.value = false
   editForm.value = {}
+  resetCheck()
 }
 
 async function saveProfile() {
@@ -46,9 +55,23 @@ async function saveProfile() {
   try {
     await updateCharacter(modified)
     editing.value = false
+    resetCheck()
   }
   finally {
     saving.value = false
+  }
+}
+
+async function runCheck() {
+  checking.value = true
+  checkDone.value = false
+  checkIssues.value = []
+  try {
+    checkIssues.value = await checkConsistency(editForm.value)
+    checkDone.value = true
+  }
+  finally {
+    checking.value = false
   }
 }
 
@@ -207,8 +230,30 @@ async function removeRelation(otherName: string, relationType: string) {
             <UFormField label="Traits">
               <UInput v-model="editForm.traits" placeholder="Traits de caractere" />
             </UFormField>
+            <!-- Consistency check results -->
+            <div v-if="checkDone && checkIssues.length === 0" class="rounded-lg bg-green-50 dark:bg-green-950 p-3 text-sm text-green-700 dark:text-green-300">
+              Aucune incohérence détectée.
+            </div>
+            <div v-if="checkIssues.length" class="space-y-2">
+              <UAlert
+                v-for="(issue, i) in checkIssues"
+                :key="i"
+                :color="issue.severity === 'error' ? 'error' : 'warning'"
+                :title="issue.description"
+                :description="issue.suggestion"
+              />
+            </div>
+
             <div class="flex gap-2 justify-end">
               <UButton variant="ghost" color="neutral" label="Annuler" @click="cancelEditing" />
+              <UButton
+                icon="i-lucide-shield-check"
+                variant="soft"
+                color="warning"
+                label="Vérifier"
+                :loading="checking"
+                @click="runCheck"
+              />
               <UButton color="primary" label="Enregistrer" :loading="saving" @click="saveProfile" />
             </div>
           </div>
