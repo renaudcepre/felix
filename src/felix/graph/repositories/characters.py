@@ -1,21 +1,30 @@
 """Neo4j repository — Character CRUD, fragments, aliases, relations."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from felix.graph.repositories._helpers import _nullify_empty
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
 
+    from felix.graph.repositories._types import (
+        CharacterFragmentExportRow,
+        CharacterFragmentRow,
+        CharacterProfileRow,
+        CharacterRelationRow,
+        CharacterSummaryRow,
+        RelationRow,
+    )
 
-async def list_all_characters(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+
+async def list_all_characters(driver: AsyncDriver) -> list[CharacterSummaryRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[CharacterSummaryRow]:
         result = await tx.run(
             "MATCH (c:Character) RETURN c.id AS id, c.name AS name, c.era AS era"
             " ORDER BY c.era, c.name"
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[CharacterSummaryRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
@@ -23,15 +32,15 @@ async def list_all_characters(driver: AsyncDriver) -> list[dict[str, Any]]:
 
 async def get_character_profile(
     driver: AsyncDriver, char_id: str
-) -> dict[str, Any] | None:
-    async def _read(tx: AsyncManagedTransaction) -> dict[str, Any] | None:
+) -> CharacterProfileRow | None:
+    async def _read(tx: AsyncManagedTransaction) -> CharacterProfileRow | None:
         result = await tx.run(
             "MATCH (c:Character {id: $id}) RETURN c", id=char_id
         )
         record = await result.single()
         if not record:
             return None
-        return dict(record["c"])
+        return cast("CharacterProfileRow", dict(record["c"]))
 
     async with driver.session() as session:
         return await session.execute_read(_read)
@@ -39,8 +48,8 @@ async def get_character_profile(
 
 async def get_character_relations(
     driver: AsyncDriver, char_id: str
-) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+) -> list[RelationRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[RelationRow]:
         result = await tx.run(
             """
             MATCH (c:Character {id: $id})-[r:RELATED_TO]-(other:Character)
@@ -51,18 +60,18 @@ async def get_character_relations(
             """,
             id=char_id,
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[RelationRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
 
 
-async def list_all_characters_full(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_characters_full(driver: AsyncDriver) -> list[CharacterProfileRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[CharacterProfileRow]:
         result = await tx.run(
             "MATCH (c:Character) RETURN c ORDER BY c.era, c.name"
         )
-        return [dict(r["c"]) for r in await result.data()]
+        return cast("list[CharacterProfileRow]", [dict(r["c"]) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
@@ -252,8 +261,8 @@ async def upsert_character_relation(  # noqa: PLR0913
         await session.execute_write(_write)
 
 
-async def list_all_character_relations(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_character_relations(driver: AsyncDriver) -> list[CharacterRelationRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[CharacterRelationRow]:
         result = await tx.run(
             """
             MATCH (a:Character)-[r:RELATED_TO]->(b:Character)
@@ -262,7 +271,7 @@ async def list_all_character_relations(driver: AsyncDriver) -> list[dict[str, An
                    r.description AS description, r.era AS era
             """
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[CharacterRelationRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
@@ -296,8 +305,8 @@ async def upsert_character_fragment(  # noqa: PLR0913
 
 async def get_character_fragments(
     driver: AsyncDriver, character_id: str
-) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+) -> list[CharacterFragmentRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[CharacterFragmentRow]:
         result = await tx.run(
             """
             MATCH (c:Character {id: $cid})-[r:PRESENT_IN]->(s:Scene)
@@ -307,14 +316,14 @@ async def get_character_fragments(
             """,
             cid=character_id,
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[CharacterFragmentRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
 
 
-async def list_all_character_fragments(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_character_fragments(driver: AsyncDriver) -> list[CharacterFragmentExportRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[CharacterFragmentExportRow]:
         result = await tx.run(
             """
             MATCH (c:Character)-[r:PRESENT_IN]->(s:Scene)
@@ -323,7 +332,7 @@ async def list_all_character_fragments(driver: AsyncDriver) -> list[dict[str, An
                    r.context AS context
             """
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[CharacterFragmentExportRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)

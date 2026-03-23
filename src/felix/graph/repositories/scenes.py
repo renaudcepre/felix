@@ -1,10 +1,16 @@
 """Neo4j repository — Scene CRUD, stems, and chunks."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
+
+    from felix.graph.repositories._types import (
+        SceneFullRow,
+        SceneSummaryRow,
+        SceneWithSummaryRow,
+    )
 
 
 async def upsert_scene(driver: AsyncDriver, scene: dict[str, Any]) -> None:
@@ -41,8 +47,8 @@ async def upsert_scene(driver: AsyncDriver, scene: dict[str, Any]) -> None:
         await session.execute_write(_write)
 
 
-async def list_scenes(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_scenes(driver: AsyncDriver) -> list[SceneSummaryRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[SceneSummaryRow]:
         result = await tx.run(
             """
             MATCH (s:Scene)
@@ -51,7 +57,7 @@ async def list_scenes(driver: AsyncDriver) -> list[dict[str, Any]]:
             ORDER BY s.filename
             """
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[SceneSummaryRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
@@ -60,11 +66,11 @@ async def list_scenes(driver: AsyncDriver) -> list[dict[str, Any]]:
 async def get_scene_summaries_by_ids(
     driver: AsyncDriver,
     scene_ids: list[str],
-) -> list[dict[str, Any]]:
+) -> list[SceneWithSummaryRow]:
     if not scene_ids:
         return []
 
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+    async def _read(tx: AsyncManagedTransaction) -> list[SceneWithSummaryRow]:
         result = await tx.run(
             """
             MATCH (s:Scene)
@@ -75,18 +81,18 @@ async def get_scene_summaries_by_ids(
             """,
             ids=scene_ids,
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[SceneWithSummaryRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
 
 
-async def list_all_scenes_full(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_scenes_full(driver: AsyncDriver) -> list[SceneFullRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[SceneFullRow]:
         result = await tx.run(
             "MATCH (s:Scene) RETURN s ORDER BY s.filename"
         )
-        return [dict(r["s"]) for r in await result.data()]
+        return cast("list[SceneFullRow]", [dict(r["s"]) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)

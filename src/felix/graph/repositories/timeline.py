@@ -1,10 +1,16 @@
 """Neo4j repository — TimelineEvent and CharacterEvent."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
+
+    from felix.graph.repositories._types import (
+        CharacterEventRow,
+        TimelineEventFullRow,
+        TimelineRow,
+    )
 
 
 async def upsert_timeline_event(
@@ -72,8 +78,8 @@ async def get_timeline_rows(
     date_from: str | None = None,
     date_to: str | None = None,
     location: str | None = None,
-) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+) -> list[TimelineRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[TimelineRow]:
         result = await tx.run(
             """
             MATCH (e:TimelineEvent)
@@ -96,14 +102,14 @@ async def get_timeline_rows(
             date_to=date_to,
             location=location,
         )
-        rows = []
+        rows: list[TimelineRow] = []
         for evt in await result.data():
             characters_detail = [
                 {"id": c["id"], "name": c["name"]}
                 for c in evt["characters"]
                 if c["id"] is not None
             ]
-            rows.append({
+            rows.append(cast("TimelineRow", {
                 "id": evt["id"],
                 "date": evt["date"],
                 "era": evt["era"],
@@ -113,33 +119,33 @@ async def get_timeline_rows(
                 "location_id": evt["location_id"],
                 "characters": ", ".join(c["name"] for c in characters_detail),
                 "characters_detail": characters_detail,
-            })
+            }))
         return rows
 
     async with driver.session() as session:
         return await session.execute_read(_read)
 
 
-async def list_all_timeline_events(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_timeline_events(driver: AsyncDriver) -> list[TimelineEventFullRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[TimelineEventFullRow]:
         result = await tx.run(
             "MATCH (e:TimelineEvent) RETURN e ORDER BY e.date"
         )
-        return [dict(r["e"]) for r in await result.data()]
+        return cast("list[TimelineEventFullRow]", [dict(r["e"]) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
 
 
-async def list_all_character_events(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_character_events(driver: AsyncDriver) -> list[CharacterEventRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[CharacterEventRow]:
         result = await tx.run(
             """
             MATCH (c:Character)-[r:PARTICIPATES_IN]->(e:TimelineEvent)
             RETURN c.id AS character_id, e.id AS event_id, r.role AS role
             """
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[CharacterEventRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)

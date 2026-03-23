@@ -1,10 +1,12 @@
 """Neo4j repository — NarrativeBeat CRUD."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
+
+    from felix.graph.repositories._types import NarrativeBeatRow
 
 
 async def create_narrative_beat(
@@ -55,8 +57,8 @@ async def link_beat_character(
         await session.execute_write(_write)
 
 
-async def list_all_narrative_beats(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_narrative_beats(driver: AsyncDriver) -> list[NarrativeBeatRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[NarrativeBeatRow]:
         result = await tx.run(
             """
             MATCH (b:NarrativeBeat)-[:OCCURS_IN]->(s:Scene)
@@ -68,7 +70,7 @@ async def list_all_narrative_beats(driver: AsyncDriver) -> list[dict[str, Any]]:
             ORDER BY s.id, b.id
             """
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[NarrativeBeatRow]", [dict(r) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)

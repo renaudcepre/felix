@@ -1,10 +1,12 @@
 """Neo4j repository — Location CRUD and aliases."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
+
+    from felix.graph.repositories._types import LocationDetailRow, LocationFullRow
 
 
 async def upsert_location_minimal(
@@ -25,12 +27,12 @@ async def upsert_location_minimal(
         await session.execute_write(_write)
 
 
-async def list_all_locations(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_locations(driver: AsyncDriver) -> list[LocationFullRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[LocationFullRow]:
         result = await tx.run(
             "MATCH (l:Location) RETURN l ORDER BY l.era, l.name"
         )
-        return [dict(r["l"]) for r in await result.data()]
+        return cast("list[LocationFullRow]", [dict(r["l"]) for r in await result.data()])
 
     async with driver.session() as session:
         return await session.execute_read(_read)
@@ -56,8 +58,8 @@ async def add_location_alias(driver: AsyncDriver, loc_id: str, alias: str) -> No
 
 async def get_location_detail(
     driver: AsyncDriver, loc_id: str
-) -> dict[str, Any] | None:
-    async def _read(tx: AsyncManagedTransaction) -> dict[str, Any] | None:
+) -> LocationDetailRow | None:
+    async def _read(tx: AsyncManagedTransaction) -> LocationDetailRow | None:
         result = await tx.run(
             "MATCH (l:Location {id: $id}) RETURN l", id=loc_id
         )
@@ -76,7 +78,7 @@ async def get_location_detail(
             id=loc_id,
         )
         data["scenes"] = [dict(r) for r in await scenes_result.data()]
-        return data
+        return cast("LocationDetailRow", data)
 
     async with driver.session() as session:
         return await session.execute_read(_read)

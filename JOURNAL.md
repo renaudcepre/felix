@@ -1,5 +1,18 @@
 # Journal de developpement — Felix
 
+## TypedDict pour les retours repository — 2026-03-23
+
+Typage structuré des retours de lecture dans `src/felix/graph/repositories/` — remplace `dict[str, Any]` par des `TypedDict` spécifiques.
+
+- **`_types.py`** créé : 20 TypedDict couvrant characters, groups, locations, scenes, timeline, issues, beats
+- Pattern deux classes (`_Required` + `total=False`) pour les nodes avec champs optionnels
+- `cast()` string sur les retours internes (no-op runtime)
+- Imports sous `TYPE_CHECKING` — zéro coût runtime
+- 7 modules mis à jour (19 fonctions de lecture au total)
+- Choix TypedDict vs dataclass/Pydantic : compatibilité native `dict` Neo4j, pas de conversion, couche validation déjà en `api/models.py`
+
+Plan détaillé : `plans/typed-repositories.md`
+
 ## Expansion massive des evals + système de tags — 2026-03-23
 
 **+70 nouveaux cas de test** répartis sur les 6 suites pipeline (129 → 199 total). L'objectif : maximiser le ROI de chaque import de scénario (opération coûteuse) en testant beaucoup plus de choses une fois l'import fait.

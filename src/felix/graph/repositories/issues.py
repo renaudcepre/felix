@@ -1,10 +1,12 @@
 """Neo4j repository — Issue CRUD."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
+
+    from felix.graph.repositories._types import IssueRow
 
 
 async def list_issues(
@@ -13,8 +15,8 @@ async def list_issues(
     type: str | None = None,
     severity: str | None = None,
     resolved: bool | None = None,
-) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+) -> list[IssueRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[IssueRow]:
         result = await tx.run(
             """
             MATCH (i:Issue)
@@ -29,12 +31,12 @@ async def list_issues(
             severity=severity,
             resolved=resolved,
         )
-        rows = []
+        rows: list[IssueRow] = []
         for r in await result.data():
             d = dict(r["i"])
             d["scene_id"] = r["scene_id"]
             d["resolved"] = bool(d.get("resolved", False))
-            rows.append(d)
+            rows.append(cast("IssueRow", d))
         return rows
 
     async with driver.session() as session:
@@ -43,8 +45,8 @@ async def list_issues(
 
 async def get_issue_by_id(
     driver: AsyncDriver, issue_id: str
-) -> dict[str, Any] | None:
-    async def _read(tx: AsyncManagedTransaction) -> dict[str, Any] | None:
+) -> IssueRow | None:
+    async def _read(tx: AsyncManagedTransaction) -> IssueRow | None:
         result = await tx.run(
             """
             MATCH (i:Issue {id: $id})
@@ -59,7 +61,7 @@ async def get_issue_by_id(
         d = dict(record["i"])
         d["scene_id"] = record["scene_id"]
         d["resolved"] = bool(d.get("resolved", False))
-        return d
+        return cast("IssueRow", d)
 
     async with driver.session() as session:
         return await session.execute_read(_read)

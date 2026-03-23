@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
+
+    from felix.graph.repositories._types import GroupSummaryRow
 
 
 async def upsert_group_minimal(driver: AsyncDriver, group: dict[str, Any]) -> None:
@@ -50,12 +52,12 @@ async def upsert_group_in_scene(  # noqa: PLR0913
         await session.execute_write(_write)
 
 
-async def list_all_groups(driver: AsyncDriver) -> list[dict[str, Any]]:
-    async def _read(tx: AsyncManagedTransaction) -> list[dict[str, Any]]:
+async def list_all_groups(driver: AsyncDriver) -> list[GroupSummaryRow]:
+    async def _read(tx: AsyncManagedTransaction) -> list[GroupSummaryRow]:
         result = await tx.run(
             "MATCH (g:Group) RETURN g.id AS id, g.name AS name ORDER BY g.name"
         )
-        return [dict(r) for r in await result.data()]
+        return cast("list[GroupSummaryRow]", [dict(r) for r in await result.data()])
 
     _notif = logging.getLogger("neo4j.notifications")
     _prev = _notif.level
