@@ -63,6 +63,9 @@ class _PipelineContext:
     progress: ImportProgress
     queue: EventQueue | None
     pending_clarifications: dict[str, ClarificationSlot] | None
+    model_name: str | None = None
+    base_url: str | None = None
+    enrich_profiles: bool = True
     char_registry: dict[str, str] = field(default_factory=dict)
     char_aliases: dict[str, list[str]] = field(default_factory=dict)
     loc_registry: dict[str, str] = field(default_factory=dict)
@@ -117,7 +120,167 @@ async def _load_registries(
     return char_registry, char_aliases, loc_registry, loc_aliases, char_details, group_registry
 
 
-async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
+async def _segment_scene_files(
+    scene_files: list[Path],
+    queue: EventQueue | None,
+) -> list[tuple[Path, int, int, str]]:
+    """Segment each scene file into (file, chunk_idx, total_chunks, chunk_text) units."""
+    if queue:
+        await emit(queue, "status_change", status=ImportStatus.SEGMENTING, total_scenes=len(scene_files), processed_scenes=0, current_scene="")
+    segmenter = TextSegmenter(
+        max_tokens=settings.segmenter_max_tokens,
+        overlap_ratio=settings.segmenter_overlap_ratio,
+        threshold=settings.segmenter_threshold,
+    )
+    scene_units: list[tuple[Path, int, int, str]] = []
+    for scene_file in scene_files:
+        if queue:
+            await emit(queue, "segmenting_file", filename=scene_file.name)
+        raw_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
+        chunks = await asyncio.to_thread(segmenter.segment, raw_text)
+        if len(chunks) > 1 and queue:
+            await emit(queue, "file_segmented", filename=scene_file.name, chunk_count=len(chunks))
+        for i, chunk in enumerate(chunks):
+            scene_units.append((scene_file, i, len(chunks), chunk))
+    if queue:
+        await emit(queue, "segmentation_complete", file_count=len(scene_files), scene_count=len(scene_units))
+    return scene_units
+
+
+def _create_agents(ctx: _PipelineContext) -> tuple:
+    """Create all LLM agents needed by the pipeline."""
+    analyzer = create_analyzer_agent(ctx.model_name, ctx.base_url)
+    timeline_checker, narrative_checker = create_checker_agents(ctx.model_name, ctx.base_url)
+    cleaner = create_cleaner_agent(ctx.model_name, ctx.base_url)
+    profiler = create_profiler_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
+    profiler_patch = create_profiler_patch_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
+    beat_extractor = create_beat_extractor_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
+    relation_deduper = create_relation_dedup_agent(ctx.model_name, ctx.base_url) if ctx.model_name else None
+    return analyzer, timeline_checker, narrative_checker, cleaner, profiler, profiler_patch, beat_extractor, relation_deduper
+
+
+async def _process_scene_unit(  # noqa: PLR0913
+    ctx: _PipelineContext,
+    orchestrator: SceneOrchestrator,
+    scene_file: Path,
+    scene_id: str,
+    chunk_idx: int,
+    total_chunks: int,
+    chunk_text: str,
+) -> None:
+    """Process a single scene unit."""
+    scene_issues, summary, resolved_chars, _ = await orchestrator.process_scene(
+        scene_file, scene_id=scene_id, chunk_text=chunk_text
+    )
+    for issue in scene_issues:
+        await create_issue(ctx.driver, issue)
+    ctx.progress.issues_found += len(scene_issues)
+
+    await orchestrator.check_scene(summary)
+    await write_scene(ctx.driver, summary)
+
+    if chunk_idx > 0:
+        prev_id = make_scene_id(scene_file.stem, chunk_idx - 1, total_chunks)
+        await link_next_chunk(ctx.driver, prev_id, scene_id)
+
+    graph_issues = await check_bilocalization(ctx.driver, summary["scene_id"])
+    for issue in graph_issues:
+        await create_issue(ctx.driver, issue)
+    ctx.progress.issues_found += len(graph_issues)
+
+    if ctx.enrich_profiles:
+        await orchestrator.profile_scene_characters(
+            resolved_chars,
+            summary["scene_id"],
+            chunk_text,
+            summary["title"],
+        )
+
+
+async def _process_all_scenes(
+    ctx: _PipelineContext,
+    orchestrator: SceneOrchestrator,
+    scene_units: list[tuple[Path, int, int, str]],
+) -> int:
+    """Process all scene units, returning the number of successfully processed scenes."""
+    scenes_processed = 0
+    for scene_file, chunk_idx, total_chunks, chunk_text in scene_units:
+        scene_id = make_scene_id(scene_file.stem, chunk_idx, total_chunks)
+        try:
+            await _process_scene_unit(
+                ctx, orchestrator, scene_file, scene_id,
+                chunk_idx, total_chunks, chunk_text,
+            )
+            scenes_processed += 1
+        except ModelHTTPError as e:
+            logger.error("Scene processing failed: %s — HTTP %s: %s", scene_file.name, e.status_code, e)
+            ctx.progress.failed_scenes += 1
+            ctx.progress.processed_scenes += 1
+            if ctx.queue:
+                await emit(ctx.queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
+        except Exception as e:
+            logger.exception("Scene processing failed: %s", scene_file.name)
+            ctx.progress.failed_scenes += 1
+            ctx.progress.processed_scenes += 1
+            if ctx.queue:
+                await emit(ctx.queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
+    return scenes_processed
+
+
+async def _setup_pipeline(
+    ctx: _PipelineContext,
+    scene_files: list[Path],
+) -> tuple[SceneOrchestrator, list[tuple[Path, int, int, str]]]:
+    """Load registries, clean up old data, segment files, and create the orchestrator."""
+    ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.loc_aliases, ctx.char_details, ctx.group_registry = await _load_registries(ctx.driver)
+
+    # Idempotent cleanup — covers both "scene-{stem}" and "scene-{stem}-chunk-NN"
+    existing_scene_ids = await get_scene_ids_for_stems(ctx.driver, [f.stem for f in scene_files])
+    await delete_issues_for_scenes(ctx.driver, existing_scene_ids)
+    await delete_scenes(ctx.driver, existing_scene_ids)
+
+    scene_units = await _segment_scene_files(scene_files, ctx.queue)
+
+    ctx.progress.total_scenes = len(scene_units)
+    if ctx.queue:
+        await emit(
+            ctx.queue,
+            "status_change",
+            status=ImportStatus.PENDING,
+            total_scenes=ctx.progress.total_scenes,
+            processed_scenes=0,
+            current_scene="",
+        )
+
+    analyzer, timeline_checker, narrative_checker, cleaner, profiler, profiler_patch, beat_extractor, relation_deduper = _create_agents(ctx)
+
+    resolver = EntityResolutionService(
+        driver=ctx.driver,
+        char_registry=ctx.char_registry,
+        char_aliases=ctx.char_aliases,
+        loc_registry=ctx.loc_registry,
+        loc_aliases=ctx.loc_aliases,
+        char_details=ctx.char_details,
+        group_registry=ctx.group_registry,
+        queue=ctx.queue,
+        pending_clarifications=ctx.pending_clarifications,
+    )
+    orchestrator = SceneOrchestrator(
+        ctx=ctx,
+        resolver=resolver,
+        analyzer=analyzer,
+        timeline_checker=timeline_checker,
+        narrative_checker=narrative_checker,
+        profiler=profiler,
+        profiler_patch=profiler_patch,
+        beat_extractor=beat_extractor,
+        cleaner=cleaner,
+        relation_deduper=relation_deduper,
+    )
+    return orchestrator, scene_units
+
+
+async def run_import_pipeline(  # noqa: PLR0913
     scenes_dir: str,
     driver: AsyncDriver,
     collection: chromadb.Collection,
@@ -134,6 +297,9 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
         progress=progress,
         queue=queue,
         pending_clarifications=pending_clarifications,
+        model_name=model_name,
+        base_url=base_url,
+        enrich_profiles=enrich_profiles,
     )
     try:
         def _collect_scene_files() -> list[Path]:
@@ -160,122 +326,9 @@ async def run_import_pipeline(  # noqa: PLR0912, PLR0913, PLR0915
                 current_scene="",
             )
 
-        ctx.char_registry, ctx.char_aliases, ctx.loc_registry, ctx.loc_aliases, ctx.char_details, ctx.group_registry = await _load_registries(driver)
+        orchestrator, scene_units = await _setup_pipeline(ctx, scene_files)
 
-        # Idempotent cleanup — covers both "scene-{stem}" and "scene-{stem}-chunk-NN"
-        existing_scene_ids = await get_scene_ids_for_stems(driver, [f.stem for f in scene_files])
-        await delete_issues_for_scenes(driver, existing_scene_ids)
-        await delete_scenes(driver, existing_scene_ids)
-
-        # Expand each file into (file, chunk_idx, total_chunks, chunk_text)
-        if queue:
-            await emit(queue, "status_change", status=ImportStatus.SEGMENTING, total_scenes=len(scene_files), processed_scenes=0, current_scene="")
-        segmenter = TextSegmenter(
-            max_tokens=settings.segmenter_max_tokens,
-            overlap_ratio=settings.segmenter_overlap_ratio,
-            threshold=settings.segmenter_threshold,
-        )
-        scene_units: list[tuple[Path, int, int, str]] = []
-        for scene_file in scene_files:
-            if queue:
-                await emit(queue, "segmenting_file", filename=scene_file.name)
-            raw_text = await asyncio.to_thread(scene_file.read_text, encoding="utf-8")
-            chunks = await asyncio.to_thread(segmenter.segment, raw_text)
-            if len(chunks) > 1 and queue:
-                await emit(queue, "file_segmented", filename=scene_file.name, chunk_count=len(chunks))
-            for i, chunk in enumerate(chunks):
-                scene_units.append((scene_file, i, len(chunks), chunk))
-        if queue:
-            await emit(queue, "segmentation_complete", file_count=len(scene_files), scene_count=len(scene_units))
-
-        progress.total_scenes = len(scene_units)
-        if queue:
-            await emit(
-                queue,
-                "status_change",
-                status=ImportStatus.PENDING,
-                total_scenes=progress.total_scenes,
-                processed_scenes=0,
-                current_scene="",
-            )
-
-        analyzer = create_analyzer_agent(model_name, base_url)
-        timeline_checker, narrative_checker = create_checker_agents(model_name, base_url)
-        cleaner = create_cleaner_agent(model_name, base_url)
-        profiler = create_profiler_agent(model_name, base_url) if enrich_profiles else None
-        profiler_patch = create_profiler_patch_agent(model_name, base_url) if enrich_profiles else None
-        beat_extractor = create_beat_extractor_agent(model_name, base_url) if enrich_profiles else None
-        relation_deduper = create_relation_dedup_agent(model_name, base_url) if model_name else None
-
-        resolver = EntityResolutionService(
-            driver=driver,
-            char_registry=ctx.char_registry,
-            char_aliases=ctx.char_aliases,
-            loc_registry=ctx.loc_registry,
-            loc_aliases=ctx.loc_aliases,
-            char_details=ctx.char_details,
-            group_registry=ctx.group_registry,
-            queue=queue,
-            pending_clarifications=pending_clarifications,
-        )
-        orchestrator = SceneOrchestrator(
-            ctx=ctx,
-            resolver=resolver,
-            analyzer=analyzer,
-            timeline_checker=timeline_checker,
-            narrative_checker=narrative_checker,
-            profiler=profiler,
-            profiler_patch=profiler_patch,
-            beat_extractor=beat_extractor,
-            cleaner=cleaner,
-            relation_deduper=relation_deduper,
-        )
-
-        scenes_processed = 0
-
-        for scene_file, chunk_idx, total_chunks, chunk_text in scene_units:
-            scene_id = make_scene_id(scene_file.stem, chunk_idx, total_chunks)
-            try:
-                scene_issues, summary, resolved_chars, _ = await orchestrator.process_scene(
-                    scene_file, scene_id=scene_id, chunk_text=chunk_text
-                )
-                for issue in scene_issues:
-                    await create_issue(driver, issue)
-                progress.issues_found += len(scene_issues)
-                scenes_processed += 1
-
-                await orchestrator.check_scene(summary)
-
-                await write_scene(driver, summary)
-
-                if chunk_idx > 0:
-                    prev_id = make_scene_id(scene_file.stem, chunk_idx - 1, total_chunks)
-                    await link_next_chunk(driver, prev_id, scene_id)
-
-                graph_issues = await check_bilocalization(driver, summary["scene_id"])
-                for issue in graph_issues:
-                    await create_issue(driver, issue)
-                progress.issues_found += len(graph_issues)
-
-                if enrich_profiles:
-                    await orchestrator.profile_scene_characters(
-                        resolved_chars,
-                        summary["scene_id"],
-                        chunk_text,
-                        summary["title"],
-                    )
-            except ModelHTTPError as e:
-                logger.error("Scene processing failed: %s — HTTP %s: %s", scene_file.name, e.status_code, e)
-                progress.failed_scenes += 1
-                progress.processed_scenes += 1
-                if queue:
-                    await emit(queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
-            except Exception as e:
-                logger.exception("Scene processing failed: %s", scene_file.name)
-                progress.failed_scenes += 1
-                progress.processed_scenes += 1
-                if queue:
-                    await emit(queue, "scene_error", scene_id=scene_id, filename=scene_file.name, error=str(e))
+        scenes_processed = await _process_all_scenes(ctx, orchestrator, scene_units)
 
         if scenes_processed == 0:
             progress.error = f"Toutes les scenes ont echoue ({progress.failed_scenes}/{progress.total_scenes})"

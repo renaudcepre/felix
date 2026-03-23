@@ -1,5 +1,16 @@
 # Journal de developpement — Felix
 
+## Refactor `run_import_pipeline` — 2026-03-23
+
+Décomposition de `run_import_pipeline` (185 lignes, 3 `noqa: PLR`) en 5 sous-fonctions :
+- `_segment_scene_files` — segmentation des fichiers
+- `_create_agents` — création des agents LLM
+- `_process_scene_unit` — traitement d'une scène unitaire
+- `_process_all_scenes` — boucle sur toutes les scènes avec error handling
+- `_setup_pipeline` — chargement registries, cleanup, segmentation, création orchestrator
+
+PLR0912 (too many branches) et PLR0915 (too many statements) supprimés de `run_import_pipeline`.
+
 ## Quick wins REVIEW.md Phase 1 — 2026-03-23
 
 Batch de 6 corrections issues de la code review :
