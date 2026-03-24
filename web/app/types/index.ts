@@ -44,6 +44,29 @@ export interface CharacterDetail {
   relations: Relation[]
 }
 
+export interface GroupCreate {
+  name: string
+  era?: string
+}
+
+export interface GroupSummary {
+  id: string
+  name: string
+}
+
+export interface GroupMember {
+  id: string
+  name: string
+  era: string
+}
+
+export interface GroupDetail {
+  id: string
+  name: string
+  era?: string
+  members: GroupMember[]
+}
+
 export interface LocationSummary {
   id: string
   name: string

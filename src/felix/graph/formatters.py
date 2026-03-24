@@ -9,7 +9,9 @@ if TYPE_CHECKING:
 from felix.graph.repositories.timeline import get_timeline_rows
 
 
-def _format_character_profile(row: dict, relations: list[dict], fragments: list[dict]) -> str:
+def _format_character_profile(  # noqa: PLR0912
+    row: dict, relations: list[dict], fragments: list[dict], groups: list[dict] | None = None,
+) -> str:
     lines = [
         f"Name: {row['name']}",
         f"Era: {row['era']}",
@@ -39,8 +41,13 @@ def _format_character_profile(row: dict, relations: list[dict], fragments: list[
                 f"  - {rel['relation_type']} with {rel['other_name']}{era}{desc}"
             )
 
+    if groups:
+        lines.append("Groups:")
+        for g in groups:
+            lines.append(f"  - {g['name']}")
+
     if fragments:
-        lines.append("Observations par scene:")
+        lines.append("Scene observations:")
         for frag in fragments:
             title = frag.get("scene_title") or frag["scene_id"]
             role_str = f" [{frag['role']}]" if frag.get("role") else ""
@@ -76,7 +83,11 @@ async def find_character(driver: AsyncDriver, name: str) -> str:
                     description: r.description
                 }) AS fragments
             }
-            RETURN c, relations, fragments
+            CALL (c) {
+                OPTIONAL MATCH (c)-[:MEMBER_OF]->(g:Group)
+                RETURN collect({id: g.id, name: g.name}) AS groups
+            }
+            RETURN c, relations, fragments, groups
             """,
             name=name,
         )
@@ -98,7 +109,8 @@ async def find_character(driver: AsyncDriver, name: str) -> str:
 
     profiles = []
     for row in rows:
-        profiles.append(_format_character_profile(dict(row["c"]), row["relations"], row["fragments"]))
+        grps = [g for g in row.get("groups", []) if g.get("id")]
+        profiles.append(_format_character_profile(dict(row["c"]), row["relations"], row["fragments"], grps))
 
     return "\n---\n".join(profiles)
 

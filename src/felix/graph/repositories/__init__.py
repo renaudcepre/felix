@@ -25,6 +25,8 @@ from felix.graph.repositories.characters import (
 from felix.graph.repositories.groups import (
     create_member_of,
     list_all_groups,
+    get_group_detail,
+    remove_member_of,
     upsert_group_in_scene,
     upsert_group_minimal,
 )
@@ -77,6 +79,7 @@ __all__ = [
     "get_character_fragments",
     "get_character_profile",
     "get_character_relations",
+    "get_group_detail",
     "get_issue_by_id",
     "get_location_detail",
     "get_relation_types_for_pair",
@@ -98,6 +101,7 @@ __all__ = [
     "list_issues",
     "list_scenes",
     "overwrite_character_profile_fields",
+    "remove_member_of",
     "patch_character_profile_fields",
     "update_character_profile",
     "update_issue_resolved",

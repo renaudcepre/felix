@@ -292,7 +292,7 @@ async def test_format_profile_includes_fragments(
     )
 
     profile_text = await find_character(seeded_driver, "marie")
-    assert "Observations par scene" in profile_text
+    assert "Scene observations" in profile_text
     assert "quarantaine" in profile_text
 
 

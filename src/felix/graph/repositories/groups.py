@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from neo4j import AsyncDriver, AsyncManagedTransaction
 
-    from felix.graph.repositories._types import GroupSummaryRow
+    from felix.graph.repositories._types import GroupMemberRow, GroupSummaryRow
 
 
 async def upsert_group_minimal(driver: AsyncDriver, group: dict[str, Any]) -> None:
@@ -82,3 +82,51 @@ async def create_member_of(driver: AsyncDriver, char_id: str, group_id: str) -> 
 
     async with driver.session() as session:
         await session.execute_write(_write)
+
+
+async def get_group_detail(
+    driver: AsyncDriver, group_id: str
+) -> dict[str, Any] | None:
+    async def _read(tx: AsyncManagedTransaction) -> dict[str, Any] | None:
+        result = await tx.run(
+            "MATCH (g:Group {id: $id}) RETURN g", id=group_id
+        )
+        record = await result.single()
+        if not record:
+            return None
+        data = dict(record["g"])
+
+        members_result = await tx.run(
+            """
+            MATCH (c:Character)-[:MEMBER_OF]->(g:Group {id: $id})
+            RETURN c.id AS id, c.name AS name, c.era AS era
+            ORDER BY c.name
+            """,
+            id=group_id,
+        )
+        data["members"] = cast(
+            "list[GroupMemberRow]",
+            [dict(r) for r in await members_result.data()],
+        )
+        return data
+
+    async with driver.session() as session:
+        return await session.execute_read(_read)
+
+
+async def remove_member_of(driver: AsyncDriver, char_id: str, group_id: str) -> bool:
+    async def _write(tx: AsyncManagedTransaction) -> bool:
+        result = await tx.run(
+            """
+            MATCH (c:Character {id: $cid})-[r:MEMBER_OF]->(g:Group {id: $gid})
+            DELETE r
+            RETURN count(r) AS deleted
+            """,
+            cid=char_id,
+            gid=group_id,
+        )
+        record = await result.single()
+        return record is not None and record["deleted"] > 0
+
+    async with driver.session() as session:
+        return await session.execute_write(_write)

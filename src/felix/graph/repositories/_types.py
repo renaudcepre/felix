@@ -65,6 +65,12 @@ class GroupSummaryRow(TypedDict):
     name: str
 
 
+class GroupMemberRow(TypedDict):
+    id: str
+    name: str
+    era: str
+
+
 # --- Locations ---
 
 class SceneInLocationRow(TypedDict):

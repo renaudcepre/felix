@@ -64,6 +64,29 @@ class CharacterDetail(BaseModel):
         return v
 
 
+class GroupCreate(BaseModel):
+    name: str
+    era: str | None = None
+
+
+class GroupSummary(BaseModel):
+    id: str
+    name: str
+
+
+class GroupMember(BaseModel):
+    id: str
+    name: str
+    era: str
+
+
+class GroupDetail(BaseModel):
+    id: str
+    name: str
+    era: str | None = None
+    members: list[GroupMember] = []
+
+
 class LocationSummary(BaseModel):
     id: str
     name: str

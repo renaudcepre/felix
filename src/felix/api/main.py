@@ -16,7 +16,7 @@ setup_logfire()
 
 from felix.agent.chat_agent import create_agent
 from felix.api.deps import BaseUrl, ImportState, ModelName
-from felix.api.routes import characters, chat, export, ingest, locations, timeline
+from felix.api.routes import characters, chat, export, groups, ingest, locations, timeline
 from felix.api.routes import settings as settings_routes
 from felix.config import settings
 from felix.graph.driver import close_driver, get_driver, setup_constraints
@@ -56,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(characters.router)
+app.include_router(groups.router)
 app.include_router(locations.router)
 app.include_router(timeline.router)
 app.include_router(chat.router)

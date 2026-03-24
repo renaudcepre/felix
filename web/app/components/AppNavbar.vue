@@ -23,11 +23,15 @@ const items = computed(() => [[{
   icon: 'i-lucide-message-square',
   to: '/chat',
 }, {
-  label: 'Personnages',
+  label: 'Characters',
   icon: 'i-lucide-users',
   to: '/characters',
 }, {
-  label: 'Lieux',
+  label: 'Groups',
+  icon: 'i-lucide-shield',
+  to: '/groups',
+}, {
+  label: 'Locations',
   icon: 'i-lucide-map-pin',
   to: '/locations',
 }, {
