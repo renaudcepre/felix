@@ -80,7 +80,7 @@ async def chat_loop(model: str, base_url: str | None) -> None:
                 console.print("[dim]Au revoir.[/dim]")
                 break
 
-            with console.status("[magenta]Felix réfléchit…[/magenta]", spinner="dots"):
+            with console.status("[magenta]Felix is thinking…[/magenta]", spinner="dots"):
                 result = await agent.run(
                     user_input,
                     deps=deps,
@@ -124,7 +124,7 @@ def export() -> None:
         return str(o)
 
     filename.write_text(json.dumps(data, indent=2, ensure_ascii=False, default=_default))
-    console.print(f"[green]Export sauvegarde :[/green] {filename} ({len(data['characters'])} perso, {len(data['scenes'])} scenes)")
+    console.print(f"[green]Export saved:[/green] {filename} ({len(data['characters'])} characters, {len(data['scenes'])} scenes)")
 
 
 def main() -> None:

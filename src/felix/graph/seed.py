@@ -12,18 +12,18 @@ CHARACTERS = [
         "name": "Marie Dupont",
         "aliases": ["La Louve"],
         "era": "1940s",
-        "age": "28 en 1942",
-        "physical": "Petite, brune, yeux noirs. Cicatrice sur la main gauche.",
+        "age": "28 in 1942",
+        "physical": "Short, dark-haired, black eyes. Scar on her left hand.",
         "background": (
-            "Institutrice a Lyon avant la guerre. Rejoint le reseau de Resistance "
-            "en janvier 1942 apres l'arrestation de son frere. Devient coursiere, "
-            "transportant des documents entre les planques."
+            "Schoolteacher in Lyon before the war. Joined the Resistance network "
+            "in January 1942 after her brother's arrest. Became a courier, "
+            "transporting documents between safe houses."
         ),
         "arc": (
-            "De coursiere effacee a leader de cellule apres l'arrestation de Pierre. "
-            "Apprend a faire confiance malgre la trahison omni-presente."
+            "From a quiet courier to cell leader after Pierre's arrest. "
+            "Learns to trust despite the ever-present threat of betrayal."
         ),
-        "traits": "Determinee, prudente, loyale. Cache ses emotions.",
+        "traits": "Determined, cautious, loyal. Hides her emotions.",
         "status": "alive",
     },
     {
@@ -31,17 +31,17 @@ CHARACTERS = [
         "name": "Pierre Renard",
         "aliases": ["Le Professeur"],
         "era": "1940s",
-        "age": "35 en 1942",
-        "physical": "Grand, maigre, lunettes rondes. Barbe mal rasee.",
+        "age": "35 in 1942",
+        "physical": "Tall, thin, round glasses. Unkempt beard.",
         "background": (
-            "Ancien professeur d'histoire au lycee Ampere. Chef de la cellule "
-            "de Resistance a Lyon. Marie de Marie depuis 1938."
+            "Former history teacher at Lycee Ampere. Leader of the Resistance "
+            "cell in Lyon. Married to Marie since 1938."
         ),
         "arc": (
-            "Leader charismatique qui prend des risques croissants. "
-            "Son arrestation en novembre 1942 force Marie a prendre la releve."
+            "Charismatic leader who takes increasing risks. "
+            "His arrest in November 1942 forces Marie to take over."
         ),
-        "traits": "Intellectuel, courageux, parfois imprudent. Inspire confiance.",
+        "traits": "Intellectual, brave, sometimes reckless. Inspires trust.",
         "status": "arrested",
     },
     {
@@ -49,22 +49,22 @@ CHARACTERS = [
         "name": "Benoit Laforge",
         "aliases": ["Inspecteur Laforge", "Henri Blanc"],
         "era": "1940s",
-        "age": "40 en 1942, 72 en 1974",
+        "age": "40 in 1942, 72 in 1974",
         "physical": (
-            "Costume sombre, chapeau fedora. En 1974 : cheveux blancs, "
-            "dos voute, marche avec une canne."
+            "Dark suit, fedora hat. In 1974: white hair, "
+            "stooped back, walks with a cane."
         ),
         "background": (
-            "Inspecteur a la Prefecture de Lyon sous Vichy. Agent double : "
-            "transmet des informations aux resistants tout en maintenant "
-            "sa couverture. En 1974, vit sous le faux nom d'Henri Blanc "
-            "dans le sud de la France."
+            "Inspector at the Lyon Prefecture under Vichy. Double agent: "
+            "passes information to the Resistance while maintaining "
+            "his cover. In 1974, lives under the alias Henri Blanc "
+            "in the south of France."
         ),
         "arc": (
-            "Navigue entre deux mondes. Sa double identite est "
-            "decouverte par Marie en 1942, puis par Julien en 1974."
+            "Navigates between two worlds. His double identity is "
+            "discovered by Marie in 1942, then by Julien in 1974."
         ),
-        "traits": "Calculateur, solitaire, tourmente par la culpabilite.",
+        "traits": "Calculating, solitary, tormented by guilt.",
         "status": "alive",
     },
     {
@@ -72,18 +72,18 @@ CHARACTERS = [
         "name": "Sarah Cohen",
         "aliases": ["Docteur Simon"],
         "era": "1940s",
-        "age": "32 en 1942",
-        "physical": "Cheveux roux, taches de rousseur. Mains fines de chirurgienne.",
+        "age": "32 in 1942",
+        "physical": "Red hair, freckles. Delicate surgeon's hands.",
         "background": (
-            "Medecin juive cachee par le reseau de Resistance. "
-            "Arrive a Lyon en mars 1942. Soigne les blesses dans la planque "
-            "de la rue Merciere sous le nom de Docteur Simon."
+            "Jewish doctor hidden by the Resistance network. "
+            "Arrived in Lyon in March 1942. Treats the wounded at the safe house "
+            "on rue Merciere under the name Docteur Simon."
         ),
         "arc": (
-            "Passe de refugiee dependante a membre indispensable du reseau. "
-            "Son expertise medicale sauve plusieurs vies."
+            "Goes from dependent refugee to indispensable member of the network. "
+            "Her medical expertise saves several lives."
         ),
-        "traits": "Calme sous pression, precise, reconnaissante mais fiere.",
+        "traits": "Calm under pressure, precise, grateful yet proud.",
         "status": "alive",
     },
     {
@@ -91,19 +91,19 @@ CHARACTERS = [
         "name": "Julien Morel",
         "aliases": [],
         "era": "1970s",
-        "age": "28 en 1974",
-        "physical": "Cheveux longs, veste en cuir, Gauloises au bec.",
+        "age": "28 in 1974",
+        "physical": "Long hair, leather jacket, Gauloises hanging from his lip.",
         "background": (
-            "Journaliste d'investigation au Paris Tribune. "
-            "Neveu de Marie Dupont. Decouvre des documents de guerre "
-            "liant l'inspecteur Laforge a des fuites vers la Resistance."
+            "Investigative journalist at the Paris Tribune. "
+            "Marie Dupont's nephew. Discovers wartime documents "
+            "linking Inspector Laforge to leaks to the Resistance."
         ),
         "arc": (
-            "Enquete naive qui devient obsession. "
-            "Decouvre que l'histoire de sa famille est plus complexe "
-            "que ce qu'on lui a raconte."
+            "Naive investigation that becomes an obsession. "
+            "Discovers that his family's history is more complex "
+            "than what he was told."
         ),
-        "traits": "Tenace, idealiste, impatient. Fume trop.",
+        "traits": "Tenacious, idealistic, impatient. Smokes too much.",
         "status": "alive",
     },
 ]
@@ -111,50 +111,50 @@ CHARACTERS = [
 LOCATIONS = [
     {
         "id": "lyon-safe-house",
-        "name": "Planque de Lyon",
+        "name": "Lyon Safe House",
         "era": "1940s",
         "description": (
-            "Appartement cache au-dessus d'une librairie, rue Merciere. "
-            "Utilise par la Resistance pour cacher des refugies "
-            "et stocker des documents. Acces par l'arriere-boutique."
+            "Hidden apartment above a bookshop on rue Merciere. "
+            "Used by the Resistance to hide refugees "
+            "and store documents. Access through the back of the shop."
         ),
         "address": "14 rue Merciere, Lyon",
     },
     {
         "id": "prefecture-lyon",
-        "name": "Prefecture de Lyon",
+        "name": "Lyon Prefecture",
         "era": "1940s",
         "description": (
-            "Quartier general de la police de Vichy a Lyon. "
-            "Bureau de Benoit Laforge au deuxieme etage. "
-            "Ambiance oppressante, portraits du Marechal aux murs."
+            "Vichy police headquarters in Lyon. "
+            "Benoit Laforge's office on the second floor. "
+            "Oppressive atmosphere, portraits of the Marshal on the walls."
         ),
         "address": "Place des Terreaux, Lyon",
     },
     {
         "id": "paris-newspaper",
-        "name": "Bureau du Paris Tribune",
+        "name": "Paris Tribune Office",
         "era": "1970s",
         "description": (
-            "Salle de redaction enfumee pres de la Place de la Republique. "
-            "Machines a ecrire, telephones qui sonnent, piles de dossiers. "
-            "Les archives sont au sous-sol."
+            "Smoky newsroom near Place de la Republique. "
+            "Typewriters, ringing phones, piles of files. "
+            "The archives are in the basement."
         ),
-        "address": "Pres de la Place de la Republique, Paris",
+        "address": "Near Place de la Republique, Paris",
     },
 ]
 
 TIMELINE_EVENTS = [
-    {"id": "evt-001", "date": "1942-01-10", "era": "1940s", "title": "Marie rejoint le reseau", "description": "Apres l'arrestation de son frere, Marie contacte Pierre et rejoint la cellule de Resistance a Lyon.", "location_id": "lyon-safe-house", "scene_id": None},
-    {"id": "evt-002", "date": "1942-03-15", "era": "1940s", "title": "Arrivee de Sarah a Lyon", "description": "Sarah Cohen arrive a la planque, escortee depuis Marseille. Marie l'accueille et lui explique les regles de securite.", "location_id": "lyon-safe-house", "scene_id": "012"},
-    {"id": "evt-003", "date": "1942-05-20", "era": "1940s", "title": "Pierre planifie l'operation Grenoble", "description": "Pierre presente le plan d'une route d'approvisionnement vers Grenoble. Sarah demande des fournitures medicales.", "location_id": "lyon-safe-house", "scene_id": "025"},
-    {"id": "evt-004", "date": "1942-06-01", "era": "1940s", "title": "Benoit transmet le calendrier des rafles", "description": "Benoit copie en secret le planning des rafles prevues et le transmet a Pierre lors d'un rendez-vous clandestin.", "location_id": "prefecture-lyon", "scene_id": "018"},
-    {"id": "evt-005", "date": "1942-07-14", "era": "1940s", "title": "Decouverte de la cache de documents", "description": "Une patrouille de Vichy decouvre une partie de la cache de documents dans la planque. Marie et Benoit improvisent pour sauver le reste.", "location_id": "lyon-safe-house", "scene_id": None},
-    {"id": "evt-006", "date": "1942-09-03", "era": "1940s", "title": "Sarah soigne un resistant blesse", "description": "Un resistant arrive a la planque avec une blessure par balle. Sarah opere avec des moyens de fortune.", "location_id": "lyon-safe-house", "scene_id": None},
-    {"id": "evt-007", "date": "1942-11-22", "era": "1940s", "title": "Arrestation de Pierre", "description": "Pierre est arrete lors d'un transport de documents entre Lyon et Grenoble. Benoit n'a pas pu le prevenir a temps.", "location_id": None, "scene_id": None},
-    {"id": "evt-008", "date": "1943-02-10", "era": "1940s", "title": "Marie prend la tete de la cellule", "description": "Apres des semaines d'hesitation, Marie accepte de diriger la cellule en l'absence de Pierre.", "location_id": "lyon-safe-house", "scene_id": None},
-    {"id": "evt-009", "date": "1974-03-05", "era": "1970s", "title": "Julien decouvre des documents de guerre", "description": "Dans les archives du Paris Tribune, Julien trouve un carbone fane liant l'inspecteur Laforge a des fuites vers la Resistance.", "location_id": "paris-newspaper", "scene_id": "088"},
-    {"id": "evt-010", "date": "1974-06-18", "era": "1970s", "title": "Julien retrouve Benoit sous un faux nom", "description": "Apres des mois d'enquete, Julien localise Henri Blanc dans un village du Var. Il ne sait pas encore que c'est Benoit Laforge.", "location_id": None, "scene_id": None},
+    {"id": "evt-001", "date": "1942-01-10", "era": "1940s", "title": "Marie joins the network", "description": "After her brother's arrest, Marie contacts Pierre and joins the Resistance cell in Lyon.", "location_id": "lyon-safe-house", "scene_id": None},
+    {"id": "evt-002", "date": "1942-03-15", "era": "1940s", "title": "Sarah's arrival in Lyon", "description": "Sarah Cohen arrives at the safe house, escorted from Marseille. Marie welcomes her and explains the security rules.", "location_id": "lyon-safe-house", "scene_id": "012"},
+    {"id": "evt-003", "date": "1942-05-20", "era": "1940s", "title": "Pierre plans the Grenoble operation", "description": "Pierre presents the plan for a supply route to Grenoble. Sarah requests medical supplies.", "location_id": "lyon-safe-house", "scene_id": "025"},
+    {"id": "evt-004", "date": "1942-06-01", "era": "1940s", "title": "Benoit passes the raid schedule", "description": "Benoit secretly copies the planned raid schedule and passes it to Pierre during a clandestine meeting.", "location_id": "prefecture-lyon", "scene_id": "018"},
+    {"id": "evt-005", "date": "1942-07-14", "era": "1940s", "title": "Document cache discovered", "description": "A Vichy patrol discovers part of the document cache at the safe house. Marie and Benoit improvise to save the rest.", "location_id": "lyon-safe-house", "scene_id": None},
+    {"id": "evt-006", "date": "1942-09-03", "era": "1940s", "title": "Sarah treats a wounded fighter", "description": "A wounded Resistance fighter arrives at the safe house with a bullet wound. Sarah operates with makeshift equipment.", "location_id": "lyon-safe-house", "scene_id": None},
+    {"id": "evt-007", "date": "1942-11-22", "era": "1940s", "title": "Pierre's arrest", "description": "Pierre is arrested while transporting documents between Lyon and Grenoble. Benoit could not warn him in time.", "location_id": None, "scene_id": None},
+    {"id": "evt-008", "date": "1943-02-10", "era": "1940s", "title": "Marie takes over the cell", "description": "After weeks of hesitation, Marie agrees to lead the cell in Pierre's absence.", "location_id": "lyon-safe-house", "scene_id": None},
+    {"id": "evt-009", "date": "1974-03-05", "era": "1970s", "title": "Julien discovers wartime documents", "description": "In the Paris Tribune archives, Julien finds a faded carbon copy linking Inspector Laforge to leaks to the Resistance.", "location_id": "paris-newspaper", "scene_id": "088"},
+    {"id": "evt-010", "date": "1974-06-18", "era": "1970s", "title": "Julien finds Benoit under an alias", "description": "After months of investigation, Julien locates Henri Blanc in a village in the Var. He does not yet know it is Benoit Laforge.", "location_id": None, "scene_id": None},
 ]
 
 CHARACTER_EVENTS = [
@@ -178,11 +178,11 @@ CHARACTER_EVENTS = [
 ]
 
 CHARACTER_RELATIONS = [
-    ("marie-dupont", "pierre-renard", "spouse", "Marie et Pierre sont maries depuis 1938.", "1940s"),
-    ("marie-dupont", "julien-morel", "aunt-nephew", "Julien est le neveu de Marie.", "1970s"),
-    ("marie-dupont", "sarah-cohen", "comrades", "Camarades de Resistance. Marie a accueilli Sarah a la planque.", "1940s"),
-    ("pierre-renard", "benoit-laforge", "secret-allies", "Allies secrets. Benoit transmet des infos a Pierre en tant qu'agent double.", "1940s"),
-    ("julien-morel", "benoit-laforge", "investigator-subject", "Julien enquete sur le passe de Benoit/Henri Blanc.", "1970s"),
+    ("marie-dupont", "pierre-renard", "spouse", "Marie and Pierre have been married since 1938.", "1940s"),
+    ("marie-dupont", "julien-morel", "aunt-nephew", "Julien is Marie's nephew.", "1970s"),
+    ("marie-dupont", "sarah-cohen", "comrades", "Resistance comrades. Marie welcomed Sarah to the safe house.", "1940s"),
+    ("pierre-renard", "benoit-laforge", "secret-allies", "Secret allies. Benoit passes information to Pierre as a double agent.", "1940s"),
+    ("julien-morel", "benoit-laforge", "investigator-subject", "Julien investigates Benoit/Henri Blanc's past.", "1970s"),
 ]
 
 

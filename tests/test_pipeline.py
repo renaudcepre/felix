@@ -237,7 +237,7 @@ async def test_pipeline_empty_dir(
     progress = ImportProgress()
     await run_import_pipeline(str(tmp_path), seeded_driver, collection, None, None, progress)
     assert progress.status == ImportStatus.ERROR
-    assert "Aucun fichier" in progress.error
+    assert "No text files" in progress.error
 
 
 async def test_pipeline_idempotent(

@@ -9,19 +9,19 @@ SCENES = [
     {
         "id": "scene-012",
         "document": (
-            "Marie ouvre la porte de l'arriere-boutique et fait signe a la femme "
-            "de la suivre. Elles montent l'escalier etroit jusqu'au grenier. "
-            "Sarah decouvre la petite chambre mansardee : un lit de camp, une "
-            "table bancale, un broc d'eau. Par la lucarne, on apercoit les toits "
-            "de Lyon.\n\n"
-            '"Ne touchez jamais aux volets pendant la journee," dit Marie. '
-            "\"L'entree principale est condamnee. On passe toujours par la "
-            'librairie. Si la vitrine affiche un livre rouge, ne montez pas."\n\n'
-            "Sarah hoche la tete. Elle pose sa sacoche de medecin sur le lit "
-            "et en sort un stethoscope. \"J'aurai besoin de bandages et "
-            "d'antiseptique. Vous pouvez en trouver ?\"\n\n"
-            'Marie hesite. "Je verrai avec Pierre. Il connait des contacts '
-            "a l'hopital.\""
+            "Marie opens the back door of the bookshop and motions for the woman "
+            "to follow. They climb the narrow staircase to the attic. "
+            "Sarah discovers the small garret room: a camp bed, a wobbly "
+            "table, a water jug. Through the skylight, the rooftops "
+            "of Lyon are visible.\n\n"
+            '"Never touch the shutters during the day," says Marie. '
+            '"The main entrance is sealed. We always go through the '
+            'bookshop. If the window displays a red book, do not come up."\n\n'
+            "Sarah nods. She sets her medical bag on the bed "
+            'and pulls out a stethoscope. "I will need bandages and '
+            'antiseptic. Can you find some?"\n\n'
+            'Marie hesitates. "I will check with Pierre. He has contacts '
+            'at the hospital."'
         ),
         "metadata": {
             "scene_id": "012",
@@ -37,18 +37,18 @@ SCENES = [
     {
         "id": "scene-018",
         "document": (
-            "Benoit est assis a son bureau, sous le portrait du Marechal. "
-            "La pile de dossiers devant lui cache un memo qu'il vient de "
-            "recevoir : rafle prevue rue Merciere, le 20 juillet. "
-            "Trois adresses ciblees.\n\n"
-            "Il verifie que le couloir est vide. D'un geste rapide, il glisse "
-            "un papier carbone sous le memo et le recopie. Le carbone "
-            "disparait dans la doublure de son manteau.\n\n"
-            '"Laforge !" La voix du commissaire le fait sursauter. '
-            '"Le rapport sur les filatures de la semaine derniere ?"\n\n'
-            '"Sur votre bureau dans l\'heure, commissaire." Benoit ajuste '
-            "son chapeau et sort. Dans l'escalier, il sent le carbone contre "
-            "sa poitrine. Chaque jour un peu plus pres de la corde."
+            "Benoit sits at his desk, beneath the portrait of the Marshal. "
+            "The pile of folders in front of him hides a memo he has just "
+            "received: raid planned on rue Merciere, July 20th. "
+            "Three addresses targeted.\n\n"
+            "He checks that the corridor is empty. With a quick gesture, he slips "
+            "a carbon paper under the memo and copies it. The carbon "
+            "disappears into the lining of his coat.\n\n"
+            '"Laforge!" The commissioner\'s voice makes him jump. '
+            '"The report on last week\'s surveillance?"\n\n'
+            '"On your desk within the hour, commissioner." Benoit adjusts '
+            "his hat and leaves. On the staircase, he feels the carbon against "
+            "his chest. Every day a little closer to the noose."
         ),
         "metadata": {
             "scene_id": "018",
@@ -64,20 +64,20 @@ SCENES = [
     {
         "id": "scene-025",
         "document": (
-            "Pierre deplie une carte sur la table de la cuisine. Les coins "
-            "sont retenus par des tasses vides. Marie et Sarah se penchent "
-            "de chaque cote.\n\n"
-            '"La route passe par Vienne, puis Voiron," explique Pierre en '
-            'tracant une ligne au crayon. "On evite la nationale. Trop de '
-            'controles."\n\n'
-            '"Et les fournitures medicales ?" demande Sarah. "J\'ai besoin '
-            'de morphine et de sulfamides. Mes reserves sont presque vides."\n\n'
-            'Pierre reflechit. "Benoit peut nous obtenir des papiers pour '
-            'un transport medical fictif. Je le vois demain." Il regarde '
-            'Marie. "Tu feras la liaison avec le contact a Grenoble. '
-            'Depart jeudi."\n\n'
-            "Marie acquiesce en silence. Elle memorise deja le trace "
-            "sur la carte."
+            "Pierre unfolds a map on the kitchen table. The corners "
+            "are held down by empty cups. Marie and Sarah lean in "
+            "from each side.\n\n"
+            '"The route goes through Vienne, then Voiron," Pierre explains, '
+            'tracing a line with a pencil. "We avoid the main road. Too many '
+            'checkpoints."\n\n'
+            '"And the medical supplies?" Sarah asks. "I need '
+            'morphine and sulfonamides. My reserves are nearly empty."\n\n'
+            'Pierre thinks. "Benoit can get us papers for '
+            'a fictitious medical transport. I am seeing him tomorrow." He looks at '
+            'Marie. "You will be the liaison with the contact in Grenoble. '
+            'Departure Thursday."\n\n'
+            "Marie nods in silence. She is already memorizing the route "
+            "on the map."
         ),
         "metadata": {
             "scene_id": "025",
@@ -93,22 +93,22 @@ SCENES = [
     {
         "id": "scene-042",
         "document": (
-            "Marie attend dans la cage d'escalier, la carte d'identite de Vichy "
-            "serree dans sa main. Quand Benoit apparait, elle la lui met "
-            "sous le nez.\n\n"
-            '"Explique-moi ca." Sa voix tremble de colere contenue.\n\n'
-            "Benoit regarde la carte, puis Marie. Il ne nie pas. "
-            "\"Je travaille a la Prefecture. Inspecteur Laforge. Mais ce n'est "
-            'pas ce que tu crois."\n\n'
-            '"Tu es un flic de Vichy."\n\n'
-            '"Je suis un flic de Vichy qui vous transmet le calendrier '
-            'des rafles depuis six mois." Il baisse la voix. "Qui previent '
-            "Pierre quand une operation est compromise. Qui a permis "
-            "l'evacuation de la rue des Remparts.\"\n\n"
-            "Marie le devisage longuement. La colere cede la place au doute, "
-            "puis a une forme de comprehension reluctante.\n\n"
-            '"Si tu mens, je te tue moi-meme."\n\n'
-            '"Je sais," dit Benoit. "C\'est pour ca que je te fais confiance."'
+            "Marie waits in the stairwell, the Vichy identity card "
+            "clutched in her hand. When Benoit appears, she shoves it "
+            "in his face.\n\n"
+            '"Explain this." Her voice trembles with contained anger.\n\n'
+            "Benoit looks at the card, then at Marie. He does not deny it. "
+            '"I work at the Prefecture. Inspector Laforge. But it is not '
+            'what you think."\n\n'
+            '"You are a Vichy cop."\n\n'
+            '"I am a Vichy cop who has been passing you the raid schedule '
+            'for six months." He lowers his voice. "Who warns '
+            "Pierre when an operation is compromised. Who made possible "
+            'the evacuation of rue des Remparts."\n\n'
+            "Marie stares at him for a long time. The anger gives way to doubt, "
+            "then to a reluctant understanding.\n\n"
+            '"If you are lying, I will kill you myself."\n\n'
+            '"I know," says Benoit. "That is why I trust you."'
         ),
         "metadata": {
             "scene_id": "042",
@@ -124,21 +124,20 @@ SCENES = [
     {
         "id": "scene-088",
         "document": (
-            "La salle des archives sent le papier moisi et la poussiere. "
-            "Julien tousse en ouvrant un carton date de 1958. Des coupures "
-            "de presse, des notes manuscrites, des photos d'identite "
-            "jaunies.\n\n"
-            "Au fond du carton, une enveloppe kraft non cachetee. A l'interieur, "
-            "un carbone fane — presque illisible. Julien le met sous la lampe "
-            "de bureau. C'est un planning de rafle, date du 15 juillet 1942. "
-            'En marge, une annotation manuscrite : "Transmis a R. par '
+            "The archive room smells of moldy paper and dust. "
+            "Julien coughs as he opens a box dated 1958. Press clippings, "
+            "handwritten notes, yellowed identity photos.\n\n"
+            "At the bottom of the box, an unsealed kraft envelope. Inside, "
+            "a faded carbon copy — nearly illegible. Julien holds it under the desk "
+            "lamp. It is a raid schedule, dated July 15, 1942. "
+            'In the margin, a handwritten note: "Passed to R. by '
             'Insp. Laforge."\n\n'
-            "Julien note le nom dans son calepin. Laforge. Inspecteur. "
-            "Il ne sait pas encore que ce Laforge est l'homme que sa tante "
-            'Marie appelle parfois "le fantome" — ni que l\'homme vit '
-            "toujours, sous un autre nom, dans un village du Var.\n\n"
-            "Il referme le carton et prend l'ascenseur vers la redaction. "
-            "Il a une piste."
+            "Julien writes the name in his notebook. Laforge. Inspector. "
+            "He does not yet know that this Laforge is the man his aunt "
+            'Marie sometimes calls "the ghost" — nor that the man is still '
+            "alive, under another name, in a village in the Var.\n\n"
+            "He closes the box and takes the elevator to the newsroom. "
+            "He has a lead."
         ),
         "metadata": {
             "scene_id": "088",

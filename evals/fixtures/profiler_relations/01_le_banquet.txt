@@ -3,24 +3,24 @@ Moyen-Age fantastique
 1247-06-21
 Grande Salle de Thornwall
 
-La grande salle de Thornwall est bondee. Le seigneur Varn preside le banquet depuis son trone de pierre. A sa droite, Borin, le forgeron du chateau. A sa gauche, Elara, son espionne. Tous trois sont assis a la meme table, partageant le meme repas.
+The great hall of Thornwall is packed. Lord Varn presides over the banquet from his stone throne. To his right, Borin, the castle blacksmith. To his left, Elara, his spy. All three sit at the same table, sharing the same meal.
 
-Borin est un homme de cinquante-deux ans, trapu, les mains calleuses et le visage burine par les flammes de la forge. Ses cheveux gris sont coupes court.
+Borin is a fifty-two-year-old man, stocky, with calloused hands and a face weathered by the flames of the forge. His grey hair is cropped short.
 
-Elara est assise en face de lui. Elle ne dit rien, observant la salle du regard.
+Elara sits across from him. She says nothing, scanning the hall with her gaze.
 
 VARN
-Demain, je vous envoie tous les deux au col de Brume. Borin, tu connais les chemins. Elara, tu connais les ombres.
+Tomorrow, I'm sending you both to the col de Brume. Borin, you know the paths. Elara, you know the shadows.
 
 BORIN
-Je suis trop vieux pour courir dans la montagne.
+I'm too old to run through the mountains.
 
 VARN
-A cinquante-deux ans, tu portes encore des enclumes. Tu survivras.
+At fifty-two, you still carry anvils. You'll survive.
 
-Elara hoche la tete. Elle n'a pas touche a son assiette. Borin lui a enseigne le maniement des lames quand elle avait douze ans. Depuis, il est son mentor.
+Elara nods. She hasn't touched her plate. Borin taught her blade work when she was twelve. Since then, he has been her mentor.
 
 ELARA
-On part avant l'aube.
+We leave before dawn.
 
-Le banquet continue. Varn leve son verre. Borin et Elara sont les derniers a quitter la salle.
+The banquet continues. Varn raises his glass. Borin and Elara are the last to leave the hall.

@@ -309,7 +309,7 @@ async def run_import_pipeline(  # noqa: PLR0913
 
         scene_files = await asyncio.to_thread(_collect_scene_files)
         if not scene_files:
-            progress.error = f"Aucun fichier texte dans {scenes_dir}"
+            progress.error = f"No text files found in {scenes_dir}"
             progress.status = ImportStatus.ERROR
             if queue:
                 await emit(queue, "error", message=progress.error)
@@ -331,7 +331,7 @@ async def run_import_pipeline(  # noqa: PLR0913
         scenes_processed = await _process_all_scenes(ctx, orchestrator, scene_units)
 
         if scenes_processed == 0:
-            progress.error = f"Toutes les scenes ont echoue ({progress.failed_scenes}/{progress.total_scenes})"
+            progress.error = f"All scenes failed ({progress.failed_scenes}/{progress.total_scenes})"
             progress.status = ImportStatus.ERROR
             if queue:
                 await emit(queue, "error", message=progress.error)

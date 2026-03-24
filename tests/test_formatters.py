@@ -43,7 +43,7 @@ async def test_find_character_case_insensitive(seeded_driver: AsyncDriver) -> No
 
 async def test_find_character_no_match(seeded_driver: AsyncDriver) -> None:
     result = await formatters.find_character(seeded_driver, "Napoleon")
-    assert "Aucun personnage" in result
+    assert "No character" in result
     assert "Marie Dupont" in result
     assert "Pierre Renard" in result
 
@@ -53,19 +53,20 @@ async def test_find_character_no_match(seeded_driver: AsyncDriver) -> None:
 
 async def test_find_location_by_name(seeded_driver: AsyncDriver) -> None:
     result = await formatters.find_location(seeded_driver, "Lyon")
-    assert "Planque de Lyon" in result
+    assert "Lyon Safe House" in result
     assert "rue Merciere" in result
 
 
 async def test_find_location_partial(seeded_driver: AsyncDriver) -> None:
-    result = await formatters.find_location(seeded_driver, "planque")
-    assert "Planque de Lyon" in result
+    result = await formatters.find_location(seeded_driver, "safe house")
+    assert "Lyon Safe House" in result
 
 
 async def test_find_location_no_match(seeded_driver: AsyncDriver) -> None:
     result = await formatters.find_location(seeded_driver, "Berlin")
-    assert "Aucun lieu" in result
-    assert "Planque de Lyon" in result
+    assert "No location" in result
+    assert "Lyon Safe House" in result
+    assert "Lyon Safe House" in result
 
 
 # --- get_timeline ---
@@ -90,9 +91,9 @@ async def test_get_timeline_summer_1942(seeded_driver: AsyncDriver) -> None:
     result = await formatters.get_timeline(
         seeded_driver, date_from="1942-06-01", date_to="1942-09-30"
     )
-    assert "Benoit transmet" in result
-    assert "Sarah soigne" in result
-    assert "cache de documents" in result
+    assert "Benoit passes" in result
+    assert "Sarah treats" in result
+    assert "Document cache" in result
 
 
 async def test_get_timeline_no_results(seeded_driver: AsyncDriver) -> None:

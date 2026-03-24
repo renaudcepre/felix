@@ -3,35 +3,35 @@ Années 3000
 3001-03-17
 Plaines de Sel
 
-Gandalf, Aldric et Mira traversent les Plaines de Sel sous un ciel gris. Le vent souffle fort, courbant les herbes sèches.
+Gandalf, Aldric, and Mira cross the Plaines de Sel under a grey sky. The wind blows hard, bending the dry grass.
 
-Mira est une archère expérimentée originaire de la cité de Vorn. Elle marche en éclaireur, arc à la main.
-
-MIRA
-Quelque chose ne va pas. Les oiseaux se sont tus.
-
-Gandalf s'arrête et ferme les yeux. Un long silence.
-
-GANDALF
-Nous sommes suivis. Pas par des Nazgûl, pas encore. Des éclaireurs orques.
-
-ALDRIC
-Combien ?
-
-GANDALF
-Une dizaine. Ils nous rattrapent par le flanc est.
-
-Aldric dégaine son épée et prend position à droite de Gandalf. Mira se retourne et tend son arc.
+Mira is an experienced archer from the city of Vorn. She walks as a scout, bow in hand.
 
 MIRA
-Je les vois. Huit, pas dix.
+Something is wrong. The birds have gone silent.
 
-Un bref combat s'engage. Gandalf frappe deux orques de son bâton avec une précision foudroyante. Aldric en neutralise trois avec son épée. Mira abat les autres à distance.
-
-Le groupe reprend sa marche en silence. Aldric récupère une flèche brisée sur le sol et l'examine.
-
-ALDRIC
-Ils portaient la marque de Dûrash. Le seigneur des Marais nous a vendus.
+Gandalf stops and closes his eyes. A long silence.
 
 GANDALF
-Nous devions nous y attendre. Changeons de cap vers les collines de Narath.
+We are being followed. Not by Nazgûl, not yet. Orc scouts.
+
+ALDRIC
+How many?
+
+GANDALF
+About ten. They're closing in from the eastern flank.
+
+Aldric draws his sword and takes position to the right of Gandalf. Mira turns around and draws her bow.
+
+MIRA
+I see them. Eight, not ten.
+
+A brief fight breaks out. Gandalf strikes two orcs with his staff with devastating precision. Aldric neutralizes three with his sword. Mira takes down the others from a distance.
+
+The group resumes its march in silence. Aldric picks up a broken arrow from the ground and examines it.
+
+ALDRIC
+They bore the mark of Dûrash. The lord of the Marshes has sold us out.
+
+GANDALF
+We should have expected as much. Let us change course toward the collines de Narath.

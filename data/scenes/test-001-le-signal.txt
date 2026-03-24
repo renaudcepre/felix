@@ -1,11 +1,11 @@
-2061 : Le Signal (Lena Voss)
+2061: Le Signal (Lena Voss)
 
-Le terminal de communication clignotait dans le silence du poste de relais orbital Helios-3. Lena Voss, ingenieure des transmissions, fixait l'ecran ou une sequence inconnue se repetait en boucle depuis exactement quatorze minutes.
+The communication terminal blinked in the silence of the Helios-3 orbital relay station. Lena Voss, transmissions engineer, stared at the screen where an unknown sequence had been repeating on a loop for exactly fourteen minutes.
 
-— Ce n'est pas du bruit de fond, murmura-t-elle en ajustant les filtres. C'est structure. C'est intentionnel.
+— That's not background noise, she murmured, adjusting the filters. It's structured. It's intentional.
 
-Son assistant, un drone de classe 6 surnomme "Pixel", projeta l'analyse spectrale sur la vitre du hublot. La sequence provenait d'au-dela de la ceinture d'asteroides. Aucun equipement humain connu n'operait dans cette zone.
+Her assistant, a class-6 drone nicknamed "Pixel," projected the spectral analysis onto the porthole glass. The sequence originated from beyond the asteroid belt. No known human equipment was operating in that zone.
 
-Lena hesita, les doigts au-dessus du bouton de transmission vers le Commandement Terre. Si elle avait raison, tout changeait. Si elle avait tort, elle perdait son poste pour fausse alerte.
+Lena hesitated, her fingers hovering above the transmission button to Earth Command. If she was right, everything changed. If she was wrong, she'd lose her post for a false alarm.
 
-Elle appuya.
+She pressed it.

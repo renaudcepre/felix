@@ -66,7 +66,7 @@ async def start_import(
 ) -> ImportProgressResponse:
     txt_files = [f for f in files if f.filename and f.filename.lower().endswith(SCENE_FILE_EXTENSIONS)]
     if not txt_files:
-        raise HTTPException(status_code=400, detail="Aucun fichier texte recu")
+        raise HTTPException(status_code=400, detail="No text files received")
 
     contents = [(upload.filename, await upload.read()) for upload in txt_files]
 
@@ -103,7 +103,7 @@ async def import_stream(
 ) -> EventSourceResponse:
     txt_files = [f for f in files if f.filename and f.filename.lower().endswith(SCENE_FILE_EXTENSIONS)]
     if not txt_files:
-        raise HTTPException(status_code=400, detail="Aucun fichier texte recu")
+        raise HTTPException(status_code=400, detail="No text files received")
 
     contents = [(upload.filename, await upload.read()) for upload in txt_files]
 

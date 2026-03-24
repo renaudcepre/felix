@@ -21,7 +21,7 @@ def test_collection_has_all_scenes(collection: chromadb.Collection) -> None:
 
 def test_search_identity_discovery(collection: chromadb.Collection) -> None:
     result = search_scenes_in_chroma(
-        collection, query="decouverte identite secrete agent double"
+        collection, query="discovery secret identity double agent"
     )
     assert "042" in result or "088" in result
 

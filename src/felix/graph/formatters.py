@@ -94,7 +94,7 @@ async def find_character(driver: AsyncDriver, name: str) -> str:
 
         async with driver.session() as session:
             names = ", ".join(r["name"] for r in await session.execute_read(_fallback))
-        return f"Aucun personnage correspondant a '{name}'. Disponibles : {names}"
+        return f"No character matching '{name}'. Available: {names}"
 
     profiles = []
     for row in rows:
@@ -128,7 +128,7 @@ async def find_location(driver: AsyncDriver, name: str) -> str:
 
         async with driver.session() as session:
             names = ", ".join(r["name"] for r in await session.execute_read(_fallback))
-        return f"Aucun lieu correspondant a '{name}'. Disponibles : {names}"
+        return f"No location matching '{name}'. Available: {names}"
 
     profiles = []
     for row in rows:

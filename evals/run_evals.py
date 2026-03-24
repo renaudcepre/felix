@@ -125,7 +125,7 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="irina_profile_background",
             inputs="irina_profile",
-            expected_output="helios,controle,ingenieur,18,mois",
+            expected_output="helios,observation,specialist,fifteen,years",
             metadata={"category": "profiling"},
             evaluators=[BackgroundContainsKeywords(min_match=2)],
         ),
@@ -320,7 +320,7 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="reldate_vingt_neuf_in_profile",
             inputs="profile:irina-voss",
-            expected_output="vingt-neuf,mois,semaine",
+            expected_output="twenty-nine,month,week",
             metadata={"category": "relative_date", "difficulty": "hard"},
             evaluators=[BackgroundContainsKeywords(min_match=1)],
         ),
@@ -417,14 +417,14 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="scene01_date_mars_2157",
             inputs="scene_date:scene-01_signal",
-            expected_output="2157,mars",
+            expected_output="2157,03",
             metadata={"category": "dates", "tags": ["dates"]},
             evaluators=[SceneDateContainsKeywords(min_match=2)],
         ),
         Case(
             name="scene02_date_mars_2157",
             inputs="scene_date:scene-02_rapport",
-            expected_output="2157,mars",
+            expected_output="2157,03",
             metadata={"category": "dates", "tags": ["dates"]},
             evaluators=[SceneDateContainsKeywords(min_match=2)],
         ),
@@ -438,7 +438,7 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="scene07_date_avril",
             inputs="scene_date:scene-07_reldate",
-            expected_output="avril",
+            expected_output="april",
             metadata={"category": "dates", "tags": ["dates"]},
             evaluators=[SceneDateContainsKeywords()],
         ),
@@ -453,7 +453,7 @@ PIPELINE_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="scene3_leak_classified",
             inputs="issues:scene-03_intrusion",
-            expected_output="classif,confidentiel,secret,fuite",
+            expected_output="classified,confidential,secret,leak",
             metadata={"category": "issues", "tags": ["issues"]},
             evaluators=[IssueDescriptionContains()],
         ),
@@ -608,7 +608,7 @@ CONVOI_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="convoi_marco_profile",
             inputs="profile:marco-ruiz",
-            expected_output="routier,camion,fusil,minerai,transport,impulsion",
+            expected_output="driver,truck,weapon,ore,transport,pulse",
             metadata={"category": "profiling", "tags": ["profiling"]},
             evaluators=[BackgroundContainsKeywords(min_match=2)],
         ),
@@ -817,7 +817,7 @@ SEGMENTATION_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="seg_finn_taciturn",
             inputs="profile:finn-osei",
-            expected_output="silencieu,taciturne,calme,peu,reserve",
+            expected_output="quiet,taciturn,calm,reserved,silent",
             metadata={"category": "profiling", "tags": ["profiling"]},
             evaluators=[BackgroundContainsKeywords(min_match=1)],
         ),
@@ -866,7 +866,7 @@ INGEST_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="scene1_location",
             inputs="001-la-poussiere.txt",
-            expected_output="Fosse 72",
+            expected_output="Pit 72",
             metadata={"category": "location", "scene": "001"},
             evaluators=[LocationAccuracy()],
         ),
@@ -1001,21 +1001,21 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="lookup_character",
             inputs="Who is Marie Dupont?",
-            expected_output="Marie, Resistance, 1940s, coursiere",
+            expected_output="Marie, Resistance, 1940s, courier",
             metadata={"category": "lookup"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="lookup_pierre",
             inputs="Who is Pierre Renard?",
-            expected_output="Pierre, Renard, arret, 1942",
+            expected_output="Pierre, Renard, arrest, 1942",
             metadata={"category": "lookup"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="lookup_location",
             inputs="Describe the Lyon safehouse.",
-            expected_output="Planque de Lyon, Lyon, Resistance",
+            expected_output="Lyon Safe House, Lyon, Resistance",
             metadata={"category": "lookup"},
             evaluators=[ContainsExpectedFacts()],
         ),
@@ -1023,14 +1023,14 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="coherence_marie_sarah",
             inputs="Is it consistent for Marie to meet Sarah in March 1942?",
-            expected_output="Sarah, mars 1942, Lyon",
+            expected_output="Sarah, March 1942, Lyon",
             metadata={"category": "coherence"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="coherence_pierre_november",
             inputs="Where was Pierre in November 1942?",
-            expected_output="Pierre, novembre 1942, arret",
+            expected_output="Pierre, November 1942, arrest",
             metadata={"category": "coherence"},
             evaluators=[ContainsExpectedFacts()],
         ),
@@ -1038,7 +1038,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="semantic_identity",
             inputs="Find scenes where someone discovers a secret identity.",
-            expected_output="042, identite, Laforge",
+            expected_output="042, identity, Laforge",
             metadata={"category": "semantic"},
             evaluators=[ContainsExpectedFacts()],
         ),
@@ -1052,7 +1052,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="semantic_rafle",
             inputs="Find scenes related to the roundups.",
-            expected_output="rafle, Vichy, 1942",
+            expected_output="raid, Vichy, 1942",
             metadata={"category": "semantic"},
             evaluators=[ContainsExpectedFacts()],
         ),
@@ -1060,14 +1060,14 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="cross_era_benoit_julien",
             inputs="What is the connection between Benoit in the 1940s and the documents Julien finds?",
-            expected_output="Benoit, calendrier, rafle, Julien, documents",
+            expected_output="Benoit, schedule, raid, Julien, documents",
             metadata={"category": "cross_era"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="cross_era_marie_timeline",
             inputs="What was Marie's role between January and November 1942?",
-            expected_output="Marie, 1942, coursiere, cellule",
+            expected_output="Marie, 1942, courier, cell",
             metadata={"category": "cross_era"},
             evaluators=[ContainsExpectedFacts()],
         ),
@@ -1075,7 +1075,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="causal_marie_leader",
             inputs="What pushed Marie to take over the cell?",
-            expected_output="Pierre est arrete en 1942, Marie prend la tete de la cellule de resistance",
+            expected_output="Pierre arrested in 1942, Marie takes over the resistance cell",
             metadata={"category": "causal"},
             evaluators=[LLMJudge(
                 rubric="The response explains that Marie took over the resistance cell following Pierre Renard's arrest in 1942.",
@@ -1086,7 +1086,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="causal_benoit_protection",
             inputs="How did Benoit's actions protect Pierre's cell?",
-            expected_output="Benoit transmet des informations a Pierre pour proteger la cellule de resistance",
+            expected_output="Benoit passes information to Pierre to protect the resistance cell",
             metadata={"category": "causal"},
             evaluators=[LLMJudge(
                 rubric="The response explains that Benoit Laforge, acting as a double agent, transmitted intelligence (schedules, plans) to Pierre Renard's resistance cell.",
@@ -1104,7 +1104,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="causal_chain_benoit_to_julien",
             inputs="Trace the causal chain between Benoit's double game in 1942 and Julien's discovery 30 years later.",
-            expected_output="Benoit transmet en 1942, les documents survivent, Julien les decouvre dans les archives",
+            expected_output="Benoit transmits in 1942, documents survive, Julien discovers them in the archives",
             metadata={"category": "causal"},
             evaluators=[LLMJudge(
                 rubric="The response traces a causal chain: Benoit's 1942 intelligence transmissions → documents/information preserved → Julien's discovery in archives decades later.",
@@ -1116,7 +1116,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="prop_carbone_origin",
             inputs="Who created the carbon copy mentioned in the 1942 archives?",
-            expected_output="Benoit,calendrier,rafle",
+            expected_output="Benoit,schedule,raid",
             metadata={"category": "prop_tracking", "difficulty": "medium"},
             evaluators=[ContainsExpectedFacts()],
         ),
@@ -1130,7 +1130,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="prop_carbone_full_trace",
             inputs="Trace the roundup document from its creation to its rediscovery.",
-            expected_output="Benoit crée le carbone en 1942, Julien le retrouve dans les archives en 1974",
+            expected_output="Benoit creates the carbon copy in 1942, Julien finds it in the archives in 1974",
             metadata={"category": "prop_tracking", "difficulty": "hard"},
             evaluators=[LLMJudge(
                 rubric="Response traces the document from Benoit's clandestine carbon copy in 1942 to Julien's discovery in the Paris Tribune archives in 1974, identifying Benoit as the origin.",
@@ -1142,7 +1142,7 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="asym_julien_henriblanc",
             inputs="When Julien meets Henri Blanc in June 1974, does he know it's Benoit Laforge?",
-            expected_output="Julien ne sait pas que Henri Blanc est Benoit Laforge lors de leur rencontre",
+            expected_output="Julien does not know that Henri Blanc is Benoit Laforge at the time of their meeting",
             metadata={"category": "info_asymmetry", "difficulty": "medium"},
             evaluators=[LLMJudge(
                 rubric="Response correctly states that Julien does not yet know Henri Blanc is Benoit Laforge at the time of their June 1974 meeting (evt-010 explicitly says he doesn't know yet).",
@@ -1168,14 +1168,14 @@ CHATBOT_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="alias_inspecteur_laforge",
             inputs="Who is Inspector Laforge?",
-            expected_output="Benoit,Laforge,agent double",
+            expected_output="Benoit,Laforge,double agent",
             metadata={"category": "alias_resolution", "difficulty": "medium"},
             evaluators=[ContainsExpectedFacts()],
         ),
         Case(
             name="alias_henri_blanc",
             inputs="Who is Henri Blanc?",
-            expected_output="Benoit,1974,faux nom",
+            expected_output="Benoit,1974,alias",
             metadata={"category": "alias_resolution", "difficulty": "medium"},
             evaluators=[ContainsExpectedFacts()],
         ),
@@ -1354,7 +1354,7 @@ PROFILER_ATTRIBUTION_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="attr_gandalf_profile",
             inputs="profile:gandalf",
-            expected_output="magicien,baton,nazgul,staff,lumiere",
+            expected_output="wizard,staff,nazgul,light,healing",
             metadata={"category": "profiling", "tags": ["profiling"]},
             evaluators=[BackgroundContainsKeywords(min_match=1)],
         ),
@@ -1505,7 +1505,7 @@ PROFILER_RELATIONS_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="rel_darya_has_age",
             inputs="age:darya",
-            expected_output="trente,30",
+            expected_output="thirty,30",
             metadata={"category": "attribution", "difficulty": "easy"},
             evaluators=[BackgroundContainsKeywords(min_match=1)],
         ),
@@ -1521,21 +1521,21 @@ PROFILER_RELATIONS_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="rel_borin_profile",
             inputs="profile:borin",
-            expected_output="forgeron,forge,cheveux,gris,calleu,montagne",
+            expected_output="blacksmith,smith,mountains,grey,calloused",
             metadata={"category": "profiling", "tags": ["profiling"]},
             evaluators=[BackgroundContainsKeywords(min_match=2)],
         ),
         Case(
             name="rel_elara_profile",
             inputs="profile:elara",
-            expected_output="espion,ombre,lame,silence,discret",
+            expected_output="spy,blade,silent,shadow,discreet",
             metadata={"category": "profiling", "tags": ["profiling"]},
             evaluators=[BackgroundContainsKeywords(min_match=1)],
         ),
         Case(
             name="rel_darya_profile",
             inputs="profile:darya",
-            expected_output="herboriste,yeux,vert,cicatrice,menton,itinerant",
+            expected_output="herbalist,itinerant,eyes,green,scar,marsh",
             metadata={"category": "profiling", "tags": ["profiling"]},
             evaluators=[BackgroundContainsKeywords(min_match=2)],
         ),
@@ -1670,7 +1670,7 @@ GROUPS_DATASET: Dataset[str, Any] = Dataset(
         Case(
             name="groups_lena_profile",
             inputs="profile:lena-voss",
-            expected_output="controle,ecran,securite,supervise",
+            expected_output="security,screen,monitor,supervise",
             metadata={"category": "profiling", "tags": ["profiling"]},
             evaluators=[BackgroundContainsKeywords(min_match=1)],
         ),

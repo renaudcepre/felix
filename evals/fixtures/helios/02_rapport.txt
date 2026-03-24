@@ -1,15 +1,15 @@
-STATION HELIOS-3 — SALLE DE COMMANDEMENT — 13 MARS 2157
+STATION HELIOS-3 — COMMAND CENTER — MARCH 13, 2157
 
-Commandant Chen Wei écoute le rapport d'Irina sans l'interrompre.
+Commander Chen Wei listens to Irina's report without interrupting.
 
-"Vous êtes sûre que ce n'est pas un artefact de calibration ?" demande-t-il enfin.
+"Are you sure it's not a calibration artifact?" he asks at last.
 
-"Certaine. J'ai fait tourner la vérification trois fois." Irina pose son terminal sur
-la table. "Le signal correspond à une signature de propulsion que je n'ai jamais vue
-dans les archives."
+"Positive. I ran the verification three times." Irina sets her terminal down on
+the table. "The signal matches a propulsion signature I've never seen
+in the archives."
 
-Chen Wei se lève. "Je préviens le centre de contrôle de Nairobi. Vous et Kofi,
-vous continuez la surveillance. Personne d'autre n'est au courant pour l'instant."
+Chen Wei stands up. "I'm notifying the Nairobi control center. You and Kofi,
+keep monitoring. Nobody else knows about this for now."
 
-Irina acquiesce. En quinze ans de carrière dans l'observation spatiale, elle n'avait
-jamais vu Chen Wei perdre son calme — et là, il était clairement inquiet.
+Irina nods. In fifteen years working in space observation, she had
+never seen Chen Wei lose his composure — and right now, he was clearly worried.

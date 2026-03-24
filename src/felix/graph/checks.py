@@ -42,12 +42,12 @@ async def check_bilocalization(
             "scene_id": scene_id,
             "entity_id": row["char_id"],
             "description": (
-                f"{row['char_name']} est présent(e) à la fois dans \"{row['s1_title']}\" ({row['l1_name']}) "
-                f"et dans \"{row['s2_title']}\" ({row['l2_name']}) à la même date."
+                f"{row['char_name']} is present in both \"{row['s1_title']}\" ({row['l1_name']}) "
+                f"and \"{row['s2_title']}\" ({row['l2_name']}) on the same date."
             ),
             "suggestion": (
-                "Vérifiez les dates des deux scènes ou le rôle du personnage "
-                "(un personnage \"mentionné\" peut apparaître dans plusieurs lieux)."
+                "Check the dates of both scenes or the character's role "
+                "(a \"mentioned\" character can appear in multiple locations)."
             ),
         })
     return issues

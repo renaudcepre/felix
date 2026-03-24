@@ -1,14 +1,14 @@
-STATION HELIOS-3 — SALLE DE CONTRÔLE — 12 MARS 2157
+STATION HELIOS-3 — CONTROL ROOM — MARCH 12, 2157
 
-Irina Voss lève les yeux de son terminal. Les données d'émission du satellite DR-7
-ne correspondent plus aux paramètres nominaux : une anomalie fréquentielle de 3,2 Hz
-est apparue à 04h17 TU.
+Irina Voss looks up from her terminal. The emission data from satellite DR-7
+no longer matches nominal parameters: a 3.2 Hz frequency anomaly
+appeared at 04:17 UT.
 
-"Kofi, tu as vu ça ?" lance-t-elle à son collègue.
+"Kofi, did you see this?" she calls out to her colleague.
 
-Kofi Adu s'approche, les doigts volant sur le clavier. "Signal non répertorié.
-Ça ressemble à un écho de surface... mais la source est à 400 kilomètres d'altitude."
+Kofi Adu walks over, fingers flying across the keyboard. "Unregistered signal.
+Looks like a surface echo... but the source is at 400 kilometers altitude."
 
-Irina note l'heure dans son journal de bord et déclenche le protocole d'alerte.
-C'est la première fois en dix-huit mois qu'un signal non identifié traverse les filtres
-de la station.
+Irina logs the time in her mission journal and triggers the alert protocol.
+It is the first time in eighteen months that an unidentified signal has passed through
+the station's filters.

@@ -169,7 +169,7 @@ async def test_upsert_location_minimal_ignore(seeded_driver: AsyncDriver) -> Non
     )
     detail = await get_location_detail(seeded_driver, "lyon-safe-house")
     assert detail is not None
-    assert detail["name"] == "Planque de Lyon"  # NOT changed
+    assert detail["name"] == "Lyon Safe House"  # NOT changed
 
 
 async def test_upsert_timeline_event(seeded_driver: AsyncDriver) -> None:

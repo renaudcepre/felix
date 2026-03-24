@@ -154,20 +154,22 @@ class NoCharacterPresent(Evaluator[str, SceneAnalysis]):
         return {"absent_pass": not found}
 
 
-# Termes indiquant un état physique éphémère (pas une caractéristique permanente).
+# Terms indicating ephemeral physical state (not a permanent characteristic).
 _EPHEMERAL_PHYSICAL_TERMS = [
-    "yeux rouges",
+    "red eyes",
+    "tired",
     "fatigue",
-    "une main sur",
-    "main sur le",
-    "tient",
-    "conduit depuis",
-    "assis",
-    "debout",
-    "se leve",
-    "transpire",
-    "saigne",
-    "blesse",
+    "hand on",
+    "holds",
+    "holding",
+    "driving since",
+    "sitting",
+    "standing",
+    "stands up",
+    "sweating",
+    "bleeding",
+    "wounded",
+    "injured",
 ]
 
 

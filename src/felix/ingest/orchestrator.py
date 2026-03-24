@@ -112,7 +112,7 @@ class SceneOrchestrator:
             id=clarification_id,
             question=(
                 f"Relation entre '{char_a_name}' et '{char_b_name}' : "
-                f"'{existing_rel}' et '{candidate_rel}' décrivent-elles le même lien ?"
+                f"Do '{existing_rel}' and '{candidate_rel}' describe the same relationship?"
             ),
             entity_name=char_a_name,
             entity_context=f"Relation with {char_b_name}",
