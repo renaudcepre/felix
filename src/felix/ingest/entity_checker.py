@@ -16,7 +16,6 @@ from felix.graph.repositories.characters import (
 )
 from felix.graph.repositories.scenes import get_scene_summaries_by_ids
 from felix.ingest.models import ConsistencyReport
-from felix.ingest.utils import normalize
 from felix.llm import build_model
 
 if TYPE_CHECKING:
@@ -26,42 +25,6 @@ logger = logging.getLogger("felix.ingest.entity_checker")
 
 
 
-def _find_evidence(
-    proposed_fields: dict[str, str | None],
-    raw_texts: list[tuple[str, str]],
-) -> dict[str, list[dict[str, str]]]:
-    """For each proposed field, find which raw_text fragments contain matching phrases.
-
-    Returns a dict like:
-      {"background": [{"scene_id": "s1", "matching_excerpt": "...relevant line..."}]}
-    """
-    evidence: dict[str, list[dict[str, str]]] = {}
-    for field, value in proposed_fields.items():
-        if not value:
-            continue
-        # Extract multi-word phrases only (3-5 word n-grams)
-        # Do NOT match individual words — they cause false positives on contradictions
-        # (e.g. "refuse de transmettre" matches "transmettre" alone)
-        words = normalize(value).split()
-        phrases = []
-        for length in (5, 4, 3):
-            for i in range(len(words) - length + 1):
-                phrases.append(" ".join(words[i : i + length]))
-
-        matches: list[dict[str, str]] = []
-        for scene_id, raw_text in raw_texts:
-            normalized_raw = normalize(raw_text)
-            matched_phrases = [p for p in phrases if p in normalized_raw]
-            if matched_phrases:
-                # Find the most relevant line
-                for line in raw_text.split("\n"):
-                    if any(p in normalize(line) for p in matched_phrases):
-                        matches.append({"scene_id": scene_id, "matching_excerpt": line.strip()})
-                        break
-                else:
-                    matches.append({"scene_id": scene_id, "matching_excerpt": ", ".join(matched_phrases[:3])})
-        evidence[field] = matches
-    return evidence
 
 ENTITY_CHECK_PROMPT = """\
 You check if a character profile edit is CONTRADICTED by a scene.
@@ -131,25 +94,15 @@ async def check_character_consistency(
         for f in fragments
     ]
 
-    # Pre-compute text evidence — fields with matches are supported, skip LLM for those
-    raw_texts = [(f["scene_id"], raw_text_map.get(f["scene_id"], "")) for f in fragments]
-    evidence = _find_evidence(proposed_fields, raw_texts)
-
-    # Only send unsupported fields to the LLM
-    unsupported_fields = {
-        field: value
-        for field, value in proposed_fields.items()
-        if value and not evidence.get(field)
-    }
-
-    # If all fields are supported by text evidence, no need to call the LLM
-    if not unsupported_fields:
+    # Filter out empty values
+    fields_to_check = {k: v for k, v in proposed_fields.items() if v}
+    if not fields_to_check:
         return ConsistencyReport(issues=[])
 
     # Show the LLM what changed: previous value → proposed value
     diff = {
         field: {"before": profile.get(field), "after": value}
-        for field, value in unsupported_fields.items()
+        for field, value in fields_to_check.items()
     }
 
     payload = {
