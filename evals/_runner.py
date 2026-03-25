@@ -21,6 +21,8 @@ LMSTUDIO_URL = "http://localhost:1234/v1"
 LMSTUDIO_DEFAULT_MODEL = "qwen2.5-7b-instruct"
 TOGETHER_URL = "https://api.together.xyz/v1"
 TOGETHER_DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct-Turbo"
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_DEFAULT_MODEL = "anthropic/claude-sonnet-4"
 MISTRAL_DEFAULT_MODEL = "mistral-small-latest"
 
 
@@ -36,6 +38,7 @@ def setup_model_env(
     *,
     local: bool = False,
     together: bool = False,
+    openrouter: bool = False,
     mistral: bool = False,
     model: str | None = None,
     base_url: str | None = None,
@@ -43,8 +46,7 @@ def setup_model_env(
     """Configure FLX_EVAL_MODEL / FLX_EVAL_BASE_URL and return (model_name, provider) for display."""
     from felix.config import settings
 
-    if not local and not together and not mistral and not model and not base_url:
-        # Auto-detect: préfère LM Studio si disponible, sinon Together AI
+    if not local and not together and not openrouter and not mistral and not model and not base_url:
         if _lmstudio_available():
             local = True
         else:
@@ -54,6 +56,9 @@ def setup_model_env(
         os.environ["FLX_EVAL_MODEL"] = model or MISTRAL_DEFAULT_MODEL
         os.environ.pop("FLX_EVAL_BASE_URL", None)
         return os.environ["FLX_EVAL_MODEL"], "Mistral API"
+    elif openrouter:
+        os.environ["FLX_EVAL_BASE_URL"] = base_url or OPENROUTER_URL
+        os.environ["FLX_EVAL_MODEL"] = model or OPENROUTER_DEFAULT_MODEL
     elif together:
         os.environ["FLX_EVAL_BASE_URL"] = base_url or TOGETHER_URL
         os.environ["FLX_EVAL_MODEL"] = model or TOGETHER_DEFAULT_MODEL

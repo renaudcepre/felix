@@ -24,7 +24,13 @@ def build_model(
 
     if url:
         is_together = "together" in url
-        key = api_key or (settings.together_key if is_together else settings.llm_api_key) or "lm-studio"
+        is_openrouter = "openrouter" in url
+        if is_together:
+            key = api_key or settings.together_key
+        elif is_openrouter:
+            key = api_key or settings.openrouter_key
+        else:
+            key = api_key or settings.llm_api_key or "lm-studio"
         return OpenAIModel(
             name,
             provider=OpenAIProvider(base_url=url, api_key=key),

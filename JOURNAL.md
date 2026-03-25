@@ -18,6 +18,14 @@ modéliser quand on sera prêt.
 Priorités : notes = next step naturel (low effort, high value). Écriture assistée = plan
 long terme.
 
+## Benchmark modèles via OpenRouter — 2026-03-25
+
+Test de Claude Haiku et Sonnet via OpenRouter (`--openrouter`). Sonnet à ~2€ pour un full run d'evals — ingérable en coût récurrent.
+
+Résultats surprenants : **Sonnet ne bat pas le Qwen 7B** sur la plupart des suites pipeline. Le 7B est meilleur sur profiler-attribution (84% vs 53%) et segmentation (89% vs 72%). Sonnet gagne sur chatbot (73% vs 65%) grâce à un meilleur raisonnement multi-hop. Qwen3 235B via Together reste le meilleur rapport qualité/prix (87% pipeline, 96% convoi).
+
+Conclusion : les prompts sont optimisés pour le 7B. Un modèle plus gros n'apporte pas de gain automatique sans adapter les prompts. Le 7B Together reste le default.
+
 ## Passage full anglais — 2026-03-25
 
 Traduction de tout le contenu FR → EN : 23 scènes (data + fixtures), seed data (graph +
@@ -79,7 +87,7 @@ Nœud `:Group` + `MEMBER_OF`. Les collectifs (drones, pillards) sont distincts d
 personnages individuels. `character_type: Literal["individual", "group"]` dans
 l'extraction.
 
-## Narrative beats pour attribution — 2026-03-18
+## Narrative beats pour attribution — 2026-03-18.
 
 Extraction `subject → action → object` par scène, puis filtrage par personnage avant le
 profiler. Résout les erreurs d'attribution flaky avec le 7B.

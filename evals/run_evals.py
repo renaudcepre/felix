@@ -4,6 +4,8 @@ Usage:
     uv run python -m evals.run_evals --suite pipeline --together
     uv run python -m evals.run_evals --suite ingest --local
     uv run python -m evals.run_evals --suite pipeline --mistral
+    uv run python -m evals.run_evals --suite ingest --openrouter
+    uv run python -m evals.run_evals --suite ingest --openrouter --model anthropic/claude-sonnet-4
     uv run python -m evals.run_evals --suite pipeline --list
     uv run python -m evals.run_evals --suite pipeline --case character_extraction
     uv run python -m evals.run_evals                          # toutes les suites
@@ -1749,6 +1751,7 @@ def main(
     suite: Annotated[str | None, typer.Option("--suite", help=f"Suite to run: {', '.join(SUITES)}")] = None,
     local: Annotated[bool, typer.Option("--local", help="Use LMStudio local model")] = False,
     together: Annotated[bool, typer.Option("--together", help="Use Together AI (reads TOGETHER_API_KEY)")] = False,
+    openrouter: Annotated[bool, typer.Option("--openrouter", help="Use OpenRouter (reads OPENROUTER_API_KEY)")] = False,
     mistral: Annotated[bool, typer.Option("--mistral", help="Use Mistral API (reads FLX_API_KEY)")] = False,
     model: Annotated[str | None, typer.Option("--model", help="Model name override")] = None,
     base_url: Annotated[str | None, typer.Option("--base-url", help="OpenAI-compatible base URL")] = None,
@@ -1820,7 +1823,7 @@ def main(
         raise typer.Exit()
 
     model_name, provider = setup_model_env(
-        local=local, together=together, mistral=mistral, model=model, base_url=base_url
+        local=local, together=together, openrouter=openrouter, mistral=mistral, model=model, base_url=base_url
     )
     console.print(Panel(
         f"[bold]Model:[/bold] {model_name}\n[bold]Provider:[/bold] {provider}",

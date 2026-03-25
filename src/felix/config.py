@@ -20,6 +20,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TOGETHER_API_KEY", "FLX_TOGETHER_KEY"),
     )
 
+    openrouter_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("OPENROUTER_API_KEY", "FLX_OPENROUTER_KEY"),
+    )
+
     logfire_token: str = Field(
         default="",
         validation_alias=AliasChoices("LOGFIRE_TOKEN", "FLX_LOGFIRE_TOKEN"),
