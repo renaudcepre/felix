@@ -1986,8 +1986,8 @@ UNIFIED_DATASET: Dataset[str, Any] = Dataset(
             evaluators=[EntityCheckNoIssues()],
         ),
         Case(
-            name="u_ec_borin_rephrase",
-            inputs='entity_check:borin-ironfist:{"background":"Blacksmith for many decades at the mountain keep"}',
+            name="u_ec_borin_additional_skill",
+            inputs='entity_check:borin-ironfist:{"traits":"Loyal, protective of his people"}',
             expected_output="",
             metadata={"category": "entity_check"},
             evaluators=[EntityCheckNoIssues()],
@@ -2001,7 +2001,7 @@ UNIFIED_DATASET: Dataset[str, Any] = Dataset(
         ),
         Case(
             name="u_ec_darya_plausible",
-            inputs='entity_check:darya:{"traits":"Calm and methodical under pressure"}',
+            inputs='entity_check:darya:{"background":"Grew up traveling between villages"}',
             expected_output="",
             metadata={"category": "entity_check"},
             evaluators=[EntityCheckNoIssues()],

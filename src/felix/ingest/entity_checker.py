@@ -27,16 +27,15 @@ logger = logging.getLogger("felix.ingest.entity_checker")
 
 
 ENTITY_CHECK_PROMPT = """\
-You verify if a proposed character edit contradicts a scene.
+You verify if a proposed character edit contradicts existing information.
 
-A contradiction is ONLY when the scene says the OPPOSITE about this character. \
-New details, rewordings, and information about other characters are never contradictions. \
-Return an empty list unless you find a direct factual conflict.
+Compare each "proposed_changes" entry (before → after) with the current_profile and scene_fragments. \
+Report only when the "after" value directly conflicts with an established fact. \
+Adding new information is always fine — return empty list for those.
 
-Check only the character named in "character_name".
+Check only the character in "character_name".
 
-Each issue needs: type "profile_contradiction", severity "error", scene_id, entity_id, \
-and description quoting the contradicting scene passage.
+Each issue: type "profile_contradiction", severity "error", scene_id, entity_id, description.
 """
 
 
