@@ -43,6 +43,7 @@ BAD: "both present at the council", "participant in the battle"
 GOOD: "fellow member of the expedition", "rival for the throne"
 
 One sentence per field maximum. Be concise and factual.
+NEVER use "|" or ";" to separate items in a field. Use commas or write prose.
 """
 
 PROFILER_PROMPT = """\
@@ -79,7 +80,7 @@ Fields to fill:
   BAD: "both present at the council", "participant in the battle", "seen together at the inn"
   GOOD: "fellow member of the expedition", "rival for the throne", "father"
 
-Be concise and factual.
+Be concise and factual. NEVER use "|" or ";" to separate items in a field. Use commas or write prose.
 """
 
 BEAT_EXTRACTOR_PROMPT = """\

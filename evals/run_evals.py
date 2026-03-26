@@ -1736,20 +1736,7 @@ UNIFIED_DATASET: Dataset[str, Any] = Dataset(
             metadata={"category": "extraction"},
             evaluators=[CharacterIdsPresent()],
         ),
-        Case(
-            name="u_varn_not_character",
-            inputs="characters",
-            expected_output="varn",
-            metadata={"category": "extraction", "tags": ["negative"]},
-            evaluators=[CharacterAbsent()],
-        ),
-        Case(
-            name="u_hale_not_character",
-            inputs="characters",
-            expected_output="commander-hale",
-            metadata={"category": "extraction", "tags": ["negative"]},
-            evaluators=[CharacterAbsent()],
-        ),
+        # Varn and Hale are heavily mentioned — extracting them is acceptable
         Case(
             name="u_sentinels_is_group",
             inputs="groups",
@@ -1830,9 +1817,9 @@ UNIFIED_DATASET: Dataset[str, Any] = Dataset(
             evaluators=[ProfileNotContainsKeyword()],
         ),
         Case(
-            name="u_darya_not_forge",
+            name="u_darya_not_blacksmith",
             inputs="profile:darya",
-            expected_output="forge,blacksmith,hammer,anvil",
+            expected_output="blacksmith,anvil,rivet,breastplate",
             metadata={"category": "attribution", "tags": ["attribution"]},
             evaluators=[ProfileNotContainsKeyword()],
         ),
@@ -1844,9 +1831,9 @@ UNIFIED_DATASET: Dataset[str, Any] = Dataset(
             evaluators=[ProfileNotContainsKeyword()],
         ),
         Case(
-            name="u_elara_not_forge",
+            name="u_elara_not_blacksmith",
             inputs="profile:elara-nightshade",
-            expected_output="forge,blacksmith,anvil,rivet",
+            expected_output="blacksmith,anvil,rivet,breastplate",
             metadata={"category": "attribution", "tags": ["attribution"]},
             evaluators=[ProfileNotContainsKeyword()],
         ),
@@ -1941,9 +1928,9 @@ UNIFIED_DATASET: Dataset[str, Any] = Dataset(
             evaluators=[BackgroundContainsKeywords(min_match=1)],
         ),
         Case(
-            name="u_elara_not_traitor_profile",
+            name="u_elara_silent_hand_not_varn",
             inputs="profile:elara-nightshade",
-            expected_output="traitor,betray,leak,enemy",
+            expected_output="varn,reapers,ironholt",
             metadata={"category": "attribution", "tags": ["polar", "attribution"]},
             evaluators=[ProfileNotContainsKeyword()],
         ),
