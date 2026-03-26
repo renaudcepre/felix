@@ -1,0 +1,96 @@
+THORNWALL KEEP — THE INFIRMARY — LATE AUTUMN 1247
+
+The infirmary was full again. Darya moved between the cots with practiced efficiency, her satchel open on the central table. She had run out of nightshade extract three days ago and was working with willow bark and prayer. Her green eyes — the same green her mother had carried from the marshes of the Eastern Reach — missed nothing. At thirty years old, she had already treated more wounds than the keep's previous healer had in a lifetime.
+
+"The infection in Ward's leg is spreading," she told Borin, who had come to check on the wounded. "If I don't amputate within two days, he'll lose more than the leg."
+
+Borin nodded grimly. "Do what you have to. I'll hold him down if needed." His grey hair was thinner now than when the siege began, and the lines around his eyes had deepened. Fifty-two years at the forge had prepared him for heat and hammer, not for the slow attrition of watching men die in beds.
+
+Fourteen soldiers from Brume Pass had made it to Thornwall — not twelve as Elara had initially reported, but fourteen. Two had been hiding in the forest for days before finding the road. One of them, a corporal named Thane, had brought disturbing news: before the fall of Brume Pass, Commander Hale had sent a sealed letter to Thornwall. The letter had never arrived.
+
+"Who was carrying it?" Borin asked.
+
+Thane shook his head. "A courier. Young woman, dark cloak. She left two days before the attack. She should have reached Thornwall before us."
+
+Borin's jaw tightened. A dark cloak. Elara had arrived at Thornwall wearing a dark cloak, three weeks before the fall of Brume Pass. The timing was wrong — or exactly right. He thought of the night Ferris had seen her leaving by the eastern gate, and of the Reaper patrol that had appeared on the eastern approach the following day. Two data points did not make a pattern. But they made a suspicion.
+
+Elara entered the infirmary with snow on her short blonde hair. She had been scouting the northern ridge — the only approach Varn's forces hadn't yet covered. Her movements were precise and economical, the kind of controlled physicality that came from years of combat training. She carried no visible weapons, but Borin had noticed the way her right hand rested near her belt — always within reach of something.
+
+"There's a gap in their northern line," she said. "Three hours, maybe four, before the next patrol. Enough time to get a messenger through to Lord Ashford in the capital."
+
+"Ashford won't come," Borin said flatly. "He didn't come for Brume Pass. He won't come for Thornwall."
+
+"Then we send the message anyway. If we fall, someone should know why."
+
+Meanwhile, Maren had made a breakthrough in the archives. Hidden behind a false panel in the third archive, she had found Tomlin Hale's personal diary. The entries were methodical, obsessive — the work of a man who had discovered something that terrified him. Maren's ink-stained fingers trembled as she turned the brittle pages. She was twenty years old, the youngest person in the keep, and until three months ago her greatest concern had been the proper cataloging of land deeds. Now she was reading the confessions of a dead man who had uncovered a secret that was killing them all.
+
+Tomlin wrote: "ORACLE is not merely a record-keeper. It is a communicator. It was built to exchange information with a twin mechanism — the Second Eye — located beyond the mountains. Every word spoken within these walls, every map displayed, every troop count projected — all of it flows outward. The Second Eye receives everything."
+
+And then, the critical entry: "I have traced the Second Eye's location. It sits in the foundation of Varn's fortress at Ironholt. Everything we say, Varn hears. Everything we plan, Varn knows. The enemy is not outside the walls. The enemy is the walls themselves."
+
+Tomlin had discovered the truth in 1203 — forty-four years ago. He had hidden the tunnel records to prevent anyone from finding the core mechanism. He had chosen silence over action, surveillance over safety.
+
+And Commander Hale, his father, had never known. The old commander had died at Brume Pass still trusting the walls that had betrayed him.
+
+Maren brought the diary to the council chamber that evening. When she read the critical passages aloud, the silence was absolute. Darya set down the bandage she had been rolling. Borin gripped the edge of the table until his knuckles whitened. Elara showed no visible reaction — which, to Borin, was itself a reaction.
+
+"If this is true," Darya said carefully, "then every strategic decision we've made since the siege began has been transmitted to Varn in real time."
+
+"Not just since the siege," Maren corrected. "Since the keep was built. Eight hundred years of perfect intelligence."
+
+"Then why haven't they taken us already?" Elara asked.
+
+It was a good question. Borin had been asking himself the same thing. If Varn had eight centuries of intelligence on Thornwall's defenses, why lay siege at all? Why not simply walk through the vulnerabilities?
+
+Unless the surveillance was not one-directional. Unless Tomlin had been right about the mutual nature of the link.
+
+
+THORNWALL KEEP — THE TUNNEL — WINTER 1247
+
+They went in at midnight. Borin led, carrying a lantern in one hand and his hammer in the other — the same hammer he had used for fifty-two years, its handle worn smooth by decades of grip. Elara followed with her blade drawn, the steel catching the lantern light in brief, cold flashes. Maren brought the journal and a reconstructed map of the tunnel system.
+
+Darya stayed behind to manage the infirmary. Before they left, Borin had a final conversation with her, out of ORACLE's projection range — or so he hoped.
+
+"If we don't come back by dawn, seal the tunnel entrance and tell no one."
+
+"And Elara?" Darya asked pointedly. "Are you sure you want her down there with you?"
+
+"I need her blade. And if she is working for Varn, better to have her underground with me than above ground with you."
+
+The tunnel was narrower than the plans suggested. Borin's broad shoulders scraped against the damp stone walls, and the air smelled of minerals and age. They walked for twenty minutes in silence, the only sounds their footsteps and the distant drip of water. The deeper they went, the warmer it became — an unnatural warmth that seemed to radiate from the stone itself.
+
+They reached the chamber at last: a natural cave widened by human hands, with a pillar of dark crystal at its center. The crystal pulsed with a faint blue light, and Borin felt it in his teeth, in his bones, in every year of metal and fire that had built his life. This was ORACLE's heart — not the projection nodes scattered throughout the keep, but the source itself.
+
+"The core," Maren whispered. She read from Tomlin's journal: "He describes a sequence — three tones, played in succession, that would sever the link to the Second Eye. But he never used it. He writes: 'The link is too valuable to destroy. What flows to the enemy also flows to us. We see them as they see us.'"
+
+"Mutual surveillance," Elara said quietly. "Hale was using ORACLE to spy on Varn, knowing Varn was spying on him. A deliberate stalemate."
+
+"And when Tomlin died," Borin said slowly, "no one continued watching. Varn kept receiving. We stopped."
+
+Borin looked at the crystal, then at Elara. "You've been going out at night. Ferris saw you at the eastern gate."
+
+Elara met his gaze steadily. "I was looking for the courier. The one carrying Hale's letter. I found her body in the ravine, two miles east. Throat cut. The letter was gone."
+
+"Why didn't you tell me?"
+
+"Because the cut was professional. The same technique I was trained in. Someone from my order killed that courier — and I needed to know if they were still in Thornwall before I said anything."
+
+"Your order?"
+
+"The Silent Hand. Lord Ashford's intelligence service. I was sent here to assess whether Thornwall could be defended. My report was due three weeks ago." She paused. "I never sent it. Because sending it would have meant admitting the keep is lost. And I don't believe it is."
+
+Borin stared at her for a long moment. The suspicion that had been building for months didn't vanish — but it shifted, rearranged itself around new information. Elara was a spy, yes. But not Varn's spy. Ashford's. And the real leak had been ORACLE all along — the ancient mechanism they had trusted like a member of the family.
+
+He turned to the crystal.
+
+"Play the sequence," he said.
+
+Elara struck three notes on the crystal with the pommel of her blade. The blue light dimmed, flickered, and went dark. In the silence that followed, they heard something none of them had noticed before: the complete absence of ORACLE's hum. It had been so constant, so pervasive, that its disappearance felt like a physical subtraction — as if the keep itself had exhaled.
+
+For the first time in eight hundred years, Thornwall Keep was truly alone.
+
+Above them, in the infirmary, Darya felt the change. The projection node in the wall went dark. She crossed to the window and looked out at the snow-covered courtyard, where the Sentinels were changing guard in the torchlight.
+
+On the western horizon, fires burned. Varn's forces were moving.
+
+But for the first time, they were moving blind too.
