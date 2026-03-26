@@ -216,9 +216,7 @@ async def patch_character_profile(
 ) -> CharacterProfile:
     parts = [f"Character: {name}\n"]
     parts.append("=== Current profile ===")
-    # background and arc are accumulated at DB level — omit them here so the LLM
-    # only extracts what the new scene adds, avoiding duplication on concatenation.
-    for field in ("age", "physical", "traits"):
+    for field in ("age", "physical", "background", "arc", "traits"):
         val = existing_profile.get(field)
         if val:
             parts.append(f"- {field}: {val}")
