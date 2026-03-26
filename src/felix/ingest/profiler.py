@@ -15,73 +15,30 @@ if TYPE_CHECKING:
 logger = logging.getLogger("felix.ingest.profiler")
 
 PROFILER_PATCH_PROMPT = """\
-You are a specialized assistant for maintaining screenplay character profiles.
+You update a character profile with information from a new scene.
 
-You are given:
-1. The current validated profile of a character (from previous scenes)
-2. A new scene in which this character appears
+Return the COMPLETE updated profile: keep all existing info, add what the new scene reveals. \
+One concise sentence per field. Use null for unknown fields.
 
-Your task: return the COMPLETE updated profile, merging existing information with what the new scene reveals.
+Every field describes THIS character only — ignore other characters' attributes even if mentioned \
+in the same scene. Use only the "Events involving" section for arc if present.
 
-RULES:
-- Incorporate ALL existing profile information — do not lose any detail already known.
-- Add new information revealed by the current scene.
-- If a field already has content, synthesize old and new into a single concise statement — no duplication, no repetition, no " | " separators.
-- If the scene adds nothing new for a field, return the existing value unchanged.
-- If a field is unknown in both the profile and the scene, return null.
-- Invent nothing: every piece of information must be traceable to the profile or the scene text.
-
-ATTRIBUTION RULE:
-- ALL fields (age, physical, background, arc, traits, relations) must describe THIS character only.
-- Do NOT attribute to this character any detail (age, appearance, trait, relationship) that belongs to another character, even if mentioned in the same scene.
-- If the scene says "Ren is forty-two years old" and you are profiling Suki, do NOT set Suki's age to "forty-two".
-- When an "Events involving <character>" section is present, use ONLY those events for `arc` and `background`.
-- The scene text provides context (dialogue, atmosphere) — not additional details to attribute to every character present.
-
-For relations: do NOT add co-presence as a relation. Two characters appearing in the same scene is not a relationship.
-BAD: "both present at the council", "participant in the battle"
-GOOD: "fellow member of the expedition", "rival for the throne"
-
-One sentence per field maximum. Be concise and factual.
-NEVER use "|" or ";" to separate items in a field. Use commas or write prose.
+Relations must describe a real bond (mentor, rival, ally). Mere co-presence in a scene is not a relation.
 """
 
 PROFILER_PROMPT = """\
-You are a specialized assistant for synthesizing screenplay character profiles.
+You synthesize a character profile from screenplay excerpts. Write only facts stated in the text. \
+Use null for anything not explicitly mentioned.
 
-You are given a character's name and excerpts from scenes in which they appear.
-Synthesize a structured profile based ONLY on what is EXPLICITLY \
-written in the provided texts.
+Fields:
+- age: only if the text states it ("She was forty-five" → "45"). Duration of service is not age.
+- physical: permanent appearance only (build, hair, scars). Exclude momentary states.
+- background: history and origins from the text.
+- arc: what this character does across scenes. Use the "Events involving" section if present.
+- traits: personality shown through actions and dialogue.
+- relations: real bonds only (mentor, rival, ally, family). Co-presence is not a relation.
 
-ABSOLUTE RULE: every piece of information you write MUST be traceable to \
-a specific sentence in the texts. If you cannot cite the source sentence, \
-set the field to null. A null field is ALWAYS preferable to an invention.
-
-Do NOT infer, extrapolate, or embellish. No "probably", \
-no "seems", no guessing about appearance, clothing, age \
-or personality if the text does not mention it.
-
-Fields to fill:
-- age: age or age range ONLY if the text mentions it explicitly.
-  Examples: "She was forty-five" → age: "45". "a boy of sixteen" → age: "16". "Twenty years of service" → age: null (service duration ≠ age).
-- physical: physical description ONLY if the text describes appearance \
-(clothing, features, build...). "stared at the screen" is NOT a physical description.
-- background: history and origins — ONLY what the text says about the character's past
-- arc: narrative evolution of the character across scenes, based on their concrete actions.
-  If an "Events involving <character>" section is present, use ONLY those events for arc — do not
-  attribute events that happen to other characters, even if mentioned in the scene text.
-- traits: character traits ONLY as demonstrated by actions and dialogue in the text
-- relations: list of relationships with other characters observed in the texts.
-  For each relation, provide:
-  - other_name: the exact name of the character as it appears in the texts
-  - relation: free-form description of the relationship (e.g. "colleague at Helios-3 relay", \
-"mentor", "rival", "father", "companion AI"). Be precise and contextual.
-  List only relationships clearly present in the texts.
-  Do NOT list co-presence as a relation. Two characters being in the same scene is not a relationship.
-  BAD: "both present at the council", "participant in the battle", "seen together at the inn"
-  GOOD: "fellow member of the expedition", "rival for the throne", "father"
-
-Be concise and factual. NEVER use "|" or ";" to separate items in a field. Use commas or write prose.
+One sentence per field. Describe THIS character only.
 """
 
 BEAT_EXTRACTOR_PROMPT = """\

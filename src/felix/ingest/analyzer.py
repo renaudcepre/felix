@@ -46,63 +46,17 @@ RULES:
 """
 
 CHARACTER_PROMPT = """\
-You are a specialized assistant for extracting characters from screenplay scenes.
+You extract characters from screenplay scenes.
 
-Extract ALL characters from the scene text, including those merely evoked or mentioned in passing:
-- "participant" : the character PHYSICALLY ACTS in the scene (speaks, moves, does something)
-- "witness" : the character is PRESENT in the scene but does not act directly
-- "mentioned" : the character is EVOKED by another, in dialogue, narration, or a memory — even briefly. Includes ancestors, parents, people referenced by name.
+For each character found in the text, provide:
+- name: proper name only ("Jean Martin", not "Doctor Jean Martin"). For unnamed entities use type ("the guard").
+- role: "participant" (acts in scene), "witness" (present, passive), or "mentioned" (evoked in dialogue/narration).
+- description: permanent physical traits only (height, hair, scars). Use null if none mentioned. Exclude momentary states (fatigue, posture).
+- context: 1-2 sentences on what this character does or how they are referenced. Helps disambiguate similar names.
+- character_type: "individual" (default) or "group" (plural collectives like "the guards", "the rebels").
 
-IMPORTANT: if a character is named even ONCE in the text (e.g. "Elias's son", "as Jakes used to say"), they MUST appear in the list with the role "mentioned".
-
-A character who is an ancestor, a parent, a memory, or who is spoken of in the past tense is "mentioned", NOT "participant".
-
-CHARACTER NAMES:
-- Use ONLY the character's proper name (first name + last name).
-- Do NOT put title, profession, or rank in the "name" field \
-(not "Doctor Jean Martin" but "Jean Martin", not "Captain Korvin" but "Lara Korvin").
-- Profession or rank should go in the "description" field, not "name".
-- EXCEPTION: creatures, monsters, or unnamed entities that physically act in the scene \
-(attack, speak, move) ARE characters. Use their species/type as the name \
-(e.g. "the creature", "the guard", "the android"). Do NOT omit them because they lack a human name.
-
-PHYSICAL DESCRIPTION:
-- Only include traits that are permanent or stable characteristics (e.g. height, build, age, scars, hair color, distinctive features).
-- Do NOT include ephemeral or momentary states: fatigue, red eyes, tears, posture at a given moment, \
-actions performed in the scene ("hand on the wheel", "sitting", "bleeding").
-- If no permanent physical trait is mentioned, leave description null or describe only role/profession.
-
-SCENE CONTEXT (separate from physical description):
-- Summarize what this character DOES in this scene: key actions, dialogue topics, interactions with others.
-- This field is used for entity disambiguation — it should help distinguish two characters with similar names.
-- Keep it to 1-2 sentences max.
-- If the character is only "mentioned" with no scene actions, use their mention context.
-
-Examples:
-  Character "Haruki" in a cockpit scene → context: "Pilots the ship through the asteroid field, argues with Nadia about the route"
-  Character "Oleg" mentioned in dialogue → context: "Mentioned by Priya as the doctor who treated her wounds on Titan"
-  Character "Nadia" witnessing a fight → context: "Watches the confrontation between Haruki and the guards from the corridor"
-  Character "Old Tom" mentioned in passing → context: "Mentioned by Camille as her late grandfather who built the cabin"
-
-CHARACTER TYPE:
-- "individual": any entity with a unique proper name, OR an unnamed entity acting alone
-  ("the guard", "the creature", "the android"). Default.
-- "group": a collective that refers to multiple entities simultaneously:
-  factions, armies, species, organizations, unnamed collectives
-  ("the orcs", "the raiders", "the rebels", "the drones", "the guards").
-  Use "group" when the name is inherently plural or refers to a collective force.
-
-Examples:
-  "Spark" (named drone) → individual
-  "the drones" → group
-  "the Merchant Guild" → group
-  "a lone raider" → individual  (one person acting alone)
-  "the raiders" → group
-
-RULES:
-- Invent NOTHING. Extract only what is in the text.
-- If information is not in the text, use null.
-- Each character must appear ONLY ONCE in the list.
+Include every named person, even those only mentioned once in passing.
+Each character appears only once. Extract only what the text states.
 """
 
 
