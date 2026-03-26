@@ -43,17 +43,6 @@ from felix.ingest.resolver import AmbiguousMatch, fuzzy_match_entity
 
 logger = logging.getLogger("felix.ingest")
 
-_PIPE_FIELDS = ("age", "physical", "background", "arc", "traits")
-
-
-def _clean_profile(profile: dict) -> dict:
-    """Remove pipe separators from profile fields."""
-    for field in _PIPE_FIELDS:
-        val = profile.get(field)
-        if isinstance(val, str) and "|" in val:
-            profile[field] = val.replace(" | ", ", ").replace("|", ", ")
-    return profile
-
 
 async def _check_relation_semantic(
     deduper: Any,
@@ -358,13 +347,13 @@ class SceneOrchestrator:
                         self.profiler_patch or self.profiler, char_name, existing_profile,
                         scene_text, fragment, beats=char_beats,
                     )
-                    await overwrite_character_profile_fields(ctx.driver, char_id, _clean_profile(profile.model_dump()))
+                    await overwrite_character_profile_fields(ctx.driver, char_id, profile.model_dump())
                 else:
                     profile = await profile_character(
                         self.profiler, char_name, [scene_text], [fragment], char_known_names,
                         beats=char_beats,
                     )
-                    await update_character_profile(ctx.driver, char_id, _clean_profile(profile.model_dump()))
+                    await update_character_profile(ctx.driver, char_id, profile.model_dump())
 
                 stored_relations: list[dict[str, str]] = []
                 for rel in profile.relations:

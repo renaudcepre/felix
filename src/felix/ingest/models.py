@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ExtractedCharacter(BaseModel):
@@ -40,6 +40,13 @@ class CharacterProfile(BaseModel):
     arc: str | None = None
     traits: str | None = None
     relations: list[ExtractedRelation] = []
+
+    @field_validator("age", "physical", "background", "arc", "traits", mode="before")
+    @classmethod
+    def clean_pipes(cls, v: str | None) -> str | None:
+        if isinstance(v, str) and "|" in v:
+            return v.replace(" | ", ", ").replace("|", ", ")
+        return v
 
 
 class NarrativeBeat(BaseModel):

@@ -62,7 +62,8 @@ no "seems", no guessing about appearance, clothing, age \
 or personality if the text does not mention it.
 
 Fields to fill:
-- age: age or age range ONLY if the text mentions it explicitly
+- age: age or age range ONLY if the text mentions it explicitly.
+  Examples: "She was forty-five" → age: "45". "a boy of sixteen" → age: "16". "Twenty years of service" → age: null (service duration ≠ age).
 - physical: physical description ONLY if the text describes appearance \
 (clothing, features, build...). "stared at the screen" is NOT a physical description.
 - background: history and origins — ONLY what the text says about the character's past
