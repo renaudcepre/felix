@@ -147,14 +147,22 @@ async def _segment_scene_files(
     return scene_units
 
 
+def _agent_model(ctx: _PipelineContext, role: str) -> tuple[str | None, str | None]:
+    """Return (model_name, base_url) for a specific agent role, with env var override."""
+    import os
+    env_model = os.environ.get(f"FLX_MODEL_{role.upper()}")
+    env_url = os.environ.get(f"FLX_BASE_URL_{role.upper()}")
+    return (env_model or ctx.model_name, env_url or ctx.base_url)
+
+
 def _create_agents(ctx: _PipelineContext) -> tuple:
     """Create all LLM agents needed by the pipeline."""
-    analyzer = create_analyzer_agent(ctx.model_name, ctx.base_url)
-    cleaner = create_cleaner_agent(ctx.model_name, ctx.base_url)
-    profiler = create_profiler_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
-    profiler_patch = create_profiler_patch_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
-    beat_extractor = create_beat_extractor_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
-    relation_deduper = create_relation_dedup_agent(ctx.model_name, ctx.base_url) if ctx.model_name else None
+    analyzer = create_analyzer_agent(*_agent_model(ctx, "analyzer"))
+    cleaner = create_cleaner_agent(*_agent_model(ctx, "cleaner"))
+    profiler = create_profiler_agent(*_agent_model(ctx, "profiler")) if ctx.enrich_profiles else None
+    profiler_patch = create_profiler_patch_agent(*_agent_model(ctx, "profiler")) if ctx.enrich_profiles else None
+    beat_extractor = create_beat_extractor_agent(*_agent_model(ctx, "beats")) if ctx.enrich_profiles else None
+    relation_deduper = create_relation_dedup_agent(*_agent_model(ctx, "dedup")) if ctx.model_name else None
     return analyzer, cleaner, profiler, profiler_patch, beat_extractor, relation_deduper
 
 
