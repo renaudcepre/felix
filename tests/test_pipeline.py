@@ -126,12 +126,6 @@ def _mock_analyze_scene(analyses: list[SceneAnalysis]):
     return _analyze
 
 
-def _mock_check_scene_consistency(report: ConsistencyReport):
-    async def _check(_driver, _collection, _scene_summary, _timeline_agent, _narrative_agent):
-        return report
-
-    return _check
-
 
 MOCK_PROFILE = CharacterProfile(
     age="40 ans",
@@ -156,18 +150,13 @@ def _mock_patch_character_profile(profile: CharacterProfile):
     return _patch
 
 
-def _pipeline_patches(analyses, report, profile=None):
+def _pipeline_patches(analyses, _report=None, profile=None):
     patches = [
         patch(
             "felix.ingest.orchestrator.analyze_scene",
             side_effect=_mock_analyze_scene(analyses),
         ),
-        patch(
-            "felix.ingest.orchestrator.check_scene_consistency",
-            side_effect=_mock_check_scene_consistency(report),
-        ),
         patch("felix.ingest.pipeline.create_analyzer_agent", return_value=None),
-        patch("felix.ingest.pipeline.create_checker_agents", return_value=(None, None)),
         patch("felix.ingest.pipeline.create_cleaner_agent", return_value=None),
         patch("felix.ingest.pipeline.create_profiler_agent", return_value=None),
         patch("felix.ingest.pipeline.create_profiler_patch_agent", return_value=None),
@@ -221,8 +210,7 @@ async def test_pipeline_full(
     assert "scene-002" in ids
     assert "scene-003" in ids
 
-    issues = await list_issues(seeded_driver)
-    assert any(i["type"] == "missing_info" for i in issues)
+    # Consistency checks are now post-import (graph-based), not per-scene LLM
 
     assert "Jacques Martin" in progress.new_characters
     assert "Gare de Lyon-Perrache" in progress.new_locations

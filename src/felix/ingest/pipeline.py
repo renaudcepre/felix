@@ -15,6 +15,7 @@ from pydantic_ai.exceptions import ModelHTTPError
 
 from felix.config import SCENE_FILE_EXTENSIONS, settings
 from felix.graph.checks import check_bilocalization
+from felix.graph.consistency import run_all_checks
 from felix.graph.repositories.characters import list_all_characters_full
 from felix.graph.repositories.groups import list_all_groups
 from felix.graph.repositories.issues import create_issue, delete_issues_for_scenes
@@ -22,7 +23,6 @@ from felix.graph.repositories.locations import list_all_locations
 from felix.graph.repositories.scenes import get_scene_ids_for_stems
 from felix.graph.writer import delete_scenes, link_next_chunk, write_scene
 from felix.ingest.analyzer import create_analyzer_agent
-from felix.ingest.checker import create_checker_agents
 from felix.ingest.cleaner import create_cleaner_agent
 from felix.ingest.orchestrator import SceneOrchestrator, make_scene_id
 from felix.ingest.profiler import (
@@ -150,13 +150,12 @@ async def _segment_scene_files(
 def _create_agents(ctx: _PipelineContext) -> tuple:
     """Create all LLM agents needed by the pipeline."""
     analyzer = create_analyzer_agent(ctx.model_name, ctx.base_url)
-    timeline_checker, narrative_checker = create_checker_agents(ctx.model_name, ctx.base_url)
     cleaner = create_cleaner_agent(ctx.model_name, ctx.base_url)
     profiler = create_profiler_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
     profiler_patch = create_profiler_patch_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
     beat_extractor = create_beat_extractor_agent(ctx.model_name, ctx.base_url) if ctx.enrich_profiles else None
     relation_deduper = create_relation_dedup_agent(ctx.model_name, ctx.base_url) if ctx.model_name else None
-    return analyzer, timeline_checker, narrative_checker, cleaner, profiler, profiler_patch, beat_extractor, relation_deduper
+    return analyzer, cleaner, profiler, profiler_patch, beat_extractor, relation_deduper
 
 
 async def _process_scene_unit(  # noqa: PLR0913
@@ -176,7 +175,6 @@ async def _process_scene_unit(  # noqa: PLR0913
         await create_issue(ctx.driver, issue)
     ctx.progress.issues_found += len(scene_issues)
 
-    await orchestrator.check_scene(summary)
     await write_scene(ctx.driver, summary)
 
     if chunk_idx > 0:
@@ -252,7 +250,7 @@ async def _setup_pipeline(
             current_scene="",
         )
 
-    analyzer, timeline_checker, narrative_checker, cleaner, profiler, profiler_patch, beat_extractor, relation_deduper = _create_agents(ctx)
+    analyzer, cleaner, profiler, profiler_patch, beat_extractor, relation_deduper = _create_agents(ctx)
 
     resolver = EntityResolutionService(
         driver=ctx.driver,
@@ -269,8 +267,6 @@ async def _setup_pipeline(
         ctx=ctx,
         resolver=resolver,
         analyzer=analyzer,
-        timeline_checker=timeline_checker,
-        narrative_checker=narrative_checker,
         profiler=profiler,
         profiler_patch=profiler_patch,
         beat_extractor=beat_extractor,
@@ -336,6 +332,16 @@ async def run_import_pipeline(  # noqa: PLR0913
             if queue:
                 await emit(queue, "error", message=progress.error)
             return
+
+        # Post-import graph-based consistency checks
+        if queue:
+            await emit(queue, "post_check_started")
+        post_issues = await run_all_checks(driver)
+        for issue in post_issues:
+            await create_issue(driver, issue)
+        progress.issues_found += len(post_issues)
+        if queue:
+            await emit(queue, "post_check_complete", issue_count=len(post_issues))
 
         progress.status = ImportStatus.DONE
         if queue:

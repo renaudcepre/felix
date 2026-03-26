@@ -24,9 +24,7 @@ from felix.graph.repositories.characters import (
     upsert_character_relation,
 )
 from felix.graph.repositories.groups import create_member_of
-from felix.graph.repositories.issues import create_issue
 from felix.ingest.analyzer import analyze_scene
-from felix.ingest.checker import check_scene_consistency
 from felix.ingest.cleaner import clean_scene_text
 from felix.ingest.loader import load_scene
 from felix.ingest.profiler import (
@@ -93,8 +91,6 @@ class SceneOrchestrator:
     ctx: _PipelineContext
     resolver: EntityResolutionService
     analyzer: Any
-    timeline_checker: Any
-    narrative_checker: Any
     profiler: Any = None
     profiler_patch: Any = None
     beat_extractor: Any = None
@@ -270,54 +266,6 @@ class SceneOrchestrator:
 
         ctx.progress.processed_scenes += 1
         return scene_issues, summary, resolved_chars, scene_text
-
-    async def check_scene(self, scene_summary: dict) -> None:
-        ctx = self.ctx
-        ctx.progress.status = ImportStatus.CHECKING
-        await self._emit_status(ImportStatus.CHECKING)
-
-        if ctx.queue:
-            await emit(
-                ctx.queue,
-                "check_started",
-                scene_id=scene_summary["scene_id"],
-                scene_title=scene_summary.get("title"),
-            )
-
-        try:
-            report = await check_scene_consistency(
-                ctx.driver, ctx.collection, scene_summary, self.timeline_checker, self.narrative_checker
-            )
-        except Exception as e:
-            logger.exception("Consistency check failed for scene: %s", scene_summary["scene_id"])
-            if ctx.queue:
-                await emit(ctx.queue, "consistency_error", error=str(e))
-                await emit(ctx.queue, "check_complete", issue_count=0)
-            return
-
-        for ci in report.issues:
-            issue = {
-                "id": str(uuid.uuid4()),
-                "type": ci.type,
-                "severity": ci.severity,
-                "scene_id": ci.scene_id,
-                "entity_id": ci.entity_id,
-                "description": ci.description,
-                "suggestion": ci.suggestion,
-            }
-            await create_issue(ctx.driver, issue)
-            ctx.progress.issues_found += 1
-            if ctx.queue:
-                await emit(
-                    ctx.queue,
-                    "issue_found",
-                    type=ci.type,
-                    severity=ci.severity,
-                    description=ci.description,
-                )
-
-        if ctx.queue:
-            await emit(ctx.queue, "check_complete", issue_count=len(report.issues))
 
     async def _resolve_beat_participant(
         self, beat_id: str, name: str, role: str
