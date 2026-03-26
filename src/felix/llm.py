@@ -22,6 +22,10 @@ def build_model(
     name = model_name or settings.llm_model
     url = base_url if base_url is not None else settings.llm_base_url
 
+    # Mistral models use native API, not OpenAI-compatible
+    if name.startswith("mistral-") and url and "mistral" not in url:
+        url = None
+
     if url:
         is_together = "together" in url
         is_openrouter = "openrouter" in url

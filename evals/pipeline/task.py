@@ -272,9 +272,9 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
         char_id, json_str = rest.split(":", 1)
         proposed = json.loads(json_str)
         model_name = os.environ.get("FLX_EVAL_MODEL")
-        base_url = os.environ.get("FLX_EVAL_BASE_URL", "")
+        base_url = os.environ.get("FLX_EVAL_BASE_URL") or None
         report = await check_character_consistency(
-            driver, char_id, proposed, model_name, base_url or None,
+            driver, char_id, proposed, model_name, base_url,
         )
         return PipelineQueryResult(
             issues=[

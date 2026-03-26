@@ -162,12 +162,22 @@ def _case_status_line(rc: Any) -> Text:
 
 
 async def _run_case(case: Any, dataset: Dataset, task_fn: Any) -> tuple[Any, list[Any]]:
-    single = dataset.__class__(cases=[case], evaluators=dataset.evaluators)
-    report = await single.evaluate(task_fn, progress=False)
-    rc = report.cases[0] if report.cases else None
-    if rc:
-        console.print(_case_status_line(rc))
-    return rc, report.failures
+    try:
+        single = dataset.__class__(cases=[case], evaluators=dataset.evaluators)
+        report = await single.evaluate(task_fn, progress=False)
+        rc = report.cases[0] if report.cases else None
+        if rc:
+            console.print(_case_status_line(rc))
+        elif report.failures:
+            import sys
+            print(f"FAILURE DETAIL: {report.failures[0]!r}", file=sys.stderr)
+            console.print(f"[red]✗ {case.name:<30} ERROR (see stderr)[/red]")
+        else:
+            console.print(f"[red]✗ {case.name:<30} SKIPPED (no result)[/red]")
+        return rc, report.failures
+    except Exception as e:
+        console.print(f"[red]✗ {case.name:<30} CRASH: {e!s:.80}[/red]")
+        return None, []
 
 
 async def run_suite_async(
