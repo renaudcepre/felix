@@ -1970,6 +1970,42 @@ UNIFIED_DATASET: Dataset[str, Any] = Dataset(
             metadata={"category": "segmentation"},
             evaluators=[RelationWithCharPresent()],
         ),
+        # --- entity check (consistency checker) ---
+        Case(
+            name="u_ec_borin_age_contradiction",
+            inputs='entity_check:borin-ironfist:{"age":"25 years old"}',
+            expected_output="profile_contradiction",
+            metadata={"category": "entity_check"},
+            evaluators=[EntityCheckHasIssueType()],
+        ),
+        Case(
+            name="u_ec_borin_new_detail",
+            inputs='entity_check:borin-ironfist:{"background":"Also a skilled cook"}',
+            expected_output="",
+            metadata={"category": "entity_check"},
+            evaluators=[EntityCheckNoIssues()],
+        ),
+        Case(
+            name="u_ec_borin_rephrase",
+            inputs='entity_check:borin-ironfist:{"background":"Blacksmith for many decades at the mountain keep"}',
+            expected_output="",
+            metadata={"category": "entity_check"},
+            evaluators=[EntityCheckNoIssues()],
+        ),
+        Case(
+            name="u_ec_elara_wrong_role",
+            inputs='entity_check:elara-nightshade:{"background":"A farmer who has lived in Thornwall all her life"}',
+            expected_output="profile_contradiction",
+            metadata={"category": "entity_check"},
+            evaluators=[EntityCheckHasIssueType()],
+        ),
+        Case(
+            name="u_ec_darya_plausible",
+            inputs='entity_check:darya:{"traits":"Calm and methodical under pressure"}',
+            expected_output="",
+            metadata={"category": "entity_check"},
+            evaluators=[EntityCheckNoIssues()],
+        ),
     ],
 )
 

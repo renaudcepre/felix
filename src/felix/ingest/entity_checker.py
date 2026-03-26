@@ -27,25 +27,16 @@ logger = logging.getLogger("felix.ingest.entity_checker")
 
 
 ENTITY_CHECK_PROMPT = """\
-You check if a character profile edit is CONTRADICTED by a scene.
+You verify if a proposed character edit contradicts a scene.
 
-A contradiction means: the scene explicitly says the OPPOSITE about this character.
-"Not mentioned" is NOT a contradiction. The screenwriter can add whatever they want.
+A contradiction is ONLY when the scene says the OPPOSITE about this character. \
+New details, rewordings, and information about other characters are never contradictions. \
+Return an empty list unless you find a direct factual conflict.
 
-For each proposed change, answer: does any scene say the OPPOSITE about this character?
-- YES → report the issue, quote the scene passage that says the opposite.
-- NO → do not report. This includes: new details, rewordings, style changes, details about \
-other characters, information in a different language that means the same thing.
+Check only the character named in "character_name".
 
-ONLY check the character in "character_name". Ignore other characters in the scenes.
-
-OUTPUT: list of issues. Empty list if no contradiction found.
-Each issue needs:
-- type: "profile_contradiction"
-- severity: "error"
-- scene_id: which scene
-- entity_id: the character_id
-- description: quote the exact scene passage that says the OPPOSITE
+Each issue needs: type "profile_contradiction", severity "error", scene_id, entity_id, \
+and description quoting the contradicting scene passage.
 """
 
 
@@ -131,4 +122,13 @@ async def check_character_consistency(
     )
 
     result = await agent.run(json.dumps(payload, ensure_ascii=False, indent=2))
-    return result.output
+    report = result.output
+
+    # Post-filter: drop issues citing non-existent scenes or scenes the character isn't in
+    valid_scene_ids = set(scene_ids)
+    report.issues = [
+        issue for issue in report.issues
+        if issue.scene_id and issue.scene_id in valid_scene_ids
+    ]
+
+    return report
