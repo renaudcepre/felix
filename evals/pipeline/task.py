@@ -110,7 +110,7 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
                 driver=driver,
                 collection=collection,
                 model_name=os.environ.get("FLX_EVAL_MODEL"),
-                base_url=os.environ.get("FLX_EVAL_BASE_URL", ""),
+                base_url=os.environ.get("FLX_EVAL_BASE_URL") or None,
                 progress=progress,
             )
         finally:
