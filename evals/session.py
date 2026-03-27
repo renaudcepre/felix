@@ -22,7 +22,7 @@ from evals.chatbot.dataset import CHATBOT_DATASET
 from evals.ingest.dataset import INGEST_DATASET
 from evals.ingest.task import analyze_scene_task
 from evals.pipeline.dataset import PIPELINE_DATASET
-from evals.pipeline.tasks import unified_pipeline_task
+from evals.pipeline.tasks import unified_pipeline, unified_pipeline_task
 from evals.task import felix_task
 
 session = ProTestSession(history=True)
@@ -33,6 +33,7 @@ session.configure_evals(
     )
 )
 
+session.bind(unified_pipeline)
 session.register_dataset(PIPELINE_DATASET, task=unified_pipeline_task, tags=["pipeline"])
 session.register_dataset(INGEST_DATASET, task=analyze_scene_task, tags=["ingest"])
 session.register_dataset(CHATBOT_DATASET, task=felix_task, tags=["chatbot"])

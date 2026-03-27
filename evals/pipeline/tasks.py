@@ -1,31 +1,24 @@
-"""Lazy task wrappers pour les evals pipeline.
-
-Le pattern factory de make_pipeline_task (async 0-arg → real task) n'est pas
-supporté nativement par l'adapter ProTest. Ces wrappers initialisent le pipeline
-une seule fois via asyncio.Lock, même en cas d'exécution parallèle (-n 4).
-"""
-
+"""Pipeline eval task with protest fixture-based setup."""
 from __future__ import annotations
 
-import asyncio
-import logging
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Annotated
 
-logger = logging.getLogger(__name__)
+from protest import Use, fixture
 
-from evals.pipeline.task import PipelineQueryResult, make_pipeline_task
+from evals.pipeline.task import FIXTURES_ROOT, PipelineQueryResult, _query, _run_pipeline
 
-_unified_task: Callable[[str], object] | None = None
-_unified_lock: asyncio.Lock | None = None
+if TYPE_CHECKING:
+    from neo4j import AsyncDriver
 
 
-async def unified_pipeline_task(query: str) -> PipelineQueryResult:
-    """Task pipeline initialisée lazily sur la fixture 'unified'."""
-    global _unified_task, _unified_lock  # noqa: PLW0603
-    if _unified_lock is None:
-        _unified_lock = asyncio.Lock()
-    async with _unified_lock:
-        if _unified_task is None:
-            logger.info("Initializing pipeline (importing fixtures)...")
-            _unified_task = await make_pipeline_task("unified")()
-    return await _unified_task(query)  # type: ignore[return-value]
+@fixture()
+async def unified_pipeline() -> AsyncDriver:
+    """Run the unified pipeline import once, shared across all cases."""
+    return await _run_pipeline(FIXTURES_ROOT / "unified")
+
+
+async def unified_pipeline_task(
+    query: str,
+    driver: Annotated[AsyncDriver, Use(unified_pipeline)],
+) -> PipelineQueryResult:
+    return await _query(driver, query)
