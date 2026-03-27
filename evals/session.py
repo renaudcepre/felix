@@ -25,11 +25,13 @@ from evals.pipeline.dataset import PIPELINE_DATASET
 from evals.pipeline.tasks import unified_pipeline, unified_pipeline_task
 from evals.task import felix_task
 
+from felix.config import settings
+
 session = ProTestSession(history=True)
 session.configure_evals(
     model=ModelInfo(
-        name=os.environ.get("FLX_EVAL_MODEL", "unknown"),
-        provider=os.environ.get("FLX_EVAL_BASE_URL", "mistral-api"),
+        name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model),
+        provider=os.environ.get("FLX_EVAL_BASE_URL") or settings.llm_base_url or "mistral-api",
     )
 )
 
