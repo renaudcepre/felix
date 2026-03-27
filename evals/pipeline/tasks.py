@@ -8,7 +8,10 @@ une seule fois via asyncio.Lock, même en cas d'exécution parallèle (-n 4).
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
+
+logger = logging.getLogger(__name__)
 
 from evals.pipeline.task import PipelineQueryResult, make_pipeline_task
 
@@ -23,5 +26,6 @@ async def unified_pipeline_task(query: str) -> PipelineQueryResult:
         _unified_lock = asyncio.Lock()
     async with _unified_lock:
         if _unified_task is None:
+            logger.info("Initializing pipeline (importing fixtures)...")
             _unified_task = await make_pipeline_task("unified")()
     return await _unified_task(query)  # type: ignore[return-value]
