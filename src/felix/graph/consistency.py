@@ -45,7 +45,7 @@ async def check_duplicate_characters(driver: AsyncDriver) -> list[dict]:
 
 
 _CONTRADICTION_PAIRS = [
-    ({"blonde", "blond", "fair-haired"}, {"dark", "black hair", "brunette", "dark-haired"}),
+    ({"blonde", "blond", "fair-haired", "fair"}, {"dark", "black", "brunette", "dark-haired"}),
     ({"tall"}, {"short", "small", "petite"}),
     ({"young"}, {"old", "elderly", "aged"}),
     ({"thin", "slim", "lean"}, {"heavy", "stocky", "broad", "large"}),

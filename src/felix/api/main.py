@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 setup_logfire()
 
 from felix.agent.chat_agent import create_agent
-from felix.api.deps import BaseUrl, ImportState, ModelName
+from felix.api.deps import ImportState
 from felix.api.routes import characters, chat, checks, export, groups, ingest, locations, timeline
 from felix.api.routes import settings as settings_routes
 from felix.config import settings
@@ -31,13 +31,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     driver = get_driver()
     await setup_constraints(driver)
     collection = get_collection()
-    agent = create_agent(settings.llm_model, settings.llm_base_url)
+    agent = create_agent()
 
     app.state.driver = driver
     app.state.collection = collection
     app.state.agent = agent
-    app.state.model_name = settings.llm_model
-    app.state.base_url = settings.llm_base_url
     app.state.import_state = ImportState()
 
     logger.info("Felix API started — model=%s, base_url=%s", settings.llm_model, settings.llm_base_url)
@@ -67,11 +65,11 @@ app.include_router(settings_routes.router)
 
 
 @app.get("/api/health")
-async def health(model_name: ModelName, base_url: BaseUrl) -> dict[str, str]:
+async def health() -> dict[str, str]:
     return {
         "status": "ok",
-        "model": model_name,
-        "base_url": base_url or "Mistral API",
+        "model": settings.llm_model,
+        "base_url": settings.llm_base_url or "Mistral API",
     }
 
 

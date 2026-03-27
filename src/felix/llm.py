@@ -43,3 +43,13 @@ def build_model(
         name,
         provider=MistralProvider(api_key=settings.llm_api_key),
     )
+
+
+def build_checker_model() -> Model:
+    """Build model for the consistency checker (per-feature override)."""
+    return build_model(settings.llm_checker_model, settings.llm_checker_base_url)
+
+
+def build_chat_model() -> Model:
+    """Build model for the chatbot (per-feature override)."""
+    return build_model(settings.llm_chat_model, settings.llm_chat_base_url)

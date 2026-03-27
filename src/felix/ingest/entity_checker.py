@@ -16,7 +16,7 @@ from felix.graph.repositories.characters import (
 )
 from felix.graph.repositories.scenes import get_scene_summaries_by_ids
 from felix.ingest.models import ConsistencyReport
-from felix.llm import build_model
+from felix.llm import build_checker_model, build_model
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
@@ -111,7 +111,7 @@ async def check_character_consistency(
         "scene_fragments": scene_data,
     }
 
-    model = build_model(model_name, base_url)
+    model = build_model(model_name, base_url) if model_name else build_checker_model()
     agent: Agent[None, ConsistencyReport] = Agent(
         model,
         instructions=ENTITY_CHECK_PROMPT,

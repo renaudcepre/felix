@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 from unittest.mock import AsyncMock, patch
 
-from felix.api.deps import get_base_url, get_driver, get_model_name
+from felix.api.deps import get_driver
 from felix.api.routes.characters import router
 from felix.graph.repositories.characters import (
     delete_character_relation,
@@ -149,8 +149,6 @@ async def client(seeded_driver: AsyncDriver) -> AsyncGenerator[AsyncClient]:
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_driver] = lambda: seeded_driver
-    app.dependency_overrides[get_model_name] = lambda: "test-model"
-    app.dependency_overrides[get_base_url] = lambda: None
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:

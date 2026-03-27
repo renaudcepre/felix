@@ -10,7 +10,8 @@ from fastapi import APIRouter, HTTPException, UploadFile
 from pydantic import BaseModel
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from felix.api.deps import BaseUrl, Collection, ImportStateDep, ModelName, Neo4jDriver
+from felix.api.deps import Collection, ImportStateDep, Neo4jDriver
+from felix.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +60,6 @@ async def start_import(
     import_state: ImportStateDep,
     driver: Neo4jDriver,
     collection: Collection,
-    model_name: ModelName,
-    base_url: BaseUrl,
     files: list[UploadFile] = [],  # noqa: B006
     enrich: bool = True,
 ) -> ImportProgressResponse:
@@ -82,7 +81,7 @@ async def start_import(
         import_state.progress = new_progress
         import_state.task = asyncio.create_task(
             run_import_pipeline(
-                tmp_dir, driver, collection, model_name, base_url, new_progress,
+                tmp_dir, driver, collection, settings.llm_model, settings.llm_base_url, new_progress,
                 enrich_profiles=enrich,
             )
         )
@@ -96,8 +95,6 @@ async def import_stream(
     import_state: ImportStateDep,
     driver: Neo4jDriver,
     collection: Collection,
-    model_name: ModelName,
-    base_url: BaseUrl,
     files: list[UploadFile] = [],  # noqa: B006
     enrich: bool = True,
 ) -> EventSourceResponse:
@@ -124,7 +121,7 @@ async def import_stream(
 
         task = asyncio.create_task(
             run_import_pipeline(
-                tmp_dir, driver, collection, model_name, base_url, new_progress,
+                tmp_dir, driver, collection, settings.llm_model, settings.llm_base_url, new_progress,
                 queue, pending, enrich_profiles=enrich,
             )
         )

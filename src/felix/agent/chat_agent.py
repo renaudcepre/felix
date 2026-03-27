@@ -10,7 +10,7 @@ from felix.agent.tools import (
     get_timeline,
     search_scenes,
 )
-from felix.llm import build_model
+from felix.llm import build_chat_model, build_model
 
 SYSTEM_PROMPT = """\
 You are Felix, a screenplay continuity assistant for a French multi-era thriller.
@@ -40,7 +40,7 @@ def create_agent(
     base_url: str | None = None,
     api_key: str | None = None,
 ) -> Agent[FelixDeps, str]:
-    model = build_model(model_name, base_url, api_key=api_key)
+    model = build_model(model_name, base_url, api_key=api_key) if model_name else build_chat_model()
 
     agent = Agent(
         model,

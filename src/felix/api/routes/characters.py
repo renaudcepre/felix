@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from felix.api.deps import BaseUrl, ModelName, Neo4jDriver
+from felix.api.deps import Neo4jDriver
 from felix.api.models import (
     CharacterCreate,
     CharacterDetail,
@@ -106,8 +106,6 @@ async def check_consistency(
     char_id: str,
     body: CharacterProfileUpdate,
     driver: Neo4jDriver,
-    model_name: ModelName,
-    base_url: BaseUrl,
 ) -> ConsistencyReport:
     profile = await get_character_profile(driver, char_id)
     if not profile:
@@ -126,9 +124,7 @@ async def check_consistency(
     if not changed:
         return ConsistencyReport(issues=[])
 
-    return await check_character_consistency(
-        driver, char_id, changed, model_name, base_url
-    )
+    return await check_character_consistency(driver, char_id, changed)
 
 
 async def _build_character_detail(driver: Neo4jDriver, char_id: str) -> CharacterDetail:

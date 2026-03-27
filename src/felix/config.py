@@ -25,6 +25,12 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("OPENROUTER_API_KEY", "FLX_OPENROUTER_KEY"),
     )
 
+    # Per-feature model overrides (fallback → llm_model/llm_base_url)
+    llm_checker_model: str | None = None
+    llm_checker_base_url: str | None = None
+    llm_chat_model: str | None = None
+    llm_chat_base_url: str | None = None
+
     logfire_token: str = Field(
         default="",
         validation_alias=AliasChoices("LOGFIRE_TOKEN", "FLX_LOGFIRE_TOKEN"),
