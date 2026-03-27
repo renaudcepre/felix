@@ -22,7 +22,7 @@ def _get_agents() -> AnalyzerAgents:
     if _agents is not None:
         return _agents
     model_name = os.environ.get("FLX_EVAL_MODEL")
-    base_url = os.environ.get("FLX_EVAL_BASE_URL", "")
+    base_url = os.environ.get("FLX_EVAL_BASE_URL") or None
     _agents = create_analyzer_agent(model_name, base_url)
     return _agents
 
