@@ -48,6 +48,7 @@ def create_agent(
         deps_type=FelixDeps,
         output_type=str,
         model_settings=ModelSettings(temperature=0.1),
+        retries=3,
     )
 
     agent.tool(find_character)
