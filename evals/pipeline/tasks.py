@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING, Annotated
 
 from protest import Use, fixture
 
-from evals.pipeline.task import FIXTURES_ROOT, PipelineQueryResult, _query, _run_pipeline
-
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
+
+from evals.pipeline.task import FIXTURES_ROOT, PipelineQueryResult, _query, _run_pipeline
 
 
 @fixture()
