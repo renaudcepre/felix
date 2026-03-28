@@ -12,9 +12,9 @@ from felix.ingest.analyzer import AnalyzerAgents, analyze_scene, create_analyzer
 if TYPE_CHECKING:
     from felix.ingest.models import SceneAnalysis
 
-SCENES_DIR = Path(__file__).parent.parent.parent / "data" / "scenes"
+import functools
 
-_scenes_cache: dict[str, str] = {}
+SCENES_DIR = Path(__file__).parent.parent.parent / "data" / "scenes"
 
 
 @fixture()
@@ -25,10 +25,9 @@ def analyzer_agents() -> AnalyzerAgents:
     return create_analyzer_agent(model_name, base_url)
 
 
+@functools.cache
 def _load_scene(filename: str) -> str:
-    if filename not in _scenes_cache:
-        _scenes_cache[filename] = (SCENES_DIR / filename).read_text(encoding="utf-8")
-    return _scenes_cache[filename]
+    return (SCENES_DIR / filename).read_text(encoding="utf-8")
 
 
 async def analyze_scene_task(
