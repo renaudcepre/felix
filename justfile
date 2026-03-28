@@ -27,9 +27,13 @@ web:
 test *args:
     uv run pytest {{ args }}
 
-# Evals (auto-detect LM Studio ou Together AI) — options: --suite, --case, --list, --together, --local
+# Evals via protest — options: --tag pipeline|ingest|chatbot, --last-failed, -n 4
 evals *args:
-    uv run python -m evals.run_evals {{ args }}
+    uv run protest eval evals.session:session {{ args }}
+
+# Historique des evals
+evals-history *args:
+    uv run protest history --evals {{ args }}
 
 # Remove database and vector store
 db-clean:
