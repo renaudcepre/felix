@@ -1,10 +1,10 @@
-"""Task function wrapping the Felix agent for pydantic-evals."""
-
+"""Chatbot eval task with protest fixture-based setup."""
 from __future__ import annotations
 
-import os
+from typing import TYPE_CHECKING, Annotated
 
 import chromadb
+from protest import Use, fixture
 
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
@@ -12,14 +12,13 @@ from felix.graph.driver import get_driver, setup_constraints
 from felix.graph.seed import seed_graph
 from felix.vectorstore.seed import seed_scenes
 
-_deps: FelixDeps | None = None
+if TYPE_CHECKING:
+    pass
 
 
-async def _get_deps() -> FelixDeps:
-    global _deps  # noqa: PLW0603
-    if _deps is not None:
-        return _deps
-
+@fixture()
+async def felix_deps() -> FelixDeps:
+    """Seed graph + vectorstore once, shared across all chatbot cases."""
     driver = get_driver()
     await setup_constraints(driver)
     await seed_graph(driver)
@@ -28,14 +27,13 @@ async def _get_deps() -> FelixDeps:
     collection = client.get_or_create_collection(name="scenes_eval")
     seed_scenes(collection)
 
-    _deps = FelixDeps(driver=driver, chroma_collection=collection)
-    return _deps
+    return FelixDeps(driver=driver, chroma_collection=collection)
 
 
-async def felix_task(question: str) -> str:
-    deps = await _get_deps()
-    # Always use build_chat_model config — the chatbot needs a model
-    # that handles tool calls correctly (Mistral SDK has bugs with direct API)
+async def felix_task(
+    question: str,
+    deps: Annotated[FelixDeps, Use(felix_deps)],
+) -> str:
     agent = create_agent()
     result = await agent.run(question, deps=deps)
     return result.output

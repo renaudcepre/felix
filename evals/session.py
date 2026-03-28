@@ -20,10 +20,10 @@ from protest.evals import ModelInfo
 
 from evals.chatbot.dataset import CHATBOT_DATASET
 from evals.ingest.dataset import INGEST_DATASET
-from evals.ingest.task import analyze_scene_task
+from evals.ingest.task import analyzer_agents, analyze_scene_task
 from evals.pipeline.dataset import PIPELINE_DATASET
 from evals.pipeline.tasks import unified_pipeline, unified_pipeline_task
-from evals.task import felix_task
+from evals.task import felix_deps, felix_task
 
 from felix.config import settings
 
@@ -44,6 +44,8 @@ _chat_model = ModelInfo(
 session.configure_evals(model=_pipeline_model)
 
 session.bind(unified_pipeline)
+session.bind(analyzer_agents)
+session.bind(felix_deps)
 session.add_eval_suite(PIPELINE_DATASET, task=unified_pipeline_task, model=_pipeline_model, tags=["pipeline"])
 session.add_eval_suite(INGEST_DATASET, task=analyze_scene_task, model=_pipeline_model, tags=["ingest"])
 session.add_eval_suite(CHATBOT_DATASET, task=felix_task, model=_chat_model, tags=["chatbot"])
