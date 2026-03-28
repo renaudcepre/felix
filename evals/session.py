@@ -36,6 +36,6 @@ session.configure_evals(
 )
 
 session.bind(unified_pipeline)
-session.register_dataset(PIPELINE_DATASET, task=unified_pipeline_task, tags=["pipeline"])
-session.register_dataset(INGEST_DATASET, task=analyze_scene_task, tags=["ingest"])
-session.register_dataset(CHATBOT_DATASET, task=felix_task, tags=["chatbot"])
+session.add_eval_suite(PIPELINE_DATASET, task=unified_pipeline_task, tags=["pipeline"])
+session.add_eval_suite(INGEST_DATASET, task=analyze_scene_task, tags=["ingest"])
+session.add_eval_suite(CHATBOT_DATASET, task=felix_task, tags=["chatbot"])
