@@ -28,14 +28,22 @@ from evals.task import felix_task
 from felix.config import settings
 
 session = ProTestSession(history=True)
-session.configure_evals(
-    model=ModelInfo(
-        name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model),
-        provider=os.environ.get("FLX_EVAL_BASE_URL") or settings.llm_base_url or "mistral-api",
-    )
+_pipeline_model = ModelInfo(
+    name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model),
+    provider=os.environ.get("FLX_EVAL_BASE_URL") or settings.llm_base_url or "config",
+)
+_checker_model = ModelInfo(
+    name=settings.llm_checker_model or settings.llm_model,
+    provider="mistral-api" if settings.llm_checker_model and settings.llm_checker_model.startswith("mistral-") else _pipeline_model.provider,
+)
+_chat_model = ModelInfo(
+    name=settings.llm_chat_model or settings.llm_model,
+    provider=settings.llm_chat_base_url or _pipeline_model.provider,
 )
 
+session.configure_evals(model=_pipeline_model)
+
 session.bind(unified_pipeline)
-session.add_eval_suite(PIPELINE_DATASET, task=unified_pipeline_task, tags=["pipeline"])
-session.add_eval_suite(INGEST_DATASET, task=analyze_scene_task, tags=["ingest"])
-session.add_eval_suite(CHATBOT_DATASET, task=felix_task, tags=["chatbot"])
+session.add_eval_suite(PIPELINE_DATASET, task=unified_pipeline_task, model=_pipeline_model, tags=["pipeline"])
+session.add_eval_suite(INGEST_DATASET, task=analyze_scene_task, model=_pipeline_model, tags=["ingest"])
+session.add_eval_suite(CHATBOT_DATASET, task=felix_task, model=_chat_model, tags=["chatbot"])
