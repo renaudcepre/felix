@@ -28,13 +28,9 @@ from evals.task import felix_task
 from felix.config import settings
 
 session = ProTestSession(history=True)
-_pipeline_model = os.environ.get("FLX_EVAL_MODEL", settings.llm_model)
-_chat_model = settings.llm_chat_model or _pipeline_model
-_model_label = _pipeline_model if _pipeline_model == _chat_model else f"{_pipeline_model} + {_chat_model}"
-
 session.configure_evals(
     model=ModelInfo(
-        name=_model_label,
+        name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model),
         provider=os.environ.get("FLX_EVAL_BASE_URL") or settings.llm_base_url or "mistral-api",
     )
 )
