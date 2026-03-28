@@ -18,6 +18,20 @@ modéliser quand on sera prêt.
 Priorités : notes = next step naturel (low effort, high value). Écriture assistée = plan
 long terme.
 
+## Migration protest-native + multi-modèle — 2026-03-28
+
+Migration complète vers l'API protest-native : `EvalSession`, `EvalSuite`, `EvalCase`, `@evaluator`. Plus de dépendance pydantic-evals (sauf `LLMJudge` en attendant l'équivalent protest). Fixtures protest `@fixture` + `Use()` pour les 3 suites — plus de global state ni de locks async.
+
+Config multi-modèle par feature : Qwen 7B Together pour le pipeline, Mistral Small API directe pour le checker et le chatbot (RGPD). Settings panel frontend simplifié en lecture seule.
+
+Suite unifiée (Thornwall Keep) : 39 cas pipeline, 21 ingest, 26 chatbot = 86 total. Baseline : 60/86 (70%) avec `-n 4` en 236s.
+
+## Refonte evals — consolidation + checks graph-based — 2026-03-26/27
+
+Consolidation de 6 suites pipeline en 1 (scénario Thornwall Keep + long_mission pour segmentation). Écriture du scénario unified avec intrigue polar (qui est le traître ? → ORACLE via Second Eye). Checks graph-based post-import (doublons, contradictions physiques, relations contradictoires) remplacent les checkers LLM inline. 5 cas entity-check ajoutés.
+
+Prompts simplifiés pour compatibilité multi-modèle (÷3 en taille). Scores : Qwen 26/34, Ministral 25/34, Haiku 24/34.
+
 ## Benchmark modèles via OpenRouter — 2026-03-25
 
 Test de Claude Haiku et Sonnet via OpenRouter (`--openrouter`). Sonnet à ~2€ pour un full run d'evals — ingérable en coût récurrent.
