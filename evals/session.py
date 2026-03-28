@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import os
 
-from protest import ProTestSession
-from protest.evals import ModelInfo
+from protest.evals import EvalSession, ModelInfo
 
 from evals.chatbot.dataset import CHATBOT_DATASET
 from evals.ingest.dataset import INGEST_DATASET
@@ -25,12 +24,11 @@ from felix.config import settings
 pipeline_model = ModelInfo(name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model))
 chat_model = ModelInfo(name=settings.llm_chat_model or settings.llm_model)
 
-session = ProTestSession(history=True)
-session.configure_evals(model=pipeline_model)
+session = EvalSession(model=pipeline_model)
 
 session.bind(unified_pipeline)
 session.bind(analyzer_agents)
 session.bind(felix_deps)
-session.add_eval_suite(PIPELINE_DATASET, task=unified_pipeline_task, model=pipeline_model, tags=["pipeline"])
-session.add_eval_suite(INGEST_DATASET, task=analyze_scene_task, model=pipeline_model, tags=["ingest"])
-session.add_eval_suite(CHATBOT_DATASET, task=felix_task, model=chat_model, tags=["chatbot"])
+session.add_suite(PIPELINE_DATASET, task=unified_pipeline_task, model=pipeline_model, tags=["pipeline"])
+session.add_suite(INGEST_DATASET, task=analyze_scene_task, model=pipeline_model, tags=["ingest"])
+session.add_suite(CHATBOT_DATASET, task=felix_task, model=chat_model, tags=["chatbot"])
