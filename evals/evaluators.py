@@ -1,9 +1,13 @@
 """Shared evaluators for the Felix eval suites."""
 from __future__ import annotations
 
+from pydantic_ai import Agent
+from pydantic_ai.models.mistral import MistralModel
+from pydantic_ai.providers.mistral import MistralProvider
 from protest.evals import EvalContext, evaluator
 
 from evals._utils import normalize
+from felix.config import settings
 
 _REFUSAL_MARKERS = [
     "je ne trouve pas",
@@ -32,6 +36,26 @@ def contains_expected_facts(ctx: EvalContext, min_score: float = 0.5) -> dict:
     if missing:
         result["missing_facts"] = ", ".join(missing)
     return result
+
+
+@evaluator
+async def llm_judge(ctx: EvalContext, rubric: str = "") -> dict:
+    """LLM-based judge using Mistral Small."""
+    model = MistralModel(
+        "mistral-small-latest",
+        provider=MistralProvider(api_key=settings.llm_api_key),
+    )
+    agent: Agent[None, str] = Agent(model, output_type=str)
+    prompt = (
+        f"Evaluate this response against the criteria below.\n\n"
+        f"Question: {ctx.inputs}\n"
+        f"Response: {ctx.output}\n"
+        f"Criteria: {rubric}\n\n"
+        f"Answer ONLY 'PASS' or 'FAIL' followed by a brief reason."
+    )
+    result = await agent.run(prompt)
+    passed = "pass" in result.output.lower().split()[0] if result.output else False
+    return {"LLMJudge": passed}
 
 
 @evaluator

@@ -1,18 +1,9 @@
 """Chatbot eval dataset — Felix chat agent (WWII thriller story)."""
 from __future__ import annotations
 
-from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.providers.mistral import MistralProvider
-from pydantic_evals.evaluators import LLMJudge
 from protest.evals import EvalCase, EvalSuite
 
-from evals.evaluators import contains_expected_facts, refuses_to_fabricate
-from felix.config import settings
-
-_judge_model = MistralModel(
-    "mistral-small-latest",
-    provider=MistralProvider(api_key=settings.llm_api_key),
-)
+from evals.evaluators import contains_expected_facts, llm_judge, refuses_to_fabricate
 
 CHATBOT_DATASET = EvalSuite(
     name="chatbot",
@@ -65,16 +56,12 @@ CHATBOT_DATASET = EvalSuite(
                  inputs="What pushed Marie to take over the cell?",
                  expected_output="Pierre arrested in 1942, Marie takes over the resistance cell",
                  metadata={"category": "causal"},
-                 evaluators=[LLMJudge(
-                     rubric="The response explains that Marie took over the resistance cell following Pierre Renard's arrest in 1942.",
-                     model=_judge_model, include_input=True)]),
+                 evaluators=[llm_judge(rubric="The response explains that Marie took over the resistance cell following Pierre Renard's arrest in 1942.")]),
         EvalCase(name="causal_benoit_protection",
                  inputs="How did Benoit's actions protect Pierre's cell?",
                  expected_output="Benoit passes information to Pierre to protect the resistance cell",
                  metadata={"category": "causal"},
-                 evaluators=[LLMJudge(
-                     rubric="The response explains that Benoit Laforge, acting as a double agent, transmitted intelligence (schedules, plans) to Pierre Renard's resistance cell.",
-                     model=_judge_model, include_input=True)]),
+                 evaluators=[llm_judge(rubric="The response explains that Benoit Laforge, acting as a double agent, transmitted intelligence (schedules, plans) to Pierre Renard's resistance cell.")]),
         EvalCase(name="causal_julien_discovery",
                  inputs="Why is Julien searching the archives in 1970?",
                  expected_output="", metadata={"category": "causal"},
@@ -83,9 +70,7 @@ CHATBOT_DATASET = EvalSuite(
                  inputs="Trace the causal chain between Benoit's double game in 1942 and Julien's discovery 30 years later.",
                  expected_output="Benoit transmits in 1942, documents survive, Julien discovers them in the archives",
                  metadata={"category": "causal"},
-                 evaluators=[LLMJudge(
-                     rubric="The response traces a causal chain: Benoit's 1942 intelligence transmissions → documents/information preserved → Julien's discovery in archives decades later.",
-                     model=_judge_model, include_input=True)]),
+                 evaluators=[llm_judge(rubric="The response traces a causal chain: Benoit's 1942 intelligence transmissions → documents/information preserved → Julien's discovery in archives decades later.")]),
         # --- prop tracking ---
         EvalCase(name="prop_carbone_origin",
                  inputs="Who created the carbon copy mentioned in the 1942 archives?",
@@ -99,17 +84,13 @@ CHATBOT_DATASET = EvalSuite(
                  inputs="Trace the roundup document from its creation to its rediscovery.",
                  expected_output="Benoit creates the carbon copy in 1942, Julien finds it in the archives in 1974",
                  metadata={"category": "prop_tracking"},
-                 evaluators=[LLMJudge(
-                     rubric="Response traces the document from Benoit's clandestine carbon copy in 1942 to Julien's discovery in the Paris Tribune archives in 1974, identifying Benoit as the origin.",
-                     model=_judge_model, include_input=True)]),
+                 evaluators=[llm_judge(rubric="Response traces the document from Benoit's clandestine carbon copy in 1942 to Julien's discovery in the Paris Tribune archives in 1974, identifying Benoit as the origin.")]),
         # --- information asymmetry ---
         EvalCase(name="asym_julien_henriblanc",
                  inputs="When Julien meets Henri Blanc in June 1974, does he know it's Benoit Laforge?",
                  expected_output="Julien does not know that Henri Blanc is Benoit Laforge at the time of their meeting",
                  metadata={"category": "info_asymmetry"},
-                 evaluators=[LLMJudge(
-                     rubric="Response correctly states that Julien does not yet know Henri Blanc is Benoit Laforge at the time of their June 1974 meeting.",
-                     model=_judge_model, include_input=True)]),
+                 evaluators=[llm_judge(rubric="Response correctly states that Julien does not yet know Henri Blanc is Benoit Laforge at the time of their June 1974 meeting.")]),
         EvalCase(name="asym_marie_benoit_july42",
                  inputs="By July 1942, does Marie already know Benoit is a double agent?",
                  expected_output="", metadata={"category": "info_asymmetry"},
@@ -142,9 +123,5 @@ CHATBOT_DATASET = EvalSuite(
     ],
     evaluators=[
         contains_expected_facts,
-        LLMJudge(
-            rubric="The response is factually grounded: it only states information that could have been retrieved from a screenplay bible database. It does not invent or hallucinate any facts.",
-            model=_judge_model, include_input=True,
-        ),
     ],
 )
