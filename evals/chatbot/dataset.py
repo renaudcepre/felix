@@ -119,4 +119,4 @@ chatbot_cases = ForEach([
         EvalCase(name="negative_unknown_person", inputs="Who is Francois Moreau?",
                  expected="", metadata={"category": "negative"},
                  evaluators=[refuses_to_fabricate]),
-], ids=lambda c: c.name)
+])

@@ -91,4 +91,4 @@ ingest_cases = ForEach([
         EvalCase(name="fantasy_varek_extracted", inputs="eval-fantasy-redeyes.txt",
                  expected="Varek,Ilena", metadata={"category": "extraction"},
                  evaluators=[extracts_expected_characters]),
-], ids=lambda c: c.name)
+])

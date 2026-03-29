@@ -172,4 +172,4 @@ pipeline_cases = ForEach([
                  inputs='entity_check:darya:{"background":"Grew up traveling between villages"}',
                  expected="", metadata={"category": "entity_check"},
                  evaluators=[entity_check_no_issues]),
-], ids=lambda c: c.name)
+])
