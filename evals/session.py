@@ -35,10 +35,9 @@ if TYPE_CHECKING:
     from felix.ingest.models import SceneAnalysis
     from evals.pipeline.task import PipelineQueryResult
 
-pipeline_model = ModelInfo(name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model))
-chat_model = ModelInfo(name=settings.llm_chat_model or settings.llm_model)
-
-session = EvalSession(model=pipeline_model)
+session = EvalSession(
+    model=ModelInfo(name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model)),
+)
 
 session.bind(unified_pipeline)
 session.bind(analyzer_agents)
@@ -61,7 +60,7 @@ async def ingest(
     return await analyze_scene(agents, _load_scene(case.inputs))
 
 
-@session.eval(evaluators=[contains_expected_facts], model=chat_model)
+@session.eval(evaluators=[contains_expected_facts])
 async def chatbot(
     case: Annotated[EvalCase, From(chatbot_cases)],
     deps: Annotated[FelixDeps, Use(felix_deps)],
