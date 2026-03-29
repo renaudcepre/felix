@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Annotated
 
 import chromadb
-from protest import Use, fixture
+from protest import Use, console, fixture
 
 from felix.agent.chat_agent import create_agent
 from felix.agent.deps import FelixDeps
@@ -19,14 +19,17 @@ if TYPE_CHECKING:
 @fixture()
 async def felix_deps() -> FelixDeps:
     """Seed graph + vectorstore once, shared across all chatbot cases."""
+    console.print("[dim]chatbot:[/] seeding graph...")
     driver = get_driver()
     await setup_constraints(driver)
     await seed_graph(driver)
 
+    console.print("[dim]chatbot:[/] seeding vectorstore...")
     client = chromadb.EphemeralClient()
     collection = client.get_or_create_collection(name="scenes_eval")
     seed_scenes(collection)
 
+    console.print("[green]chatbot:[/] ready")
     return FelixDeps(driver=driver, chroma_collection=collection)
 
 
