@@ -70,11 +70,7 @@ async def _log_progress(progress: ImportProgress) -> None:
             if scene:
                 n = progress.processed_scenes
                 total = progress.total_scenes
-                try:
-                    from protest import console as _protest_console
-                    _protest_console.print(f"[dim]pipeline:[/] [{n}/{total}] {scene} — {status}")
-                except ImportError:
-                    _console.print(f"  [dim][{n}/{total}][/dim] [cyan]{scene}[/cyan] — {status}")
+                _console.print(f"  [dim][{n}/{total}][/dim] [cyan]{scene}[/cyan] — {status}")
             last_scene, last_status = scene, status
         await asyncio.sleep(0.3)
 
@@ -119,11 +115,7 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
             )
         finally:
             poller.cancel()
-            try:
-                from protest import console as _protest_console
-                _protest_console.print(f"[green]pipeline:[/] {progress.processed_scenes}/{progress.total_scenes} scenes, {progress.issues_found} issues")
-            except ImportError:
-                _console.print(f"  [green]✔[/green] Pipeline terminé — {progress.processed_scenes}/{progress.total_scenes} scènes, {progress.issues_found} issues")
+            _console.print(f"  [green]✔[/green] Pipeline terminé — {progress.processed_scenes}/{progress.total_scenes} scènes, {progress.issues_found} issues")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -131,19 +123,11 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
     async with driver.session() as session:
         r = await session.run("MATCH (n) RETURN labels(n)[0] AS lbl, count(n) AS n ORDER BY lbl")
         rows = await r.data()
-    try:
-        from protest import console as _protest_console
-        if rows:
-            counts = ", ".join(f"{row['lbl']}={row['n']}" for row in rows)
-            _protest_console.print(f"[dim]pipeline:[/] Graph: {counts}")
-        else:
-            _protest_console.print("[red]pipeline:[/] Graph: EMPTY")
-    except ImportError:
-        if rows:
-            counts = ", ".join(f"{row['lbl']}={row['n']}" for row in rows)
-            _console.print(f"  [dim]Graph: {counts}[/dim]")
-        else:
-            _console.print("  [red]Graph: EMPTY — pipeline may have failed silently[/red]")
+    if rows:
+        counts = ", ".join(f"{row['lbl']}={row['n']}" for row in rows)
+        _console.print(f"  [dim]Graph: {counts}[/dim]")
+    else:
+        _console.print("  [red]Graph: EMPTY — pipeline may have failed silently[/red]")
 
     return driver
 
