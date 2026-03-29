@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 import chromadb
 from neo4j import AsyncDriver
 from pydantic import BaseModel
-from rich.console import Console
+from protest import console
 
 from felix.graph.driver import close_driver, get_driver, setup_constraints
 from felix.graph.repositories.characters import (
@@ -38,7 +38,6 @@ from felix.graph.repositories.scenes import (
 from felix.ingest.entity_checker import check_character_consistency
 from felix.ingest.pipeline import ImportProgress, run_import_pipeline
 
-_console = Console()
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
@@ -70,7 +69,7 @@ async def _log_progress(progress: ImportProgress) -> None:
             if scene:
                 n = progress.processed_scenes
                 total = progress.total_scenes
-                _console.print(f"  [dim][{n}/{total}][/dim] [cyan]{scene}[/cyan] — {status}")
+                console.print(f"  [dim][{n}/{total}][/dim] [cyan]{scene}[/cyan] — {status}")
             last_scene, last_status = scene, status
         await asyncio.sleep(0.3)
 
@@ -92,7 +91,7 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
         record = await result.single()
         remaining = record["remaining"] if record else 0
         if remaining > 0:
-            _console.print(f"  [yellow]Warning: {remaining} nodes still in DB after delete, retrying...[/yellow]")
+            console.print(f"  [yellow]Warning: {remaining} nodes still in DB after delete, retrying...[/yellow]")
             await session.execute_write(_delete_all)
 
     try:
@@ -115,7 +114,7 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
             )
         finally:
             poller.cancel()
-            _console.print(f"  [green]✔[/green] Pipeline terminé — {progress.processed_scenes}/{progress.total_scenes} scènes, {progress.issues_found} issues")
+            console.print(f"  [green]✔[/green] Pipeline terminé — {progress.processed_scenes}/{progress.total_scenes} scènes, {progress.issues_found} issues")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -125,9 +124,9 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
         rows = await r.data()
     if rows:
         counts = ", ".join(f"{row['lbl']}={row['n']}" for row in rows)
-        _console.print(f"  [dim]Graph: {counts}[/dim]")
+        console.print(f"  [dim]Graph: {counts}[/dim]")
     else:
-        _console.print("  [red]Graph: EMPTY — pipeline may have failed silently[/red]")
+        console.print("  [red]Graph: EMPTY — pipeline may have failed silently[/red]")
 
     return driver
 
