@@ -45,7 +45,7 @@ session.bind(analyzer_agents)
 session.bind(felix_deps)
 
 
-@session.eval(tags=["pipeline"])
+@session.eval()
 async def pipeline(
     case: Annotated[EvalCase, From(pipeline_cases)],
     driver: Annotated[AsyncDriver, Use(unified_pipeline)],
@@ -53,7 +53,7 @@ async def pipeline(
     return await _query(driver, case.inputs)
 
 
-@session.eval(tags=["ingest"])
+@session.eval()
 async def ingest(
     case: Annotated[EvalCase, From(ingest_cases)],
     agents: Annotated[AnalyzerAgents, Use(analyzer_agents)],
@@ -61,7 +61,7 @@ async def ingest(
     return await analyze_scene(agents, _load_scene(case.inputs))
 
 
-@session.eval(evaluators=[contains_expected_facts], tags=["chatbot"], model=chat_model)
+@session.eval(evaluators=[contains_expected_facts], model=chat_model)
 async def chatbot(
     case: Annotated[EvalCase, From(chatbot_cases)],
     deps: Annotated[FelixDeps, Use(felix_deps)],
