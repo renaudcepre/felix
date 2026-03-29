@@ -69,10 +69,16 @@ def scene_date_contains_keywords(ctx: EvalContext, min_match: int = 1) -> dict:
 
 
 @evaluator
-def min_relations_count(ctx: EvalContext) -> dict:
+def min_relations_count(ctx: EvalContext, max_count: int = 30) -> dict:
     min_count = int(ctx.expected_output or 1)
     count = len(ctx.output.relations)
-    return {"relations_ok": count >= min_count, "relations_count": count}
+    if count < min_count:
+        score = count / min_count
+    elif count <= max_count:
+        score = 1.0
+    else:
+        score = max(0.0, 1.0 - (count - max_count) / max_count)
+    return {"relations_ok": min_count <= count <= max_count, "relations_count": count, "relations_score": round(score, 2)}
 
 
 @evaluator
