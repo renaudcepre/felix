@@ -60,7 +60,7 @@ class PipelineQueryResult(BaseModel):
 
 
 async def _log_progress(progress: ImportProgress) -> None:
-    """Affiche les changements de progress en temps réel."""
+    """Log pipeline progress in real time."""
     last_scene = ""
     last_status = ""
     while True:
