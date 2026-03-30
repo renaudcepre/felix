@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
-from protest.evals import EvalContext, evaluator
+from protest.evals import EvalContext, Metric, Reason, Verdict, evaluator
 
 from evals._utils import normalize
 
@@ -12,9 +13,9 @@ from evals._utils import normalize
 
 @dataclass
 class CharIdResult:
-    char_id_recall: float
-    all_found: bool
-    missing_ids: str = ""
+    char_id_recall: Annotated[float, Metric]
+    all_found: Annotated[bool, Verdict]
+    missing_ids: Annotated[str, Reason] = ""
 
 
 @evaluator
@@ -49,9 +50,9 @@ def character_absent(ctx: EvalContext) -> bool:
 
 @dataclass
 class GroupIdResult:
-    group_id_recall: float
-    all_found: bool
-    missing_group_ids: str = ""
+    group_id_recall: Annotated[float, Metric]
+    all_found: Annotated[bool, Verdict]
+    missing_group_ids: Annotated[str, Reason] = ""
 
 
 @evaluator
@@ -80,9 +81,9 @@ def group_absent(ctx: EvalContext) -> bool:
 
 @dataclass
 class BgResult:
-    bg_score: float
-    bg_ok: bool
-    bg_matched: str = ""
+    bg_score: Annotated[float, Metric]
+    bg_ok: Annotated[bool, Verdict]
+    bg_matched: Annotated[str, Reason] = ""
 
 
 @evaluator
@@ -102,8 +103,8 @@ def background_contains_keywords(ctx: EvalContext, min_match: int = 2) -> BgResu
 
 @dataclass
 class ProfileNotContainsResult:
-    profile_not_contains: bool
-    found_keywords: str = ""
+    profile_not_contains: Annotated[bool, Verdict]
+    found_keywords: Annotated[str, Reason] = ""
 
 
 @evaluator
@@ -123,9 +124,9 @@ def profile_not_contains_keyword(ctx: EvalContext) -> ProfileNotContainsResult:
 
 @dataclass
 class DateResult:
-    date_score: float
-    date_ok: bool
-    date_matched: str = ""
+    date_score: Annotated[float, Metric]
+    date_ok: Annotated[bool, Verdict]
+    date_matched: Annotated[str, Reason] = ""
 
 
 @evaluator
@@ -147,8 +148,8 @@ def scene_date_contains_keywords(ctx: EvalContext, min_match: int = 1) -> DateRe
 
 @dataclass
 class RelationsResult:
-    relations_score: float
-    relations_ok: bool
+    relations_score: Annotated[float, Metric]
+    relations_ok: Annotated[bool, Verdict]
     relations_count: int = 0
 
 
@@ -197,7 +198,7 @@ def max_relation_count(ctx: EvalContext) -> bool:
 
 @dataclass
 class FragmentResult:
-    fragments_ok: bool
+    fragments_ok: Annotated[bool, Verdict]
     fragments_got: int = 0
 
 
@@ -250,7 +251,7 @@ def no_issue_description_contains(ctx: EvalContext) -> bool:
 
 @dataclass
 class IssueSeverityResult:
-    severity_ok: bool
+    severity_ok: Annotated[bool, Verdict]
     error_count: int = 0
 
 

@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
-from protest.evals import EvalContext, evaluator
+from protest.evals import EvalContext, Metric, Reason, Verdict, evaluator
 
 from evals._utils import normalize
 
@@ -16,9 +17,9 @@ _EPHEMERAL_PHYSICAL_TERMS = [
 
 @dataclass
 class CharExtractionResult:
-    char_extraction: float
-    all_found: bool
-    missing_chars: str = ""
+    char_extraction: Annotated[float, Metric]
+    all_found: Annotated[bool, Verdict]
+    missing_chars: Annotated[str, Reason] = ""
 
 
 @evaluator
@@ -43,9 +44,9 @@ def extracts_expected_characters(ctx: EvalContext) -> CharExtractionResult:
 
 @dataclass
 class RoleResult:
-    role_accuracy: float
-    wrong_roles: str = ""
-    missing_characters: str = ""
+    role_accuracy: Annotated[float, Metric]
+    wrong_roles: Annotated[str, Reason] = ""
+    missing_characters: Annotated[str, Reason] = ""
 
 
 @evaluator
@@ -107,8 +108,8 @@ def no_character_present(ctx: EvalContext) -> bool:
 
 @dataclass
 class DescriptionResult:
-    description_contains: bool
-    matched_keyword: str = ""
+    description_contains: Annotated[bool, Verdict]
+    matched_keyword: Annotated[str, Reason] = ""
     description_got: str = ""
 
 
@@ -123,7 +124,7 @@ def character_description_contains(ctx: EvalContext, character: str = "") -> Des
         None,
     )
     if matched_char is None:
-        return DescriptionResult(description_contains=False, description_got=f"{character} not found")
+        return DescriptionResult(description_contains=False, matched_keyword=f"{character} not found")
     desc = normalize(matched_char.description or "")
     keywords = [normalize(k.strip()) for k in ctx.expected_output.split(",") if k.strip()]
     found = next((k for k in keywords if k in desc), None)
@@ -136,8 +137,8 @@ def character_description_contains(ctx: EvalContext, character: str = "") -> Des
 
 @dataclass
 class EphemeralResult:
-    no_ephemeral_physical: bool
-    flagged_terms: str = ""
+    no_ephemeral_physical: Annotated[bool, Verdict]
+    flagged_terms: Annotated[str, Reason] = ""
     description_got: str = ""
 
 
@@ -150,7 +151,7 @@ def no_ephemeral_physical_description(ctx: EvalContext, character: str = "") -> 
         None,
     )
     if matched_char is None:
-        return EphemeralResult(no_ephemeral_physical=False, description_got=f"{character} not found")
+        return EphemeralResult(no_ephemeral_physical=False, flagged_terms=f"{character} not found")
     desc = normalize(matched_char.description or "")
     flagged = [t for t in _EPHEMERAL_PHYSICAL_TERMS if t in desc]
     return EphemeralResult(

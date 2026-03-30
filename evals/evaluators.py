@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
-from protest.evals import EvalContext, evaluator
+from protest.evals import EvalContext, Metric, Reason, Verdict, evaluator
 
 from evals._utils import normalize
 from felix.config import settings
@@ -26,9 +27,9 @@ _REFUSAL_MARKERS = [
 
 @dataclass
 class FactsResult:
-    facts_score: float
-    facts_ok: bool
-    missing_facts: str = ""
+    facts_score: Annotated[float, Metric]
+    facts_ok: Annotated[bool, Verdict]
+    missing_facts: Annotated[str, Reason] = ""
 
 
 @evaluator
@@ -49,8 +50,8 @@ def contains_expected_facts(ctx: EvalContext, min_score: float = 0.5) -> FactsRe
 
 @dataclass
 class LLMJudgeResult:
-    LLMJudge: bool
-    reason: str = ""
+    LLMJudge: Annotated[bool, Verdict]
+    reason: Annotated[str, Reason] = ""
 
 
 @evaluator
