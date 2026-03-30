@@ -47,7 +47,7 @@ CHARACTERS = [
     {
         "id": "benoit-laforge",
         "name": "Benoit Laforge",
-        "aliases": ["Inspecteur Laforge", "Henri Blanc"],
+        "aliases": ["Inspecteur Laforge", "Inspector Laforge", "Henri Blanc"],
         "era": "1940s",
         "age": "40 in 1942, 72 in 1974",
         "physical": (
