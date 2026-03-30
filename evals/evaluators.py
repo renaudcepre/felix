@@ -1,6 +1,8 @@
 """Shared evaluators for the Felix eval suites."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
@@ -22,25 +24,37 @@ _REFUSAL_MARKERS = [
 ]
 
 
+@dataclass
+class FactsResult:
+    facts_score: float
+    facts_ok: bool
+    missing_facts: str = ""
+
+
 @evaluator
-def contains_expected_facts(ctx: EvalContext, min_score: float = 0.5) -> dict:
-    """Check that the response contains at least min_score fraction of expected keywords."""
+def contains_expected_facts(ctx: EvalContext, min_score: float = 0.5) -> FactsResult:
     if not ctx.expected_output:
-        return {}
+        return FactsResult(facts_score=1.0, facts_ok=True)
     keywords = [k.strip() for k in ctx.expected_output.split(",") if k.strip()]
     output = normalize(ctx.output)
     matched = [k for k in keywords if normalize(k) in output]
     score = len(matched) / len(keywords) if keywords else 1.0
-    result: dict = {"facts_score": score, "facts_ok": score >= min_score}
     missing = [k for k in keywords if normalize(k) not in output]
-    if missing:
-        result["missing_facts"] = ", ".join(missing)
-    return result
+    return FactsResult(
+        facts_score=score,
+        facts_ok=score >= min_score,
+        missing_facts=", ".join(missing) if missing else "",
+    )
+
+
+@dataclass
+class LLMJudgeResult:
+    LLMJudge: bool
+    reason: str = ""
 
 
 @evaluator
-async def llm_judge(ctx: EvalContext, rubric: str = "") -> dict:
-    """LLM-based judge using Mistral Small."""
+async def llm_judge(ctx: EvalContext, rubric: str = "") -> LLMJudgeResult:
     model = MistralModel(
         "mistral-small-latest",
         provider=MistralProvider(api_key=settings.llm_api_key),
@@ -54,13 +68,12 @@ async def llm_judge(ctx: EvalContext, rubric: str = "") -> dict:
         f"Answer ONLY 'PASS' or 'FAIL' followed by a brief reason."
     )
     result = await agent.run(prompt)
-    passed = "pass" in result.output.lower().split()[0] if result.output else False
-    return {"LLMJudge": passed}
+    text = result.output or ""
+    passed = "pass" in text.lower().split()[0] if text.strip() else False
+    return LLMJudgeResult(LLMJudge=passed, reason=text[:200])
 
 
 @evaluator
-def refuses_to_fabricate(ctx: EvalContext) -> dict:
-    """Check that the response admits not knowing rather than fabricating."""
+def refuses_to_fabricate(ctx: EvalContext) -> bool:
     output = normalize(ctx.output)
-    refused = any(marker in output for marker in _REFUSAL_MARKERS)
-    return {"refused_to_fabricate": refused}
+    return any(marker in output for marker in _REFUSAL_MARKERS)
