@@ -23,9 +23,9 @@ api:
 web:
     cd web && pnpm dev
 
-# Lance les tests pytest
+# Lance les tests via protest
 test *args:
-    uv run pytest {{ args }}
+    uv run protest run tests.session:session {{ args }}
 
 # Evals via protest — options: --tag pipeline|ingest|chatbot, --last-failed, -n 4
 evals *args:

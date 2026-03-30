@@ -92,20 +92,10 @@ ignore = [
 strict = true
 plugins = ["pydantic.mypy"]
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-asyncio_mode = "auto"
-markers = [
-    "eval: LLM judge eval tests (require a running model)",
-]
-
 [dependency-groups]
 dev = [
-    "pytest>=9.0",
-    "pytest-asyncio>=1.3.0",
     "mypy>=1.10",
     "ruff>=0.11",
-    "pytest-cov>=7.0.0",
     "protest[evals]",
 ]
 
