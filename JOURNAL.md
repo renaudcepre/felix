@@ -18,13 +18,22 @@ modéliser quand on sera prêt.
 Priorités : notes = next step naturel (low effort, high value). Écriture assistée = plan
 long terme.
 
-## Migration protest-native + multi-modèle — 2026-03-28
+## Migration complète protest + scoring v2 — 2026-03-28/30
 
-Migration complète vers l'API protest-native : `EvalSession`, `EvalSuite`, `EvalCase`, `@evaluator`. Plus de dépendance pydantic-evals (sauf `LLMJudge` en attendant l'équivalent protest). Fixtures protest `@fixture` + `Use()` pour les 3 suites — plus de global state ni de locks async.
+**Plus de pytest.** Tout tourne sur protest : `just test` = `protest run`, `just evals` = `protest eval`. pytest, pytest-asyncio et pytest-cov supprimés des deps.
 
-Config multi-modèle par feature : Qwen 7B Together pour le pipeline, Mistral Small API directe pour le checker et le chatbot (RGPD). Settings panel frontend simplifié en lecture seule.
+**API protest-native** — 3 migrations successives :
+1. `ProTestSession` → `EvalSession`, `add_eval_suite` → `add_suite`
+2. `EvalSuite` → `ForEach` + `@session.eval()` — les evals sont des tests paramétrisés
+3. Scoring v2 : evaluators retournent des dataclasses avec `Annotated[float, Metric]`, `Annotated[bool, Verdict]`, `Annotated[str, Reason]`. Les simples retournent `bool`. Plus de `dict` retour.
 
-Suite unifiée (Thornwall Keep) : 39 cas pipeline, 21 ingest, 26 chatbot = 86 total. Baseline : 60/86 (70%) avec `-n 4` en 236s.
+**Fixtures DI** pour les 3 suites — `@fixture` + `Use()`, plus de global state. `console.print` de protest pour le progress pendant l'import pipeline.
+
+**Config multi-modèle** : Qwen 7B Together pour le pipeline, Mistral Small pour le checker (API directe, RGPD) et le chatbot (OpenRouter). Settings panel frontend simplifié en lecture seule.
+
+**LLMJudge** protest-natif — remplace `pydantic_evals.LLMJudge`. Async, utilise Mistral Small.
+
+86 cas total (39 pipeline, 21 ingest, 26 chatbot). Baseline : 60/86 (70%), `-n 4`, ~210s.
 
 ## Refonte evals — consolidation + checks graph-based — 2026-03-26/27
 
