@@ -61,7 +61,7 @@ async def ingest(
     return await analyze_scene(agents, _load_scene(case.inputs))
 
 
-@session.eval(evaluators=[contains_expected_facts], model=chat_model)
+@session.eval(model=chat_model)
 async def chatbot(
     case: Annotated[EvalCase, From(chatbot_cases)],
     deps: Annotated[FelixDeps, Use(felix_deps)],

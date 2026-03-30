@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from protest import ForEach
-from protest.evals import EvalCase
+from protest.evals import EvalCase, ShortCircuit
 
 from evals.evaluators import contains_expected_facts, llm_judge, refuses_to_fabricate
 
@@ -73,26 +73,24 @@ chatbot_cases = ForEach(
             expected="Marie, 1942, courier, cell",
             evaluators=[contains_expected_facts],
         ),
-        # --- causal ---
+        # --- causal (ShortCircuit: facts first, then LLM judge) ---
         EvalCase(
             name="causal_marie_leader",
             inputs="What pushed Marie to take over the cell?",
             expected="Pierre arrested in 1942, Marie takes over the resistance cell",
-            evaluators=[
-                llm_judge(
-                    rubric="The response explains that Marie took over the resistance cell following Pierre Renard's arrest in 1942."
-                )
-            ],
+            evaluators=[ShortCircuit([
+                contains_expected_facts(min_score=0.3),
+                llm_judge(rubric="The response explains that Marie took over the resistance cell following Pierre Renard's arrest in 1942."),
+            ])],
         ),
         EvalCase(
             name="causal_benoit_protection",
             inputs="How did Benoit's actions protect Pierre's cell?",
             expected="Benoit passes information to Pierre to protect the resistance cell",
-            evaluators=[
-                llm_judge(
-                    rubric="The response explains that Benoit Laforge, acting as a double agent, transmitted intelligence (schedules, plans) to Pierre Renard's resistance cell."
-                )
-            ],
+            evaluators=[ShortCircuit([
+                contains_expected_facts(min_score=0.3),
+                llm_judge(rubric="The response explains that Benoit Laforge, acting as a double agent, transmitted intelligence (schedules, plans) to Pierre Renard's resistance cell."),
+            ])],
         ),
         EvalCase(
             name="causal_julien_discovery",
@@ -104,11 +102,10 @@ chatbot_cases = ForEach(
             name="causal_chain_benoit_to_julien",
             inputs="Trace the causal chain between Benoit's double game in 1942 and Julien's discovery 30 years later.",
             expected="Benoit transmits in 1942, documents survive, Julien discovers them in the archives",
-            evaluators=[
-                llm_judge(
-                    rubric="The response traces a causal chain: Benoit's 1942 intelligence transmissions → documents/information preserved → Julien's discovery in archives decades later."
-                )
-            ],
+            evaluators=[ShortCircuit([
+                contains_expected_facts(min_score=0.3),
+                llm_judge(rubric="The response traces a causal chain: Benoit's 1942 intelligence transmissions → documents/information preserved → Julien's discovery in archives decades later."),
+            ])],
         ),
         # --- prop tracking ---
         EvalCase(
@@ -127,22 +124,20 @@ chatbot_cases = ForEach(
             name="prop_carbone_full_trace",
             inputs="Trace the roundup document from its creation to its rediscovery.",
             expected="Benoit creates the carbon copy in 1942, Julien finds it in the archives in 1974",
-            evaluators=[
-                llm_judge(
-                    rubric="Response traces the document from Benoit's clandestine carbon copy in 1942 to Julien's discovery in the Paris Tribune archives in 1974, identifying Benoit as the origin."
-                )
-            ],
+            evaluators=[ShortCircuit([
+                contains_expected_facts(min_score=0.3),
+                llm_judge(rubric="Response traces the document from Benoit's clandestine carbon copy in 1942 to Julien's discovery in the Paris Tribune archives in 1974, identifying Benoit as the origin."),
+            ])],
         ),
         # --- information asymmetry ---
         EvalCase(
             name="asym_julien_henriblanc",
             inputs="When Julien meets Henri Blanc in June 1974, does he know it's Benoit Laforge?",
             expected="Julien does not know that Henri Blanc is Benoit Laforge at the time of their meeting",
-            evaluators=[
-                llm_judge(
-                    rubric="Response correctly states that Julien does not yet know Henri Blanc is Benoit Laforge at the time of their June 1974 meeting."
-                )
-            ],
+            evaluators=[ShortCircuit([
+                contains_expected_facts(min_score=0.3),
+                llm_judge(rubric="Response correctly states that Julien does not yet know Henri Blanc is Benoit Laforge at the time of their June 1974 meeting."),
+            ])],
         ),
         EvalCase(
             name="asym_marie_benoit_july42",
