@@ -4,13 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated
 
-from pydantic_ai import Agent
-from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.providers.mistral import MistralProvider
 from protest.evals import EvalContext, Metric, Reason, Verdict, evaluator
 
 from evals._utils import normalize
-from felix.config import settings
 
 _REFUSAL_MARKERS = [
     "je ne trouve pas",
@@ -56,22 +52,14 @@ class LLMJudgeResult:
 
 @evaluator
 async def llm_judge(ctx: EvalContext, rubric: str = "") -> LLMJudgeResult:
-    model = MistralModel(
-        "mistral-small-latest",
-        provider=MistralProvider(api_key=settings.llm_api_key),
-    )
-    agent: Agent[None, str] = Agent(model, output_type=str)
-    prompt = (
+    return await ctx.judge(
         f"Evaluate this response against the criteria below.\n\n"
         f"Question: {ctx.inputs}\n"
         f"Response: {ctx.output}\n"
         f"Criteria: {rubric}\n\n"
-        f"Answer ONLY 'PASS' or 'FAIL' followed by a brief reason."
+        f'Answer with JSON: {{"LLMJudge": true/false, "reason": "brief explanation"}}',
+        LLMJudgeResult,
     )
-    result = await agent.run(prompt)
-    text = result.output or ""
-    passed = "pass" in text.lower().split()[0] if text.strip() else False
-    return LLMJudgeResult(LLMJudge=passed, reason=text[:200])
 
 
 @evaluator

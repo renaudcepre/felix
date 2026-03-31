@@ -12,8 +12,11 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Annotated
 
+from pydantic_ai import Agent
+from pydantic_ai.models.mistral import MistralModel
+from pydantic_ai.providers.mistral import MistralProvider
 from protest import From, Use
-from protest.evals import EvalCase, EvalSession, ModelInfo
+from protest.evals import EvalCase, EvalSession, JudgeResponse, ModelInfo
 
 from evals.chatbot.dataset import chatbot_cases
 from evals.evaluators import contains_expected_facts
@@ -38,7 +41,27 @@ if TYPE_CHECKING:
 pipeline_model = ModelInfo(name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model))
 chat_model = ModelInfo(name=settings.llm_chat_model or settings.llm_model)
 
-session = EvalSession(model=pipeline_model)
+
+class FelixJudge:
+    name = "mistral-small-latest"
+    provider = "mistral"
+
+    async def judge(self, prompt: str, output_type: type) -> JudgeResponse:
+        model = MistralModel(
+            "mistral-small-latest",
+            provider=MistralProvider(api_key=settings.llm_api_key),
+        )
+        agent = Agent(model, output_type=output_type)
+        result = await agent.run(prompt)
+        usage = result.usage()
+        return JudgeResponse(
+            output=result.output,
+            input_tokens=usage.request_tokens,
+            output_tokens=usage.response_tokens,
+        )
+
+
+session = EvalSession(model=pipeline_model, judge=FelixJudge())
 
 session.bind(unified_pipeline)
 session.bind(analyzer_agents)
