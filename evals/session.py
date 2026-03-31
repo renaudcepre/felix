@@ -54,10 +54,12 @@ class FelixJudge:
         agent = Agent(model, output_type=output_type)
         result = await agent.run(prompt)
         usage = result.usage()
+        in_tok, out_tok = usage.request_tokens or 0, usage.response_tokens or 0
         return JudgeResponse(
             output=result.output,
-            input_tokens=usage.request_tokens,
-            output_tokens=usage.response_tokens,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            cost=in_tok * 0.10 / 1e6 + out_tok * 0.30 / 1e6,
         )
 
 
@@ -92,8 +94,10 @@ async def chatbot(
     agent = create_agent()
     result = await agent.run(case.inputs, deps=deps)
     usage = result.usage()
+    in_tok, out_tok = usage.request_tokens or 0, usage.response_tokens or 0
     return TaskResult(
         output=result.output,
-        input_tokens=usage.request_tokens,
-        output_tokens=usage.response_tokens,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        cost=in_tok * 0.10 / 1e6 + out_tok * 0.30 / 1e6,
     )
