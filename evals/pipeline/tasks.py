@@ -16,7 +16,17 @@ async def unified_pipeline() -> AsyncDriver:
     """Run the unified pipeline import once, shared across all cases."""
     console.print("[dim]pipeline:[/] starting import...")
     driver = await _run_pipeline(FIXTURES_ROOT / "unified")
-    console.print("[green]pipeline:[/] import done")
+
+    # Fail fast if import produced nothing
+    async with driver.session() as session:
+        result = await session.run("MATCH (n) RETURN count(n) AS c")
+        record = await result.single()
+        count = record["c"] if record else 0
+    if count == 0:
+        msg = "Pipeline import produced an empty graph — check LLM connectivity and fixture files"
+        raise RuntimeError(msg)
+
+    console.print(f"[green]pipeline:[/] import done ({count} nodes)")
     return driver
 
 
