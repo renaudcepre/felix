@@ -16,7 +16,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
 from protest import From, Use
-from protest.evals import EvalCase, EvalSession, JudgeResponse, ModelInfo
+from protest.evals import EvalCase, EvalSession, JudgeResponse, ModelInfo, TaskResult
 
 from evals.chatbot.dataset import chatbot_cases
 from evals.evaluators import contains_expected_facts
@@ -88,7 +88,12 @@ async def ingest(
 async def chatbot(
     case: Annotated[EvalCase, From(chatbot_cases)],
     deps: Annotated[FelixDeps, Use(felix_deps)],
-) -> str:
+) -> TaskResult[str]:
     agent = create_agent()
     result = await agent.run(case.inputs, deps=deps)
-    return result.output
+    usage = result.usage()
+    return TaskResult(
+        output=result.output,
+        input_tokens=usage.request_tokens,
+        output_tokens=usage.response_tokens,
+    )
