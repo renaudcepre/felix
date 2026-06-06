@@ -1,5 +1,13 @@
 # Journal de developpement — Felix
 
+## Finalisation migration tests pytest → protest (commit) — 2026-06-06
+
+Reprise après ~5 semaines de pause. La migration des tests unitaires (cf. `JOURNAL_UNIT_PROTEST.md`, fin mars) était **écrite et fonctionnelle mais jamais commitée** : `tests/session.py` (committé) importait `tests.unit.*` / `tests.integration.*` / `tests.fixtures` qui n'étaient pas trackés, et les 8 anciens `test_*.py` plats + `conftest.py` (pytest) traînaient encore en double.
+
+Validation avant commit : **145/145 tests passent** sous **protest 0.2.0** + **Python 3.14** (62 sans Neo4j en 3.6s, 145 complets en 20.6s). L'API de tests protest est restée rétro-compatible malgré le passage de protest 0.x → 0.2.0 (les evals ont été « livrées » dans le core, l'extra `[evals]` n'existe plus).
+
+Nettoyage : `git add` de la nouvelle arbo `unit/`+`integration/`+`fixtures.py`, `git rm` des doublons pytest, `.protest/` + `.DS_Store` ajoutés au `.gitignore`. Chantier Python 3.14 / torch (pyproject + uv.lock + refonte API evals dans `evals/session.py`) **laissé hors de ce commit** — à committer séparément.
+
 ## Vision produit — discussion avec Felix (scenariste) — 2026-03-25
 
 Trois couches distinctes émergent :

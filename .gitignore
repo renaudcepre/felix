@@ -22,11 +22,15 @@ kuzu_data
 # mypy
 .mypy_cache/
 
-# pytest
+# test runner cache (protest, legacy pytest)
 .pytest_cache/
+.protest/
 
 # ruff
 .ruff_cache/
+
+# macOS
+.DS_Store
 
 # Nuxt / Node
 web/node_modules/

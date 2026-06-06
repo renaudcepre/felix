@@ -3,15 +3,18 @@
 All tests that exercise semantic splitting mock the embedding model so that no
 real SentenceTransformer is loaded — keeping the suite fast and offline.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, PropertyMock, patch
 
 import numpy as np
-import pytest
+from protest import ProTestSuite
 
 from felix.ingest.segmenter import TextSegmenter
 from felix.ingest.utils import estimate_tokens
+
+segmenter_suite = ProTestSuite("Segmenter")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -53,33 +56,39 @@ def _segmenter(
 # ── estimate_tokens ───────────────────────────────────────────────────────────
 
 
+@segmenter_suite.test()
 def test_estimate_tokens_empty() -> None:
     assert estimate_tokens("") == 0
 
 
+@segmenter_suite.test()
 def test_estimate_tokens_scales_with_word_count() -> None:
     text = "word " * 100
-    assert estimate_tokens(text) == pytest.approx(135, abs=5)
+    assert abs(estimate_tokens(text) - 135) <= 5
 
 
 # ── _split_into_blocks ────────────────────────────────────────────────────────
 
 
+@segmenter_suite.test()
 def test_split_into_blocks_single_paragraph() -> None:
     assert TextSegmenter._split_into_blocks("Hello world.") == ["Hello world."]
 
 
+@segmenter_suite.test()
 def test_split_into_blocks_double_newline() -> None:
     text = "Para one.\n\nPara two."
     blocks = TextSegmenter._split_into_blocks(text)
     assert blocks == ["Para one.", "Para two."]
 
 
+@segmenter_suite.test()
 def test_split_into_blocks_strips_empty() -> None:
     text = "A\n\n\n\nB\n\n   \n\nC"
     assert TextSegmenter._split_into_blocks(text) == ["A", "B", "C"]
 
 
+@segmenter_suite.test()
 def test_split_into_blocks_normalizes_crlf() -> None:
     text = "A\r\n\r\nB"
     assert TextSegmenter._split_into_blocks(text) == ["A", "B"]
@@ -88,6 +97,7 @@ def test_split_into_blocks_normalizes_crlf() -> None:
 # ── _find_semantic_breakpoints ────────────────────────────────────────────────
 
 
+@segmenter_suite.test()
 def test_find_breakpoints_no_break_when_similar() -> None:
     mock = _mock_model_with_breaks(3, break_after=[])
     s = _segmenter()
@@ -96,6 +106,7 @@ def test_find_breakpoints_no_break_when_similar() -> None:
     assert bp == set()
 
 
+@segmenter_suite.test()
 def test_find_breakpoints_detects_orthogonal_drop() -> None:
     mock = _mock_model_with_breaks(3, break_after=[1])
     s = _segmenter()
@@ -104,6 +115,7 @@ def test_find_breakpoints_detects_orthogonal_drop() -> None:
     assert 1 in bp
 
 
+@segmenter_suite.test()
 def test_find_breakpoints_single_block() -> None:
     s = _segmenter()
     assert s._find_semantic_breakpoints(["only one"]) == set()
@@ -112,18 +124,21 @@ def test_find_breakpoints_single_block() -> None:
 # ── _group_blocks ─────────────────────────────────────────────────────────────
 
 
+@segmenter_suite.test()
 def test_group_blocks_no_breaks() -> None:
     blocks = ["a", "b", "c"]
     groups = TextSegmenter._group_blocks(blocks, breakpoints=set())
     assert groups == [["a", "b", "c"]]
 
 
+@segmenter_suite.test()
 def test_group_blocks_break_in_middle() -> None:
     blocks = ["a", "b", "c", "d"]
     groups = TextSegmenter._group_blocks(blocks, breakpoints={1})
     assert groups == [["a", "b"], ["c", "d"]]
 
 
+@segmenter_suite.test()
 def test_group_blocks_multiple_breaks() -> None:
     blocks = ["a", "b", "c", "d"]
     groups = TextSegmenter._group_blocks(blocks, breakpoints={0, 2})
@@ -133,6 +148,7 @@ def test_group_blocks_multiple_breaks() -> None:
 # ── _merge_small_segments ─────────────────────────────────────────────────────
 
 
+@segmenter_suite.test()
 def test_merge_small_segments_combines_tiny_segments() -> None:
     segs = [[f"word{i}"] for i in range(10)]
     merged = _segmenter(max_tokens=100)._merge_small_segments(segs)
@@ -140,6 +156,7 @@ def test_merge_small_segments_combines_tiny_segments() -> None:
     assert sum(len(s) for s in merged) == 10
 
 
+@segmenter_suite.test()
 def test_merge_small_segments_respects_budget() -> None:
     big_block = "word " * 200
     segs = [[big_block], [big_block], [big_block]]
@@ -147,6 +164,7 @@ def test_merge_small_segments_respects_budget() -> None:
     assert len(merged) == 3
 
 
+@segmenter_suite.test()
 def test_merge_small_segments_preserves_all_blocks() -> None:
     segs = [[f"block{i}"] for i in range(6)]
     merged = _segmenter(max_tokens=1000)._merge_small_segments(segs)
@@ -157,12 +175,14 @@ def test_merge_small_segments_preserves_all_blocks() -> None:
 # ── _split_oversized ──────────────────────────────────────────────────────────
 
 
+@segmenter_suite.test()
 def test_split_oversized_single_block_unchanged() -> None:
     big = ["word " * 3000]
     result = _segmenter(max_tokens=100)._split_oversized(big)
     assert result == [big]
 
 
+@segmenter_suite.test()
 def test_split_oversized_splits_at_block_boundary() -> None:
     blocks = ["word " * 300, "word " * 300, "word " * 300]
     result = _segmenter(max_tokens=500)._split_oversized(blocks)
@@ -174,11 +194,13 @@ def test_split_oversized_splits_at_block_boundary() -> None:
 # ── _apply_overlap ────────────────────────────────────────────────────────────
 
 
+@segmenter_suite.test()
 def test_apply_overlap_single_chunk_unchanged() -> None:
     chunks = ["only chunk"]
     assert _segmenter()._apply_overlap(chunks) == chunks
 
 
+@segmenter_suite.test()
 def test_apply_overlap_tail_present_in_next_chunk() -> None:
     # overlap_tokens = 500 * 0.20 = 100 → ~74 words
     chunk_a = "alpha " * 50 + "SENTINEL_WORD"
@@ -187,6 +209,7 @@ def test_apply_overlap_tail_present_in_next_chunk() -> None:
     assert "SENTINEL_WORD" in result[1]
 
 
+@segmenter_suite.test()
 def test_apply_overlap_does_not_modify_first_chunk() -> None:
     chunks = ["first chunk content", "second chunk content"]
     result = _segmenter()._apply_overlap(chunks)
@@ -196,25 +219,30 @@ def test_apply_overlap_does_not_modify_first_chunk() -> None:
 # ── segment (integration, mocked model) ──────────────────────────────────────
 
 
+@segmenter_suite.test()
 def test_segment_passthrough_short_text() -> None:
     short = "word " * 50
     assert _segmenter().segment(short) == [short]
 
 
+@segmenter_suite.test()
 def test_segment_passthrough_empty() -> None:
     assert _segmenter().segment("") == [""]
 
 
+@segmenter_suite.test()
 def test_segment_passthrough_whitespace() -> None:
     assert _segmenter().segment("   ") == ["   "]
 
 
+@segmenter_suite.test()
 def test_segment_single_block_over_budget() -> None:
     single_block = "word " * 3000
     result = _segmenter(max_tokens=100).segment(single_block)
     assert result == [single_block]
 
 
+@segmenter_suite.test()
 def test_segment_produces_multiple_chunks() -> None:
     text = _long_text(n_paragraphs=15, words_per_para=200)
     n_blocks = len(text.split("\n\n"))
@@ -225,6 +253,7 @@ def test_segment_produces_multiple_chunks() -> None:
     assert len(chunks) > 1
 
 
+@segmenter_suite.test()
 def test_segment_no_empty_chunks() -> None:
     text = _long_text(n_paragraphs=12, words_per_para=150)
     n_blocks = len(text.split("\n\n"))
@@ -235,6 +264,7 @@ def test_segment_no_empty_chunks() -> None:
     assert all(c.strip() for c in chunks)
 
 
+@segmenter_suite.test()
 def test_segment_no_mid_sentence_cut() -> None:
     text = _long_text(n_paragraphs=10, words_per_para=200)
     n_blocks = len(text.split("\n\n"))
@@ -250,6 +280,7 @@ def test_segment_no_mid_sentence_cut() -> None:
         assert para.strip() in reconstructed
 
 
+@segmenter_suite.test()
 def test_segment_overlap_bridges_chunks() -> None:
     text = _long_text(n_paragraphs=10, words_per_para=200)
     n_blocks = len(text.split("\n\n"))
@@ -263,6 +294,7 @@ def test_segment_overlap_bridges_chunks() -> None:
         assert words_chunk0 & words_chunk1
 
 
+@segmenter_suite.test()
 def test_segment_all_content_preserved() -> None:
     text = _long_text(n_paragraphs=8, words_per_para=150)
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]

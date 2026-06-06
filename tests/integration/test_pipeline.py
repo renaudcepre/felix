@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, Annotated
 from unittest.mock import AsyncMock, patch
 
-import pytest
+import chromadb
+from protest import ProTestSuite, Use, fixture, tmp_path
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
-import chromadb
+from tests.fixtures import seeded_driver
 
 from felix.graph.repositories.characters import (
     get_character_fragments,
@@ -36,6 +38,33 @@ from felix.ingest.pipeline import (
 )
 from felix.ingest.resolution import handle_ambiguous_character, resolve_location
 from felix.ingest.resolver import AmbiguousMatch
+
+pipeline_suite = ProTestSuite("Pipeline")
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@fixture()
+def pipeline_collection() -> chromadb.Collection:
+    client = chromadb.Client()
+    return client.get_or_create_collection("test_scenes")
+
+
+@fixture()
+def scenes_dir(tmp: Annotated[Path, Use(tmp_path)]) -> str:
+    (tmp / "001.txt").write_text("Scene un : Marie accueille Sarah.", encoding="utf-8")
+    (tmp / "002.txt").write_text("Scene deux : Benoit a la prefecture.", encoding="utf-8")
+    (tmp / "003.txt").write_text("Scene trois : un inconnu arrive.", encoding="utf-8")
+    return str(tmp)
+
+
+# ---------------------------------------------------------------------------
+# Test data
+# ---------------------------------------------------------------------------
+
 
 SCENE_1 = SceneAnalysis(
     title="Arrivee a la planque",
@@ -99,19 +128,29 @@ CONSISTENCY_REPORT = ConsistencyReport(
     ]
 )
 
+MOCK_PROFILE = CharacterProfile(
+    age="40 ans",
+    physical="Cheveux bruns, taille moyenne",
+    background="Resistante lyonnaise",
+    arc="De civile a cheffe de reseau",
+    traits="Courageuse, determinee",
+)
 
-@pytest.fixture
-def collection() -> chromadb.Collection:
-    client = chromadb.Client()
-    return client.get_or_create_collection("test_scenes")
+MOCK_PROFILE_WITH_RELATIONS = CharacterProfile(
+    age="30 ans",
+    physical="Grande, cheveux noirs",
+    background="Ingenieure",
+    arc="Decouvre un signal inconnu",
+    traits="Determinee, curieuse",
+    relations=[
+        ExtractedRelation(other_name="Marie Dupont", relation="collegue de resistance"),
+    ],
+)
 
 
-@pytest.fixture
-def scenes_dir(tmp_path):
-    (tmp_path / "001.txt").write_text("Scene un : Marie accueille Sarah.", encoding="utf-8")
-    (tmp_path / "002.txt").write_text("Scene deux : Benoit a la prefecture.", encoding="utf-8")
-    (tmp_path / "003.txt").write_text("Scene trois : un inconnu arrive.", encoding="utf-8")
-    return str(tmp_path)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 def _mock_analyze_scene(analyses: list[SceneAnalysis]):
@@ -124,16 +163,6 @@ def _mock_analyze_scene(analyses: list[SceneAnalysis]):
         return result
 
     return _analyze
-
-
-
-MOCK_PROFILE = CharacterProfile(
-    age="40 ans",
-    physical="Cheveux bruns, taille moyenne",
-    background="Resistante lyonnaise",
-    arc="De civile a cheffe de reseau",
-    traits="Courageuse, determinee",
-)
 
 
 def _mock_profile_character(profile: CharacterProfile):
@@ -179,38 +208,44 @@ def _pipeline_patches(analyses, _report=None, profile=None):
     return patches
 
 
-async def _run_with_patches(analyses, report, scenes_dir, driver, collection, progress, *, enrich_profiles=False, profile=None):
+async def _run_with_patches(analyses, report, sd, driver, collection, progress, *, enrich_profiles=False, profile=None):
     patches = _pipeline_patches(analyses, report, profile)
     with contextlib.ExitStack() as stack:
         for p in patches:
             stack.enter_context(p)
         await run_import_pipeline(
-            scenes_dir, driver, collection, None, None, progress,
+            sd, driver, collection, None, None, progress,
             enrich_profiles=enrich_profiles,
         )
 
 
+# ---------------------------------------------------------------------------
+# Tests — pipeline orchestration (require Neo4j + mocks)
+# ---------------------------------------------------------------------------
+
+
+@pipeline_suite.test()
 async def test_pipeline_full(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    sd: Annotated[str, Use(scenes_dir)],
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress,
+        sd, driver, collection, progress,
     )
 
     assert progress.status == ImportStatus.DONE
     assert progress.processed_scenes == 3
     assert progress.total_scenes == 3
 
-    scenes = await list_scenes(seeded_driver)
+    scenes = await list_scenes(driver)
     assert len(scenes) == 3
     ids = {s["id"] for s in scenes}
     assert "scene-001" in ids
     assert "scene-002" in ids
     assert "scene-003" in ids
-
-    # Consistency checks are now post-import (graph-based), not per-scene LLM
 
     assert "Jacques Martin" in progress.new_characters
     assert "Gare de Lyon-Perrache" in progress.new_locations
@@ -219,82 +254,97 @@ async def test_pipeline_full(
     assert len(results["ids"]) == 1
 
 
+@pipeline_suite.test()
 async def test_pipeline_empty_dir(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, tmp_path
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    empty_dir: Annotated[Path, Use(tmp_path)],
 ) -> None:
     progress = ImportProgress()
-    await run_import_pipeline(str(tmp_path), seeded_driver, collection, None, None, progress)
+    await run_import_pipeline(str(empty_dir), driver, collection, None, None, progress)
     assert progress.status == ImportStatus.ERROR
     assert "No text files" in progress.error
 
 
+@pipeline_suite.test()
 async def test_pipeline_idempotent(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    sd: Annotated[str, Use(scenes_dir)],
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress,
+        sd, driver, collection, progress,
     )
 
     progress2 = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress2,
+        sd, driver, collection, progress2,
     )
 
     assert progress2.status == ImportStatus.DONE
-    scenes = await list_scenes(seeded_driver)
+    scenes = await list_scenes(driver)
     assert len(scenes) == 3
 
 
+@pipeline_suite.test()
 async def test_fragments_stored(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    sd: Annotated[str, Use(scenes_dir)],
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress,
+        sd, driver, collection, progress,
     )
 
-    fragments = await get_character_fragments(seeded_driver, "marie-dupont")
+    fragments = await get_character_fragments(driver, "marie-dupont")
     assert len(fragments) >= 1
     frag = fragments[0]
     assert frag["role"] == "participant"
     assert "quarantaine" in (frag["description"] or "")
 
-    fragments_jm = await get_character_fragments(seeded_driver, "jacques-martin")
+    fragments_jm = await get_character_fragments(driver, "jacques-martin")
     assert len(fragments_jm) == 1
     assert "accent du sud" in (fragments_jm[0]["description"] or "")
 
 
+@pipeline_suite.test()
 async def test_format_profile_includes_fragments(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    sd: Annotated[str, Use(scenes_dir)],
 ) -> None:
     from felix.graph.formatters import find_character
 
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress,
+        sd, driver, collection, progress,
     )
 
-    profile_text = await find_character(seeded_driver, "marie")
+    profile_text = await find_character(driver, "marie")
     assert "Scene observations" in profile_text
     assert "quarantaine" in profile_text
 
 
+@pipeline_suite.test()
 async def test_profiling_enriches_characters(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    sd: Annotated[str, Use(scenes_dir)],
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress,
+        sd, driver, collection, progress,
         enrich_profiles=True, profile=MOCK_PROFILE,
     )
 
-    row = await get_character_profile(seeded_driver, "jacques-martin")
+    row = await get_character_profile(driver, "jacques-martin")
     assert row is not None
     assert row["age"] == "40 ans"
     assert row["physical"] == "Cheveux bruns, taille moyenne"
@@ -303,34 +353,40 @@ async def test_profiling_enriches_characters(
     assert row["traits"] == "Courageuse, determinee"
 
 
+@pipeline_suite.test()
 async def test_no_profiling_when_disabled(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    sd: Annotated[str, Use(scenes_dir)],
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress,
+        sd, driver, collection, progress,
         enrich_profiles=False,
     )
 
-    row = await get_character_profile(seeded_driver, "jacques-martin")
+    row = await get_character_profile(driver, "jacques-martin")
     assert row is not None
     assert row.get("age") is None
     assert row.get("physical") is None
     assert row.get("background") is None
 
 
+@pipeline_suite.test()
 async def test_coalesce_preserves_existing_data(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    sd: Annotated[str, Use(scenes_dir)],
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress,
+        sd, driver, collection, progress,
     )
 
     # Manually set age on Jacques Martin
-    async with seeded_driver.session() as session:
+    async with driver.session() as session:
         await session.run(
             "MATCH (c:Character {id: 'jacques-martin'}) SET c.age = '35 ans'"
         )
@@ -338,51 +394,46 @@ async def test_coalesce_preserves_existing_data(
     progress2 = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress2,
+        sd, driver, collection, progress2,
         enrich_profiles=True, profile=MOCK_PROFILE,
     )
 
-    row = await get_character_profile(seeded_driver, "jacques-martin")
+    row = await get_character_profile(driver, "jacques-martin")
     assert row is not None
     assert row["age"] == "35 ans"
     assert row["background"] == "Resistante lyonnaise"
 
 
-MOCK_PROFILE_WITH_RELATIONS = CharacterProfile(
-    age="30 ans",
-    physical="Grande, cheveux noirs",
-    background="Ingenieure",
-    arc="Decouvre un signal inconnu",
-    traits="Determinee, curieuse",
-    relations=[
-        ExtractedRelation(other_name="Marie Dupont", relation="collegue de resistance"),
-    ],
-)
-
-
+@pipeline_suite.test()
 async def test_profiling_stores_relations(
-    seeded_driver: AsyncDriver, collection: chromadb.Collection, scenes_dir: str
+    driver: Annotated[AsyncDriver, Use(seeded_driver)],
+    collection: Annotated[chromadb.Collection, Use(pipeline_collection)],
+    sd: Annotated[str, Use(scenes_dir)],
 ) -> None:
     progress = ImportProgress()
     await _run_with_patches(
         [SCENE_1, SCENE_2, SCENE_3], CONSISTENCY_REPORT,
-        scenes_dir, seeded_driver, collection, progress,
+        sd, driver, collection, progress,
         enrich_profiles=True, profile=MOCK_PROFILE_WITH_RELATIONS,
     )
 
-    rels = await get_character_relations(seeded_driver, "jacques-martin")
+    rels = await get_character_relations(driver, "jacques-martin")
     assert len(rels) >= 1
     rel_names = [r["other_name"] for r in rels]
     assert "Marie Dupont" in rel_names
 
 
-# --- Tests issue #18 : duplicate_suspect resolved selon confirmation ou timeout ---
+# ---------------------------------------------------------------------------
+# Tests — duplicate_suspect resolution (no DB needed)
+# ---------------------------------------------------------------------------
+
 
 def _make_ambiguous_match() -> AmbiguousMatch:
     return AmbiguousMatch(best_id="marie-dupont", best_name="Marie Dupont", score=0.85)
 
 
-async def test_duplicate_suspect_resolved_true_when_user_confirms():
+@pipeline_suite.test()
+async def test_duplicate_suspect_resolved_true_when_user_confirms() -> None:
     """L'utilisateur confirme 'link' explicitement → resolved=True."""
     queue: asyncio.Queue = asyncio.Queue()
     pending: dict[str, ClarificationSlot] = {}
@@ -420,7 +471,8 @@ async def test_duplicate_suspect_resolved_true_when_user_confirms():
     assert issues[0]["resolved"] is True
 
 
-async def test_duplicate_suspect_resolved_false_on_timeout():
+@pipeline_suite.test()
+async def test_duplicate_suspect_resolved_false_on_timeout() -> None:
     """Timeout → lien automatique → resolved=False."""
     queue: asyncio.Queue = asyncio.Queue()
     issues: list[dict] = []
@@ -450,9 +502,11 @@ async def test_duplicate_suspect_resolved_false_on_timeout():
     assert issues[0]["resolved"] is False
 
 
-async def test_location_duplicate_suspect_resolved_true_when_user_confirms():
+@pipeline_suite.test()
+async def test_location_duplicate_suspect_resolved_true_when_user_confirms() -> None:
     """Lieu : utilisateur confirme → resolved=True."""
-    from felix.ingest.models import ExtractedLocation, SceneAnalysis as SA
+    from felix.ingest.models import ExtractedLocation
+    from felix.ingest.models import SceneAnalysis as SA
 
     queue: asyncio.Queue = asyncio.Queue()
     pending: dict[str, ClarificationSlot] = {}
