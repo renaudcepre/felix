@@ -1,13 +1,79 @@
 # Journal de developpement — Felix
 
+## Front : page « atelier » (le bot B) portée React→Vue — 2026-06-07
+
+Première brique UI de B : le **chat** du design Claude Design, porté du proto **React (CDN+Babel)** vers **Nuxt 4 / Vue 3**. Décision produit : on **refait une page neuve** plutôt que re-skinner l'existant ; l'app cyan reste comme **référence vivante** (rien jeté). Route dédiée **`/atelier`** (`layout: false`), isolée du thème cyan.
+
+**Stratégie CSS = hybride (choix retenu)** : tokens papier de `felix.css` exposés à Tailwind 4 via `@theme` (`web/app/assets/css/felix-atelier.css`, importé dans `main.css`) — noms neufs `--color-paper/-gold/-terra/-sage…`, **additifs**, n'altèrent pas le thème « Felix Cyan ». Composants signature reconstruits à la main ; styles scopés sous `.felix-atelier` (valeurs littérales → indépendants du cyan). Polices Newsreader/Hanken Grotesk/IBM Plex Mono via `@nuxt/fonts`.
+
+**Fichiers** : `app/pages/atelier.vue`, `app/components/AtelierMessage.vue`, `app/components/AtelierIcon.vue` (icônes SVG inline portées), `app/types/atelier.ts`. Édits : `main.css` (+1 import), `nuxt.config.ts` (+ fonts). Le **modèle de message** porte la spec B telle quelle : `text / tool (fiche maj) / choice (posture Intervieweur) / cite (traçabilité) / alert (incohérence + résolution, auteur souverain)`.
+
+**État** : données **scriptées** côté front (seed *Rivière basse* + réponses simulées), **pas encore câblé au vrai bot** (tool-calls réels + checker) — naturel vu que le back est en cours. **Vérifié** : eslint clean, dev boote, **build prod OK** (`atelier.css` émis, polices téléchargées), app cyan intacte. À voir : `cd web && pnpm dev` → http://localhost:3007/atelier.
+
+**Prochain pas** : câbler `/atelier` au backend (remplacer seed/canned par appels API + tool-calls d'écriture du graphe + checker à chaque écriture), puis la fiche personnage.
+
+## Design system UI ajouté (handoff Claude Design) — 2026-06-07
+
+Bundle de design pour l'UI de B récupéré depuis un lien claude.ai/design (servi en tar.gz) et versionné dans `resources/design-system/`. Thème **« atelier d'écriture »** papier/chaleureux, primaire or ; **couleurs sémantiques qui encodent la cohérence** (terracotta = incohérence, sage = validé) — alignement direct avec le concept de B. Directive forte : **aucun vocabulaire « graphe »** dans l'UI. Contient maquettes HTML, composants JSX, `felix.css` (système partagé), screenshots et le transcript de design (`chats/chat1.md` = l'intention). Rien implémenté — référence pour le futur chantier UI de B (cf. `memory` reference_design_system).
+
+## Bascule pipeline + chatbot → Mistral Small (stack unifiée) — 2026-06-07
+
+Décision prise (FR/RGPD + la parallélisation via API gérée, point soulevé par Felix, est un vrai gain de débit vs un seul modèle local sur le M4). **Acté** : `.env` `FLX_LLM_MODEL=mistral-small-latest`, `FLX_LLM_BASE_URL` vidé → routing `MistralModel` natif. Pipeline d'ingest + checker unifiés sur Mistral. Phi-4 14B gardé en réserve (futur 100 % local/offline ou produit A). Ancien : `Qwen/Qwen2.5-7B-Instruct-Turbo` + Together (pour rollback).
+
+**Validation eval (eval-first)** : **52/86 (60 %) vs 34/86 (40 %)** avec le Qwen 7B. **+18 cas**, et **158 s vs 423 s** (~2,7× plus rapide), $0.0074, **zéro crash grammar**.
+- *pipeline* **29/39 (74 % vs 34 %)** : `char_id_recall` 0.05→**1.00**, `date_score` 0.50→**1.00**, `bg_score` 0.00→0.39, `relations` 0.90. Mistral extrait les noms complets, ORACLE, **6 groupes**, et les persos long_mission (segmentation OK).
+- *ingest* **7/7 (100 %)**.
+- *chatbot* d'abord 16/26 (OpenRouter), **puis basculé lui aussi sur Mistral natif → 17/26 (68 %)** : léger gain, zéro régression, 18 s.
+
+**Stack désormais 100 % Mistral natif** (`mistral-small-latest` pour pipeline + checker + chatbot + judge d'eval) — un seul provider, une seule clé (`FLX_LLM_API_KEY`), RGPD/EU. OpenRouter & Together ne servent plus à l'inférence (clés conservées mais inutilisées — nettoyage optionnel). Total evals unifié ≈ **53/86**.
+
+**Fails restants ≠ modèle** (le modèle est désormais bon) :
+1. `group_id_recall` 0.00 = **FAUX NÉGATIF d'eval** : groupe extrait `the-sentinels` mais l'expected est `sentinel` (intersection de sets *exacte*). Mistral sort 6 groupes corrects. → assouplir `group_ids_present` (substring) ou corriger les `expected`. Quick win.
+2. `bg_score` 0.39 = profiling partiel → chantier profiler/prompt (few-shot, cf. `docs/` prompting).
+
+Conclusion : **décision Mistral validée sur données**. Le « vrai » niveau de qualité d'extraction est au-dessus de 60 % (plusieurs fails sont des tests rigides). Prochains pas : (1) assouplir les evals à match exact, (2) creuser `bg_score`.
+
+## Recherche modèles M4 + finding grammar — 2026-06-07
+
+Recherche web approfondie (deep-research, 101 agents, 19 sources, 17 claims vérifiés 3-vote) : « quel petit modèle fiable en structured-output tourne sur Mac M4 ? ». Rapport complet archivé (le workflow `deep-research` a été sauvé dans `.claude/workflows/`).
+
+**Réponses clés** :
+1. **Le palier ~24B n'est PAS le minimum.** **Phi-4 14B** est le producteur JSON le plus fiable de la seule étude head-to-head (100 % parseabilité), devant Qwen3-14B (98.1 %), Qwen3-4B, Llama-3.x, Mistral-8B. Classement pour notre cas : (1) **Phi-4 14B** (~8-9 Go Q4, 24-32 Go RAM), (2) **Mistral Small 3.x 24B** (meilleur IFEval 82.9, ~15 Go Q4, 32 Go), (3) **Granite 3.3/4.1 8B** (bon tool-calling, 128K ctx, 16 Go, IF plus faible), (4) **Qwen3-14B**. Spécialiste : **NuExtract 3.8B** (texte→JSON pur).
+2. **META-FINDING (high, 3-0)** : le crash `failed to compile grammar` est probablement un **bug du compilateur json_schema→grammar** (Ollama/llama.cpp #8444/#21228, et vraisemblablement Together), déclenché par les schémas **`$defs`/`$ref`** que pydantic-ai émet — pas une déficience du modèle. **Vérifié sur notre code** : `list[ExtractedCharacter]` génère bien `$defs`+`$ref`. → 2 remèdes à tester : **aplatir le schéma Pydantic** (inline $defs/$ref) OU changer de runtime (MLX). Changer juste de modèle sur la même stack pourrait ne pas suffire à tuer le crash (mais réglerait la variance/qualité).
+3. **BFCL/IFEval ne prédisent PAS la discipline de format** (aucun modèle >80 % sur IFEval-FC). → **valider tout candidat sur NOTRE schéma**, pas par rang de leaderboard.
+4. RAM M4 : 16 Go→7-8B, 32 Go→14-32B, 64 Go→70B. Format conseillé Apple Silicon : MLX 4/8-bit ou GGUF Q4_K_M.
+
+**Caveats** : preuve dominante = 1 étude (domaine clinique, parseabilité syntaxique ≠ validation Pydantic stricte, greedy decoding). Pas de benchmark direct sur extraction texte→graphe. Attention aux guides AI-générés avec modèles hallucinés (« Qwen 3.6-27B » n'existe pas) — vérifier les IDs sur HF/Ollama.
+
+**Prochain pas (eval-first)** : (a) test rapide « schéma aplati » pour isoler infra vs modèle sur le crash ; (b) si on va local, valider Phi-4 14B (et Qwen3-14B) sur la scène forge comme on l'a fait pour Mistral ; (c) à défaut, bascule Mistral Small (déjà dans la stack, API native sans bug grammar).
+
+## Investigation régression evals — cause racine = Qwen 7B non fiable — 2026-06-07
+
+Investigation du pré-requis bloquant (evals tombées de 70 % → 40 %). **Diagnostic confirmé, le code Felix est sain — c'est le modèle.**
+
+**Méthode** — pas besoin d'instrumenter : protest archive déjà chaque cas en `.protest/results/<suite>_<ts>/<cas>.md` (Input / Output / Expected / Scores). Relecture de ces fichiers + benchmark direct multi-modèles sur `evals/fixtures/unified/01_the_forge.txt` (qui contient bien « Borin Ironfist », « Elara Nightshade », « the Sentinels », ORACLE).
+
+**Findings** :
+1. **Cause racine = le couple `Qwen2.5-7B + structured-output` est non fiable.** Deux appels identiques dos à dos : l'un passe (mais rate le groupe Sentinels), l'autre **crashe** `422 failed to compile grammar` côté Together. Intermittence + forte variance (tantôt `borin-ironfist`, tantôt `borin`). Pour une brique de fondation, c'est éliminatoire indépendamment du score.
+2. **La stack pydantic-ai 1.68 est saine** : avec exactement le même code/prompt/schéma, **Mistral Small 24B** extrait sans faute — noms complets, groupes, ORACLE, 11 persos. Donc ni le code, ni pydantic-ai en cause.
+3. **Cascade d'ID** : `character_ids_present` fait une intersection *exacte* de sets, et les lookups aval (`profile:borin-ironfist`, `scene_date:…`, `relations:…`) interrogent le graphe **par l'ID canonique**. Un ID raté (`borin` au lieu de `borin-ironfist`) → lookup `None` → `bg_score`/`date_score` à **0 net**. Les zéros ne sont pas une perte de profiling, c'est qu'on interroge un ID inexistant.
+4. **Palier de fiabilité ≈ 24B** : Mistral Small 24B et Llama-3.3-70B passent proprement et à l'identique ; les petits (Llama-3.1-8B, Gemma-2-9B) ne sont même pas servis correctement par Together serverless.
+5. Facteur secondaire : les evals à **match exact d'ID** amplifient la chute (un `borin` sémantiquement correct échoue quand même) — à assouplir.
+
+**Décision en cours** : recherche web (deep-research) des petits modèles fiables en structured-output tournant sur Mac M4 ; **à défaut, bascule sur Mistral Small** (déjà dans la stack checker+chatbot, API native sans bug grammar, RGPD). Scripts d'investigation jetables dans `/tmp` (non versionnés).
+
 ## Réflexion produit — pivot envisagé puis recadré — 2026-06-07
 
 Discussion stratégique partie d'un constat (« les résultats ne sont pas là ») et d'une envie de recentrer le projet. Deux produits ont émergé :
 
 - **A — Moteur d'extraction texte→graphe *fiable* (générique, API).** Le cœur de Felix (extraction + résolution d'entités + cohérence) est réutilisable hors scénario. Angle marché vérifié : l'extraction LLM→graphe se commoditise (GraphRAG, Neo4j LLM KG Builder), mais sa **fiabilité** non — c'est le moat. Vision documentée dans `docs/vision_produit_moteur_extraction.md` (niveau produit, pas de code). **Parkée comme option.**
-- **B — Copilote scénario conversationnel.** Recadrage après réflexion : le but réel reste d'aider Felix avec son scénario. Idée = un chatbot qui **construit le world model au fil de la parole** (l'auteur décrit, le bot mute le graphe via tool-calls, relance pour combler les trous, et **vérifie la cohérence à chaque tour**). Le chatbot existant devient le produit ; les tools lecture-seule deviennent des tools d'écriture du graphe. Choix produit déjà pris : posture **Intervieweur**, entrée **chat + coller une scène**. **Direction prioritaire — à approfondir à la prochaine session.**
+- **B — Copilote scénario conversationnel (PRIORITAIRE).** Le but réel reste d'aider Felix avec son scénario. Un chatbot qui **construit le world model au fil de la parole** : l'auteur décrit, le bot mute le graphe via tool-calls (lecture-seule → lecture+écriture), relance (posture **Intervieweur**), et **vérifie la cohérence à chaque écriture**. Vision + design d'interaction capturés dans `docs/vision_produit_copilote_scenario.md`. Décisions de design verrouillées cette session :
+  - **L'auteur est souverain** : sur op risquée (fusion/contradiction/suppression) le bot demande « t'es sûr ? » ; si oui **on obéit toujours + on lève une issue** (« tension assumée »), sinon on discute. Une contradiction est une *information*, pas une erreur.
+  - **Commit hybride selon le risque** (direct pour le simple, confirmation pour le risqué). Entrée **chat + coller une scène**.
+  - **Modèle de faits état vs événement** : relation d'état (frère de) = sans date ; événement (épouse, meurt, prend un objet) = daté/localisé → pilote les relances ET les checks temporels. **Ontologie hybride** : petit catalogue d'événements-clés (cases date/lieu/participants) + jugement LLM pour le reste.
+  - **Schéma à étendre** : objets/artefacts, relations libres (non ancrées à une scène), notion de « contexte courant » — = la généralisation de A, d'où « les deux s'entraident ».
 
-Aucun code modifié. Lien avec l'infra : A comme B reposent sur le pipeline actuel — la régression evals (40 %) reste donc à investiguer avant tout chantier produit.
+Aucun code modifié. Lien avec l'infra : A comme B reposent sur le cœur actuel (resolver/checker/extracteur) — la régression evals (40 %) est donc un **pré-requis bloquant** à investiguer avant tout build produit.
 
 ## État après la grande pause — reprise infra — 2026-06-07
 
