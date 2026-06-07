@@ -20,12 +20,12 @@ from protest import fixture
 from protest.evals import TaskResult
 
 from evals._judge import MISTRAL_SMALL_INPUT_COST, MISTRAL_SMALL_OUTPUT_COST
-from evals.generic.proto import (
+from felix.core import (
     GenericDeps,
-    _all_entities,
-    _all_relations,
+    all_entities,
+    all_relations,
     consistency_check,
-    create_generic_agent,
+    create_core_agent,
 )
 from felix.graph.driver import get_driver, setup_constraints
 from felix.ingest.resolver import slugify
@@ -87,7 +87,7 @@ async def run_generic_case(
         await _seed(driver, inputs.get("seed", {}))
 
         deps = GenericDeps(driver=driver)
-        agent = create_generic_agent()
+        agent = create_core_agent()
         out = GenericRunResult()
         in_tok = out_tok = 0
 
@@ -100,8 +100,8 @@ async def run_generic_case(
             in_tok += usage.request_tokens or 0
             out_tok += usage.response_tokens or 0
 
-        out.entities = await _all_entities(driver)
-        out.relations = await _all_relations(driver)
+        out.entities = await all_entities(driver)
+        out.relations = await all_relations(driver)
         out.cards = [card.model_dump() for card in deps.ui_events]
 
         if inputs.get("check"):
