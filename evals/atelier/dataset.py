@@ -9,12 +9,23 @@ from protest import ForEach
 from protest.evals import EvalCase
 
 from evals.atelier.evaluators import (
+    alert_emitted,
     answer_mentions,
     cards_for_subjects,
     graph_char_count,
     graph_has_characters,
     no_tool_cards,
 )
+
+# Seed partagé des cas de check : Marco (alibi à Marseille le 12 juin) et le
+# Vesuvio localisé à Lyon — sans l'adresse, Marseille vs « au Vesuvio » ne serait
+# pas une contradiction démontrable (leçon des evals generic).
+_check_seed = [
+    {"name": "Marco Santi",
+     "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
+    {"name": "Le Vesuvio", "entity_type": "lieu",
+     "props": {"adresse": "8 quai de Bondy, Lyon"}},
+]
 
 atelier_cases = ForEach(
     [
@@ -112,6 +123,29 @@ atelier_cases = ForEach(
                 graph_char_count(n=2),
                 no_tool_cards,
             ],
+        ),
+        # --- check de cohérence (alerte d'incohérence dans le fil) ---
+        EvalCase(
+            name="check_contradiction",
+            inputs={
+                "message": "Ajoute à la fiche de Marco qu'il était au Vesuvio,"
+                           " à Lyon, le soir du 12 juin.",
+                "seed": _check_seed,
+                "check": "marco",
+            },
+            # Marseille (alibi) vs Lyon (au Vesuvio) le même soir → alerte.
+            evaluators=[alert_emitted(expected=True)],
+        ),
+        EvalCase(
+            name="check_compatible_no_alert",
+            inputs={
+                "message": "Ajoute que Marco Santi a 45 ans.",
+                "seed": _check_seed,
+                "check": "marco",
+            },
+            # Fait additif sans rapport avec l'alibi → pas de contradiction, pas
+            # d'alerte (garde-fou anti-faux-positif du checker).
+            evaluators=[alert_emitted(expected=False)],
         ),
     ]
 )

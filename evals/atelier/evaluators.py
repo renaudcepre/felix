@@ -89,6 +89,26 @@ def cards_for_subjects(ctx: EvalContext, subjects: str = "") -> CardsResult:
 
 
 @dataclass
+class AlertResult:
+    alert_ok: Annotated[bool, Verdict]
+    alert_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def alert_emitted(ctx: EvalContext, expected: bool = True) -> AlertResult:
+    """Le check de cohérence doit (ou non) émettre une alerte : la route SSE
+    déclenche l'alerte ssi le verdict conclut à une contradiction."""
+    alert = ctx.output.alert
+    if alert is None:
+        return AlertResult(alert_ok=False, alert_detail="check non exécuté")
+    fired = bool(alert.get("contradiction"))
+    return AlertResult(
+        alert_ok=fired == expected,
+        alert_detail=alert.get("reason", ""),
+    )
+
+
+@dataclass
 class AnswerResult:
     answer_score: Annotated[float, Metric]
     answer_ok: Annotated[bool, Verdict]

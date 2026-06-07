@@ -20,7 +20,7 @@ from protest.evals import TaskResult
 from evals._judge import MISTRAL_SMALL_INPUT_COST, MISTRAL_SMALL_OUTPUT_COST
 from felix.atelier.agent import create_atelier_agent
 from felix.atelier.deps import AtelierDeps
-from felix.core import SCENARIO_PROFILE, all_entities
+from felix.core import SCENARIO_PROFILE, all_entities, consistency_check
 from felix.graph.driver import get_driver, setup_constraints
 from felix.ingest.resolver import slugify
 
@@ -33,11 +33,14 @@ _GRAPH_LOCK = asyncio.Lock()
 
 @dataclass
 class AtelierRunResult:
-    """Sortie d'un cas : réponse + état du graphe + cartes tool émises."""
+    """Sortie d'un cas : réponse + état du graphe + cartes tool + verdict du check."""
 
     answer: str
     characters: list[dict[str, Any]] = field(default_factory=list)
     cards: list[dict[str, str]] = field(default_factory=list)
+    # Verdict du consistency_check rejoué quand le cas demande "check" (la route
+    # SSE émet une alerte ssi contradiction est True) ; None sinon.
+    alert: dict[str, Any] | None = None
 
 
 @fixture()
@@ -52,16 +55,21 @@ async def _wipe_graph(driver: AsyncDriver) -> None:
         await session.run("MATCH (n) DETACH DELETE n")
 
 
-async def _seed_characters(driver: AsyncDriver, seed: list[dict[str, str]]) -> None:
-    """Seed des personnages comme :GenEntity {entity_type: 'personnage'} — même
-    monde que le bot B promu (plus de nœud :Character)."""
+async def _seed_entities(driver: AsyncDriver, seed: list[dict[str, Any]]) -> None:
+    """Seed d'entités :GenEntity — même monde que le bot B promu (plus de :Character).
+
+    Compat : {'name', 'background'?} = personnage. Forme étendue {'name',
+    'entity_type', 'props'} pour seeder un lieu/objet (cas du check)."""
     async with driver.session() as session:
-        for char in seed:
-            props = {"background": char["background"]} if char.get("background") else {}
+        for e in seed:
+            etype = e.get("entity_type", "personnage")
+            props = dict(e.get("props", {}))
+            if e.get("background"):
+                props.setdefault("background", e["background"])
             await session.run(
-                "MERGE (e:GenEntity {id: $id})"
-                " SET e.name = $name, e.entity_type = 'personnage', e += $props",
-                id=slugify(char["name"]), name=char["name"], props=props,
+                "MERGE (x:GenEntity {id: $id})"
+                " SET x.name = $name, x.entity_type = $type, x += $props",
+                id=slugify(e["name"]), name=e["name"], type=etype, props=props,
             )
 
 
@@ -70,7 +78,7 @@ async def run_atelier_case(
 ) -> TaskResult[AtelierRunResult]:
     async with _GRAPH_LOCK:
         await _wipe_graph(driver)
-        await _seed_characters(driver, inputs.get("seed", []))
+        await _seed_entities(driver, inputs.get("seed", []))
 
         deps = AtelierDeps(driver=driver, profile=SCENARIO_PROFILE)
         agent = create_atelier_agent()
@@ -84,6 +92,15 @@ async def run_atelier_case(
             if "personnage" in str(e.get("entity_type", "")).lower()
         ]
 
+        # Rejoue le check de cohérence si le cas le demande (comme run_generic_case) :
+        # la route SSE émet une alerte ssi le verdict conclut à une contradiction.
+        alert = None
+        if inputs.get("check"):
+            verdict = await consistency_check(
+                driver, inputs["check"], deps.write_log, SCENARIO_PROFILE
+            )
+            alert = verdict.model_dump()
+
     usage = result.usage()
     in_tok, out_tok = usage.request_tokens or 0, usage.response_tokens or 0
     return TaskResult(
@@ -91,6 +108,7 @@ async def run_atelier_case(
             answer=result.output,
             characters=[dict(c) for c in characters],
             cards=[card.model_dump() for card in deps.ui_events],
+            alert=alert,
         ),
         input_tokens=in_tok,
         output_tokens=out_tok,
