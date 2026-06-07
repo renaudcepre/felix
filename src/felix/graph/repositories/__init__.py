@@ -6,6 +6,7 @@ from felix.graph.repositories.beats import (
 )
 from felix.graph.repositories.characters import (
     add_character_alias,
+    create_character,
     delete_character_relation,
     get_character_fragments,
     get_character_profile,
@@ -68,6 +69,7 @@ __all__ = [
     # scenes
     "count_next_chunk_links_for_stem",
     "count_scenes_for_stem",
+    "create_character",
     # issues
     "create_issue",
     # groups

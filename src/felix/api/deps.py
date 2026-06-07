@@ -32,6 +32,10 @@ def get_agent(request: Request) -> Agent:
     return request.app.state.agent
 
 
+def get_atelier_agent(request: Request) -> Agent:
+    return request.app.state.atelier_agent
+
+
 def get_import_state(request: Request) -> ImportState:
     return request.app.state.import_state
 
@@ -39,4 +43,5 @@ def get_import_state(request: Request) -> ImportState:
 Neo4jDriver: TypeAlias = Annotated[AsyncDriver, Depends(get_driver)]
 Collection: TypeAlias = Annotated[chromadb.Collection, Depends(get_collection)]
 ChatAgent: TypeAlias = Annotated[Agent, Depends(get_agent)]
+AtelierAgentDep: TypeAlias = Annotated[Agent, Depends(get_atelier_agent)]
 ImportStateDep: TypeAlias = Annotated[ImportState, Depends(get_import_state)]

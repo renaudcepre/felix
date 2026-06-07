@@ -77,6 +77,31 @@ async def list_all_characters_full(driver: AsyncDriver) -> list[CharacterProfile
         return await session.execute_read(_read)
 
 
+async def create_character(
+    driver: AsyncDriver, char_id: str, name: str, background: str | None = None
+) -> bool:
+    """MERGE par id — retourne True si le personnage a été créé, False s'il existait."""
+
+    async def _write(tx: AsyncManagedTransaction) -> bool:
+        result = await tx.run(
+            """
+            MERGE (c:Character {id: $id})
+            ON CREATE SET c.name = $name, c.background = $background, c._just_created = true
+            WITH c, coalesce(c._just_created, false) AS created
+            REMOVE c._just_created
+            RETURN created
+            """,
+            id=char_id,
+            name=name,
+            background=_nullify_empty(background),
+        )
+        record = await result.single()
+        return record is not None and record["created"]
+
+    async with driver.session() as session:
+        return await session.execute_write(_write)
+
+
 async def upsert_character_minimal(
     driver: AsyncDriver, char: dict[str, Any]
 ) -> None:

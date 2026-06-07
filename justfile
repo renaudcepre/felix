@@ -31,6 +31,14 @@ test *args:
 evals *args:
     uv run protest eval evals.session:session {{ args }}
 
+# Evals du bot B (atelier) — session séparée ; wipe le graphe, ne pas lancer avec `just evals`
+evals-atelier *args:
+    uv run protest eval evals.atelier.session:session {{ args }}
+
+# Evals du prototype generic-core (schemaless) — session séparée ; wipe le graphe
+evals-generic *args:
+    uv run protest eval evals.generic.session:session {{ args }}
+
 # Historique des evals
 evals-history *args:
     uv run protest history --evals {{ args }}

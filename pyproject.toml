@@ -85,6 +85,9 @@ ignore = [
 "src/felix/agent/tools.py" = [
     "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
 ]
+"src/felix/atelier/tools.py" = [
+    "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
+]
 "src/felix/api/**" = [
     "PLC0415",  # lazy import uvicorn in cli()
 ]

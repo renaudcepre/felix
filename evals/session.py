@@ -13,11 +13,9 @@ import os
 from typing import TYPE_CHECKING, Annotated
 
 from protest import From, ProTestSession, Use
-from protest.evals import EvalCase, EvalSuite, JudgeResponse, ModelLabel, TaskResult
-from pydantic_ai import Agent
-from pydantic_ai.models.mistral import MistralModel
-from pydantic_ai.providers.mistral import MistralProvider
+from protest.evals import EvalCase, EvalSuite, ModelLabel, TaskResult
 
+from evals._judge import FelixJudge
 from evals.chatbot.dataset import chatbot_cases
 from evals.ingest.dataset import ingest_cases
 from evals.ingest.task import _load_scene, analyzer_agents
@@ -39,27 +37,6 @@ if TYPE_CHECKING:
 
 pipeline_model = ModelLabel(name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model), provider="together")
 chat_model = ModelLabel(name=settings.llm_chat_model or settings.llm_model, provider="openrouter")
-
-
-class FelixJudge:
-    name = "mistral-small-latest"
-    provider = "mistral"
-
-    async def judge(self, prompt: str, output_type: type) -> JudgeResponse:
-        model = MistralModel(
-            "mistral-small-latest",
-            provider=MistralProvider(api_key=settings.llm_api_key),
-        )
-        agent = Agent(model, output_type=output_type)
-        result = await agent.run(prompt)
-        usage = result.usage()
-        in_tok, out_tok = usage.request_tokens or 0, usage.response_tokens or 0
-        return JudgeResponse(
-            output=result.output,
-            input_tokens=in_tok,
-            output_tokens=out_tok,
-            cost=in_tok * 0.10 / 1e6 + out_tok * 0.30 / 1e6,
-        )
 
 
 session = ProTestSession(history=True)
