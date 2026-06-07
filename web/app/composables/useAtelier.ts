@@ -11,6 +11,15 @@ interface ToolCardPayload {
   added: string
 }
 
+// Alerte d'incohérence émise par le backend (event SSE `alert`) — cf. la route
+// atelier (consistency_check sur les entités touchées).
+interface AlertPayload {
+  kind: 'alert'
+  title: string
+  body: string
+  status: 'open' | 'resolving' | 'resolved' | 'dismissed'
+}
+
 const WELCOME: Omit<AtelierMsg, 'id'> = {
   role: 'felix',
   kind: 'text',
@@ -78,6 +87,12 @@ export function useAtelier() {
               field: card.field,
               added: card.added,
             })
+            break
+          }
+          case 'alert': {
+            const a = JSON.parse(sse.data) as AlertPayload
+            current = null
+            append({ role: 'felix', kind: 'alert', title: a.title, body: a.body, status: a.status })
             break
           }
           case 'history':

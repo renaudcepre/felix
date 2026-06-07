@@ -5,11 +5,13 @@ Protocole d'événements (aligné sur le modèle AtelierMsg du front) :
 - ``tool``    : carte structurée émise par un tool (JSON ToolCard)
 - ``usage``   : tokens de la requête (JSON)
 - ``history`` : message_history sérialisé pour le tour suivant (JSON)
+- ``alert``   : incohérence détectée par le check de cohérence (JSON, kind=alert)
 - ``done`` / ``error``
 """
 from __future__ import annotations
 
 import json
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter
@@ -19,10 +21,12 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from felix.api.deps import AtelierAgentDep, Neo4jDriver
 from felix.api.models import ChatRequest
-from felix.atelier.deps import AtelierDeps
+from felix.core import SCENARIO_PROFILE, GenericDeps, consistency_check
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/atelier", tags=["atelier"])
 
@@ -31,7 +35,7 @@ router = APIRouter(prefix="/api/atelier", tags=["atelier"])
 async def atelier_chat(
     body: ChatRequest, agent: AtelierAgentDep, driver: Neo4jDriver
 ) -> EventSourceResponse:
-    deps = AtelierDeps(driver=driver)
+    deps = GenericDeps(driver=driver, profile=SCENARIO_PROFILE)
 
     message_history = None
     if body.message_history:
@@ -77,6 +81,28 @@ async def atelier_chat(
                     run.all_messages(), mode="json"
                 )
                 yield ServerSentEvent(data=json.dumps(serialized), event="history")
+
+                # Check de cohérence sur les entités touchées ce tour. Best-effort :
+                # tout est isolé dans un try/except interne pour qu'une panne du
+                # judge n'empêche jamais l'événement `done`.
+                try:
+                    for touched in deps.touched_ids:
+                        verdict = await consistency_check(
+                            driver, touched, deps.write_log, SCENARIO_PROFILE
+                        )
+                        if verdict.contradiction:
+                            yield ServerSentEvent(
+                                data=json.dumps({
+                                    "kind": "alert",
+                                    "title": "Incohérence possible",
+                                    "body": verdict.reason,
+                                    "status": "open",
+                                }),
+                                event="alert",
+                            )
+                except Exception:
+                    logger.exception("consistency_check a échoué (tour non bloqué)")
+
                 yield ServerSentEvent(data="", event="done")
         except Exception as e:
             yield ServerSentEvent(data=str(e), event="error")
