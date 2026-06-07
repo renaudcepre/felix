@@ -85,9 +85,6 @@ ignore = [
 "src/felix/agent/tools.py" = [
     "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
 ]
-"src/felix/atelier/tools.py" = [
-    "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
-]
 "src/felix/core/tools.py" = [
     "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
 ]

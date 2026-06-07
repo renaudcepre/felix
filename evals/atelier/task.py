@@ -20,8 +20,8 @@ from protest.evals import TaskResult
 from evals._judge import MISTRAL_SMALL_INPUT_COST, MISTRAL_SMALL_OUTPUT_COST
 from felix.atelier.agent import create_atelier_agent
 from felix.atelier.deps import AtelierDeps
+from felix.core import SCENARIO_PROFILE, all_entities
 from felix.graph.driver import get_driver, setup_constraints
-from felix.graph.repositories import create_character, list_all_characters_full
 from felix.ingest.resolver import slugify
 
 if TYPE_CHECKING:
@@ -53,10 +53,16 @@ async def _wipe_graph(driver: AsyncDriver) -> None:
 
 
 async def _seed_characters(driver: AsyncDriver, seed: list[dict[str, str]]) -> None:
-    for char in seed:
-        await create_character(
-            driver, slugify(char["name"]), char["name"], char.get("background")
-        )
+    """Seed des personnages comme :GenEntity {entity_type: 'personnage'} — même
+    monde que le bot B promu (plus de nœud :Character)."""
+    async with driver.session() as session:
+        for char in seed:
+            props = {"background": char["background"]} if char.get("background") else {}
+            await session.run(
+                "MERGE (e:GenEntity {id: $id})"
+                " SET e.name = $name, e.entity_type = 'personnage', e += $props",
+                id=slugify(char["name"]), name=char["name"], props=props,
+            )
 
 
 async def run_atelier_case(
@@ -66,11 +72,17 @@ async def run_atelier_case(
         await _wipe_graph(driver)
         await _seed_characters(driver, inputs.get("seed", []))
 
-        deps = AtelierDeps(driver=driver)
+        deps = AtelierDeps(driver=driver, profile=SCENARIO_PROFILE)
         agent = create_atelier_agent()
         result = await agent.run(inputs["message"], deps=deps)
 
-        characters = await list_all_characters_full(driver)
+        # Lecture filtrée sur les personnages : une entité « lieu » créée en
+        # passant ne doit pas fausser les graph_char_count.
+        entities = await all_entities(driver)
+        characters = [
+            e for e in entities
+            if "personnage" in str(e.get("entity_type", "")).lower()
+        ]
 
     usage = result.usage()
     in_tok, out_tok = usage.request_tokens or 0, usage.response_tokens or 0

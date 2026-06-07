@@ -1,38 +1,36 @@
-"""Agent du bot B — copilote d'écriture (atelier)."""
+"""Agent du bot B — copilote d'écriture (atelier), assemblé sur le noyau générique.
+
+Plus de tools ni de prompt propres : l'atelier = noyau générique
+(discipline schemaless) + profil scénario (types personnage/lieu/evenement/objet)
++ une posture FR (qui parle, sur quel ton). create_atelier_agent() conserve sa
+signature pour l'app et les evals.
+"""
 from __future__ import annotations
 
-from pydantic_ai import Agent
-from pydantic_ai.settings import ModelSettings
+from typing import TYPE_CHECKING
 
-from felix.atelier.deps import AtelierDeps
-from felix.atelier.tools import add_character, list_characters
-from felix.llm import build_chat_model
+from felix.core import SCENARIO_PROFILE, create_core_agent
+from felix.core.tools import list_entities
 
-SYSTEM_PROMPT = """\
-Tu es Felix, copilote d'écriture de scénario. Tu accompagnes l'auteur pendant qu'il
-décrit son histoire, et tu tiens à jour sa « bible » (les fiches de son univers).
+if TYPE_CHECKING:
+    from pydantic_ai import Agent
 
-RÈGLES :
-1. Réponds toujours en français, ton chaleureux et sobre, 2 à 3 phrases maximum.
-2. Quand l'auteur décrit un personnage nouveau, appelle add_character pour créer sa
-   fiche. Appelle d'abord list_characters pour vérifier qu'il n'existe pas déjà.
-3. N'appelle JAMAIS add_character si l'auteur te salue, pose une question générale,
-   ou si le personnage existe déjà dans la bible.
-4. N'invente rien : tu notes ce que l'auteur dit, tu ne complètes pas à sa place.
-5. Après une création de fiche, confirme brièvement et relance avec UNE seule
-   question utile à l'écriture.
+    from felix.core import GenericDeps
+
+ATELIER_PERSONA = """\
+Tu es Felix, copilote d'écriture de scénario. Tu accompagnes l'auteur pendant
+qu'il raconte son histoire et tu tiens à jour sa « bible » (les fiches de son
+univers) au fil de la parole. Ton chaleureux et sobre. Après une écriture,
+confirme en une phrase et relance avec UNE seule question utile à l'écriture.
+Pour répondre à une question sur le contenu de la bible (qui existe, ce qu'on
+sait de quelqu'un), consulte-la d'abord (list_entities, find_entity) — ne devine
+jamais.
 """
 
 
-def create_atelier_agent() -> Agent[AtelierDeps, str]:
-    agent = Agent(
-        build_chat_model(),
-        instructions=SYSTEM_PROMPT,
-        deps_type=AtelierDeps,
-        output_type=str,
-        model_settings=ModelSettings(temperature=0.1),
-        retries=3,
-    )
-    agent.tool(list_characters)
-    agent.tool(add_character)
+def create_atelier_agent() -> Agent[GenericDeps, str]:
+    # L'atelier ajoute list_entities au noyau (5 tools) : énumérer la bible pour
+    # répondre aux questions de l'auteur — ce que faisait l'ancien list_characters.
+    agent = create_core_agent(profile=SCENARIO_PROFILE, persona=ATELIER_PERSONA)
+    agent.tool(list_entities)
     return agent

@@ -51,6 +51,26 @@ async def describe_schema(ctx: RunContext[GenericDeps]) -> str:
     return "\n".join(lines)
 
 
+async def list_entities(ctx: RunContext[GenericDeps]) -> str:
+    """Liste toutes les entités de la base (nom + type), groupées par type.
+
+    À appeler pour répondre à une question sur le CONTENU de la base (« qu'y
+    a-t-il ? », « qui sont les personnages ? ») ou pour voir ce qui existe déjà
+    avant de créer. Ne devine jamais le contenu : lis-le ici.
+    """
+    entities = await all_entities(ctx.deps.driver)
+    if not entities:
+        return "La base est vide."
+    by_type: dict[str, list[str]] = {}
+    for e in entities:
+        by_type.setdefault(e.get("entity_type", "?"), []).append(
+            e.get("name", e.get("id", "?"))
+        )
+    return "\n".join(
+        f"{t} ({len(names)}) : {', '.join(names)}" for t, names in sorted(by_type.items())
+    )
+
+
 async def find_entity(ctx: RunContext[GenericDeps], name: str) -> str:
     """Cherche une entité par nom et retourne ses propriétés et relations.
 
