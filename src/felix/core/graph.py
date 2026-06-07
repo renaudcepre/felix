@@ -1,0 +1,86 @@
+"""Accès graphe du noyau générique — modèle :GenEntity / :REL, Cypher pur.
+
+Modèle de données volontairement minimal :
+- nœuds ``:GenEntity`` {id (slug), name, entity_type, ...props libres (str)}
+- relations ``:REL`` {rel_type, ...props libres} (type dynamique en propriété,
+  Cypher pur sans APOC)
+
+Aucune sémantique de domaine ici : ces helpers ne savent ni ce qu'est un
+personnage ni ce qu'est une date — ils lisent et écrivent des entités libres.
+"""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from felix.ingest.resolver import slugify
+
+if TYPE_CHECKING:
+    from neo4j import AsyncDriver
+
+RESERVED_KEYS = {"id", "name", "entity_type"}
+
+
+async def find_node(driver: AsyncDriver, ref: str) -> dict | None:
+    """Entité par slug exact, sinon par nom (contains, insensible à la casse)."""
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:GenEntity)
+            WHERE e.id = $slug OR toLower(e.name) CONTAINS toLower($ref)
+            RETURN e LIMIT 1
+            """,
+            slug=slugify(ref),
+            ref=ref,
+        )
+        record = await result.single()
+        return dict(record["e"]) if record else None
+
+
+async def all_entities(driver: AsyncDriver) -> list[dict]:
+    async with driver.session() as session:
+        result = await session.run("MATCH (e:GenEntity) RETURN e ORDER BY e.id")
+        return [dict(r["e"]) for r in await result.data()]
+
+
+async def all_relations(driver: AsyncDriver) -> list[dict]:
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (a:GenEntity)-[r:REL]->(b:GenEntity)
+            RETURN a.id AS from, r.rel_type AS rel_type, properties(r) AS props, b.id AS to
+            """
+        )
+        return [dict(r) for r in await result.data()]
+
+
+def fmt_props(props: dict, *, skip_reserved: bool = True) -> str:
+    items = [
+        f"{k}={v!r}" for k, v in sorted(props.items())
+        if not (skip_reserved and k in RESERVED_KEYS)
+    ]
+    return ", ".join(items) if items else "(aucune propriété)"
+
+
+async def neighborhood(driver: AsyncDriver, ref: str) -> str | None:
+    """Sous-graphe 1-hop de l'entité : props complètes + relations + voisins complets."""
+    node = await find_node(driver, ref)
+    if not node:
+        return None
+    relations = await all_relations(driver)
+    entities = {e["id"]: e for e in await all_entities(driver)}
+
+    lines = [f"ENTITÉ : {node['name']} (type: {node.get('entity_type')})",
+             f"  propriétés : {fmt_props(node)}"]
+    for r in relations:
+        if node["id"] not in (r["from"], r["to"]):
+            continue
+        other_id = r["to"] if r["from"] == node["id"] else r["from"]
+        other = entities.get(other_id, {})
+        rel_props = {k: v for k, v in r["props"].items() if k != "rel_type"}
+        rel_extra = f" ({fmt_props(rel_props, skip_reserved=False)})" if rel_props else ""
+        lines.append(
+            f"RELATION : {r['from']} —[{r['rel_type']}]→ {r['to']}{rel_extra}\n"
+            f"  {other.get('name', other_id)} (type: {other.get('entity_type')})"
+            f" · propriétés : {fmt_props(other)}"
+        )
+    return "\n".join(lines)

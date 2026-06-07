@@ -32,6 +32,7 @@ async def setup_constraints(driver: AsyncDriver) -> None:
         "CREATE INDEX issue_type IF NOT EXISTS FOR (i:Issue)        ON (i.type)",
         "CREATE INDEX fact_type  IF NOT EXISTS FOR (f:Fact)         ON (f.type)",
         "CREATE CONSTRAINT beat_id_unique IF NOT EXISTS FOR (b:NarrativeBeat) REQUIRE b.id IS UNIQUE",
+        "CREATE CONSTRAINT genentity_id_unique IF NOT EXISTS FOR (e:GenEntity) REQUIRE e.id IS UNIQUE",
     ]
     async with driver.session() as session:
         for stmt in statements:

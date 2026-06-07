@@ -1,17 +1,10 @@
+"""Dépendances du bot B (atelier) — ré-export du noyau générique.
+
+L'inversion de dépendance a fait de GenericDeps la classe racine ; AtelierDeps
+en est un alias conservé pour la compatibilité des imports (route SSE, evals).
+"""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from felix.core.deps import GenericDeps as AtelierDeps
 
-if TYPE_CHECKING:
-    from neo4j import AsyncDriver
-
-    from felix.atelier.models import ToolCard
-
-
-@dataclass
-class AtelierDeps:
-    driver: AsyncDriver
-    # Cartes structurées poussées par les tools pendant le run,
-    # drainées par la route SSE (et lues telles quelles par les evals).
-    ui_events: list[ToolCard] = field(default_factory=list)
+__all__ = ["AtelierDeps"]
