@@ -5,74 +5,13 @@ import type { AtelierMsg, ChoiceOption, ResolveOption } from '~/types/atelier'
 definePageMeta({ layout: false })
 useHead({ title: 'Felix — Atelier · Rivière basse' })
 
-let _id = 100
-const uid = () => ++_id
+// ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
+const { messages, typing, sendMessage } = useAtelier()
 
-// ───────── Données de démo (scriptées) ─────────
-// NOTE : contenu et comportements portés du proto. Le câblage au vrai bot
-// (tool-calls réels + checker) viendra ensuite — ici tout est simulé côté front.
-function seed(): AtelierMsg[] {
-  return [
-    { id: uid(), role: 'felix', kind: 'text', body: 'Bonjour. On reprend *Rivière basse* là où on s\'est arrêtés — la scène du quai, à l\'aube. Sur quoi veux-tu travailler aujourd\'hui ?' },
-    { id: uid(), role: 'user', kind: 'text', body: 'J\'aimerais creuser le passé de Jean. Son père était marin, parti quand Jean avait dix ans.' },
-    { id: uid(), role: 'felix', kind: 'tool', tool: 'fiche', title: 'Fiche mise à jour', subject: 'Jean', field: 'Background', added: 'Père marin, parti en mer lorsque Jean avait dix ans. Jamais revenu durablement.' },
-    { id: uid(), role: 'felix', kind: 'text', body: 'C\'est noté sur sa fiche. Ce départ peut devenir le foyer de son rapport au manque — utile pour la suite. Pour bien l\'ancrer :' },
-    {
-      id: uid(),
-      role: 'felix',
-      kind: 'choice',
-      answered: false,
-      question: 'Comment veux-tu que ce passé pèse sur le présent de Jean ?',
-      options: [
-        { k: 'A', label: 'Il fuit l\'eau', desc: 'Jean évite le port, ce qui crée une tension géographique dans le récit.' },
-        { k: 'B', label: 'Il idéalise son père', desc: 'Il répète ses choix sans le savoir — l\'ironie tragique se met en place.' },
-        { k: 'C', label: 'Il lui en veut', desc: 'Une colère sourde contamine peu à peu ses liens, surtout avec Camille.' },
-      ],
-    },
-    {
-      id: uid(),
-      role: 'felix',
-      kind: 'cite',
-      quote: 'Jean s\'arrête au bout du quai. Il ne regarde pas l\'eau — il regarde la ligne où elle s\'arrête.',
-      source: 'Scène 4 · Le quai, aube — p. 12',
-      note: 'Tu as déjà cette image. Elle colle bien avec l\'idée d\'évitement, si tu veux la garder cohérente.',
-    },
-    {
-      id: uid(),
-      role: 'felix',
-      kind: 'alert',
-      status: 'open',
-      title: 'Incohérence possible',
-      body: 'Jean est présenté comme « fils unique » (Scène 2), mais une sœur, Liane, apparaît à la Scène 9.',
-      resolves: [
-        { id: 'keep-liane', label: 'Garder Liane', desc: 'Retirer « fils unique » de la Scène 2.' },
-        { id: 'keep-only', label: 'Garder « fils unique »', desc: 'Supprimer le personnage Liane du récit.' },
-      ],
-    },
-  ]
-}
-
-const followMap: Record<string, { arc: string, text: string }> = {
-  A: { arc: 'Évitement de l\'eau : Jean contourne le port, jusqu\'à la confrontation finale au quai.', text: 'Bien. J\'ai inscrit cet axe dans son arc. La scène du quai devient alors le point de bascule — c\'est là qu\'il devra enfin s\'approcher.' },
-  B: { arc: 'Répétition du père : Jean reproduit les départs qu\'il a subis, sans en avoir conscience.', text: 'Noté dans son arc. Pense à semer un détail concret qu\'il hérite de son père — un geste, un objet — pour rendre la répétition lisible à l\'écran.' },
-  C: { arc: 'Colère héritée : le ressentiment envers le père déteint sur sa relation à Camille.', text: 'Inscrit. Ça donne du grain à sa relation avec Camille — leur tension n\'est plus gratuite, elle a une source.' },
-}
-const cannedReplies = [
-  'Intéressant. Veux-tu que je le reporte sur une fiche, ou qu\'on le garde comme piste pour l\'instant ?',
-  'Je vois où tu vas. Donne-moi une scène où ça se manifeste, et je vérifie la cohérence avec le reste.',
-  'D\'accord. Ça reste cohérent avec ce qu\'on a posé — je n\'ai rien à signaler de ce côté.',
-]
-
-// ───────── État ─────────
-const messages = ref<AtelierMsg[]>(seed())
 const draft = ref('')
-const typing = ref(false)
 const scrollRef = ref<HTMLElement | null>(null)
 const taRef = ref<HTMLTextAreaElement | null>(null)
 
-function append(msg: Omit<AtelierMsg, 'id'>) {
-  messages.value.push({ id: uid(), ...msg })
-}
 function patch(id: number, fn: (m: AtelierMsg) => AtelierMsg) {
   messages.value = messages.value.map(x => (x.id === id ? fn(x) : x))
 }
@@ -85,41 +24,27 @@ function scrollToBottom() {
 watch([messages, typing], scrollToBottom, { deep: true })
 onMounted(scrollToBottom)
 
-function felixSays(items: Omit<AtelierMsg, 'id'>[], delay = 650) {
-  typing.value = true
-  setTimeout(() => {
-    typing.value = false
-    items.forEach(append)
-  }, delay)
-}
-
 function sendText(text: string) {
   const t = text.trim()
   if (!t) return
-  append({ role: 'user', kind: 'text', body: t })
   draft.value = ''
   if (taRef.value) taRef.value.style.height = 'auto'
-  const reply = cannedReplies[Math.floor(Math.random() * cannedReplies.length)]!
-  felixSays([{ role: 'felix', kind: 'text', body: reply }])
+  void sendMessage(t)
 }
 
+// Le bot MVP n'émet pas encore de messages choice/cite/alert — l'UI les
+// supporte (AtelierMessage), et ces handlers renvoient la décision de
+// l'auteur au bot comme message texte en attendant le câblage dédié.
 function pickChoice(msg: AtelierMsg, opt: ChoiceOption) {
   patch(msg.id, x => ({ ...x, answered: true, chosen: opt.k }))
-  append({ role: 'user', kind: 'text', body: opt.label })
-  const f = followMap[opt.k] ?? followMap.A!
-  typing.value = true
-  setTimeout(() => {
-    typing.value = false
-    append({ role: 'felix', kind: 'tool', tool: 'fiche', title: 'Fiche mise à jour', subject: 'Jean', field: 'Arc narratif', added: f.arc })
-    append({ role: 'felix', kind: 'text', body: f.text })
-  }, 720)
+  void sendMessage(opt.label)
 }
 
 function freeChoice(msg: AtelierMsg, text: string) {
   const t = text.trim()
   if (!t) return
   patch(msg.id, x => ({ ...x, answered: true, chosen: 'libre' }))
-  sendText(t)
+  void sendMessage(t)
 }
 
 function setAlertStatus(msg: AtelierMsg, status: string) {
@@ -127,17 +52,8 @@ function setAlertStatus(msg: AtelierMsg, status: string) {
 }
 
 function resolveAlert(msg: AtelierMsg, res: ResolveOption) {
-  const resolution = res.id === 'keep-liane'
-    ? '« Fils unique » retiré de la Scène 2. Liane conservée comme sœur de Jean.'
-    : 'Personnage Liane supprimé. Jean reste fils unique.'
-  patch(msg.id, x => ({ ...x, status: 'resolved', resolution }))
-  if (res.id === 'keep-liane') {
-    typing.value = true
-    setTimeout(() => {
-      typing.value = false
-      append({ role: 'felix', kind: 'tool', tool: 'people', title: 'Relation ajoutée', subject: 'Jean', field: 'Relations', added: 'Liane — sœur' })
-    }, 600)
-  }
+  patch(msg.id, x => ({ ...x, status: 'resolved', resolution: res.label }))
+  void sendMessage(res.label)
 }
 
 function grow(el: HTMLTextAreaElement) {
