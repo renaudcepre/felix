@@ -115,6 +115,8 @@ async def _run_pipeline(fixtures_dir: Path) -> AsyncDriver:
         finally:
             poller.cancel()
             console.print(f"  [green]✔[/green] Pipeline terminé — {progress.processed_scenes}/{progress.total_scenes} scènes, {progress.issues_found} issues")
+            if progress.error:
+                console.print(f"  [red]✘ Error: {progress.error}[/red]")
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
@@ -181,7 +183,7 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
         row = await get_character_profile(driver, "irina-voss")
         if row:
             parts = [v for v in (row.get("background"), row.get("arc"), row.get("traits")) if v]
-            return PipelineQueryResult(background=" | ".join(parts) if parts else None)
+            return PipelineQueryResult(background=" — ".join(parts) if parts else None)
         return PipelineQueryResult()
 
     if query.startswith("profile:"):
@@ -189,7 +191,7 @@ async def _query(driver: AsyncDriver, query: str) -> PipelineQueryResult:  # noq
         row = await get_character_profile(driver, char_id)
         if row:
             parts = [v for v in (row.get("background"), row.get("arc"), row.get("traits")) if v]
-            return PipelineQueryResult(background=" | ".join(parts) if parts else None)
+            return PipelineQueryResult(background=" — ".join(parts) if parts else None)
         return PipelineQueryResult()
 
     if query == "irina_fragments":

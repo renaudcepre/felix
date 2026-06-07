@@ -2,8 +2,8 @@
 
 Run:
     protest eval evals.session:session
-    protest eval evals.session:session --tag pipeline
-    protest eval evals.session:session --tag chatbot
+    protest eval evals.session:session::pipeline
+    protest eval evals.session:session::chatbot
     protest eval evals.session:session -n 4
     protest history --runs
 """
@@ -12,14 +12,13 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Annotated
 
+from protest import From, ProTestSession, Use
+from protest.evals import EvalCase, EvalSuite, JudgeResponse, ModelLabel, TaskResult
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
-from protest import From, Use
-from protest.evals import EvalCase, EvalSession, JudgeResponse, ModelInfo, TaskResult
 
 from evals.chatbot.dataset import chatbot_cases
-from evals.evaluators import contains_expected_facts
 from evals.ingest.dataset import ingest_cases
 from evals.ingest.task import _load_scene, analyzer_agents
 from evals.pipeline.dataset import pipeline_cases
@@ -33,13 +32,13 @@ from felix.ingest.analyzer import analyze_scene
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
+    from evals.pipeline.task import PipelineQueryResult
     from felix.agent.deps import FelixDeps
     from felix.ingest.analyzer import AnalyzerAgents
     from felix.ingest.models import SceneAnalysis
-    from evals.pipeline.task import PipelineQueryResult
 
-pipeline_model = ModelInfo(name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model))
-chat_model = ModelInfo(name=settings.llm_chat_model or settings.llm_model)
+pipeline_model = ModelLabel(name=os.environ.get("FLX_EVAL_MODEL", settings.llm_model), provider="together")
+chat_model = ModelLabel(name=settings.llm_chat_model or settings.llm_model, provider="openrouter")
 
 
 class FelixJudge:
@@ -63,14 +62,23 @@ class FelixJudge:
         )
 
 
-session = EvalSession(model=pipeline_model, judge=FelixJudge())
+session = ProTestSession(history=True)
 
 session.bind(unified_pipeline)
 session.bind(analyzer_agents)
 session.bind(felix_deps)
 
+judge = FelixJudge()
+pipeline_suite = EvalSuite("pipeline", model=pipeline_model, judge=judge)
+ingest_suite = EvalSuite("ingest", model=pipeline_model, judge=judge)
+chatbot_suite = EvalSuite("chatbot", model=chat_model, judge=judge)
 
-@session.eval()
+session.add_suite(pipeline_suite)
+session.add_suite(ingest_suite)
+session.add_suite(chatbot_suite)
+
+
+@pipeline_suite.eval()
 async def pipeline(
     case: Annotated[EvalCase, From(pipeline_cases)],
     driver: Annotated[AsyncDriver, Use(unified_pipeline)],
@@ -78,7 +86,7 @@ async def pipeline(
     return await _query(driver, case.inputs)
 
 
-@session.eval()
+@ingest_suite.eval()
 async def ingest(
     case: Annotated[EvalCase, From(ingest_cases)],
     agents: Annotated[AnalyzerAgents, Use(analyzer_agents)],
@@ -86,7 +94,7 @@ async def ingest(
     return await analyze_scene(agents, _load_scene(case.inputs))
 
 
-@session.eval(model=chat_model)
+@chatbot_suite.eval()
 async def chatbot(
     case: Annotated[EvalCase, From(chatbot_cases)],
     deps: Annotated[FelixDeps, Use(felix_deps)],

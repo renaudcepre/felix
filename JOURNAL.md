@@ -1,5 +1,62 @@
 # Journal de developpement — Felix
 
+## Réflexion produit — pivot envisagé puis recadré — 2026-06-07
+
+Discussion stratégique partie d'un constat (« les résultats ne sont pas là ») et d'une envie de recentrer le projet. Deux produits ont émergé :
+
+- **A — Moteur d'extraction texte→graphe *fiable* (générique, API).** Le cœur de Felix (extraction + résolution d'entités + cohérence) est réutilisable hors scénario. Angle marché vérifié : l'extraction LLM→graphe se commoditise (GraphRAG, Neo4j LLM KG Builder), mais sa **fiabilité** non — c'est le moat. Vision documentée dans `docs/vision_produit_moteur_extraction.md` (niveau produit, pas de code). **Parkée comme option.**
+- **B — Copilote scénario conversationnel.** Recadrage après réflexion : le but réel reste d'aider Felix avec son scénario. Idée = un chatbot qui **construit le world model au fil de la parole** (l'auteur décrit, le bot mute le graphe via tool-calls, relance pour combler les trous, et **vérifie la cohérence à chaque tour**). Le chatbot existant devient le produit ; les tools lecture-seule deviennent des tools d'écriture du graphe. Choix produit déjà pris : posture **Intervieweur**, entrée **chat + coller une scène**. **Direction prioritaire — à approfondir à la prochaine session.**
+
+Aucun code modifié. Lien avec l'infra : A comme B reposent sur le pipeline actuel — la régression evals (40 %) reste donc à investiguer avant tout chantier produit.
+
+## État après la grande pause — reprise infra — 2026-06-07
+
+Reprise du projet après ~2 mois d'inactivité (dernier commit de fond le **31/03**, dernière activité fichiers ~1er mai). Objectif de la reprise : **remettre l'infra de test/eval d'aplomb** avant de toucher au produit. Trois chantiers étaient gelés à mi-chemin, non commités, et s'étaient empilés.
+
+### Ce qui a été remis d'aplomb
+
+1. **Migration tests pytest → protest : finalisée et commitée** (`354bf0b`, cf. entrée dédiée plus bas). Le repo était **incohérent à froid** : `tests/session.py` (committé) importait une arbo `tests/unit` + `tests/integration` + `tests/fixtures.py` jamais trackée, pendant que les 8 anciens `test_*.py` plats + `conftest.py` (pytest) traînaient en doublon. Tout marchait *uniquement* parce que les fichiers existaient sur le disque local.
+
+2. **Evals réparées** — elles ne démarraient plus (`ImportError`). L'API evals de protest a été **réorganisée** dans la 0.2.0 « livrée » (les evals sont passées **dans le core**, l'extra `[evals]` a disparu). Adaptation de `evals/session.py` :
+   - `ModelInfo` → **`ModelLabel`** (gagne un champ `.provider`)
+   - `EvalSession` **supprimé** → **`ProTestSession`** : moteur de session **unifié** tests + evals (le CLI `protest eval` charge une `ProTestSession`)
+   - le **judge + le modèle** migrent de la session globale vers **chaque `EvalSuite`** (`EvalSuite("pipeline", model=…, judge=…)`)
+   - `FelixJudge` était déjà conforme au protocole `Judge` (`async def judge(prompt, output_type) -> JudgeResponse`) — rien à changer.
+
+3. **Dépendance `protest` : editable local → source git.** Passée de `{ path = "../protest", editable = true }` à `{ git = "ssh://git@github.com/renaudcepre/protest.git", tag = "protest-v0.2.0" }`. Le tag pointe sur `4b1f03b` = exactement le HEAD de la copie editable testée (**iso-code**, poussé sur `origin`). `pyproject` : `protest[evals]` → `protest`. `uv.lock` régénéré (`protest v0.2.0 (4b1f03b4)`), `uv sync` confirme l'install depuis git (plus d'« Editable project location »).
+
+### État de santé (Python 3.14, protest 0.2.0 git, pydantic-ai 1.68)
+
+- **Tests : 145/145 ✅** (~11-13s avec Neo4j ; 62 sans Neo4j en ~3s).
+- **Evals : 34/86 (40 %)** — `-n 4`, ~423s, **$0.0076**. **Régression nette vs baseline 70 %** (60/86 au 30/03).
+  - *pipeline* 12/35 : `relations_score` 1.00 et `char_extraction` OK, **mais** `bg_score` **0.00**, `group_id_recall` **0.00**, `char_id_recall` **0.05**, `date_score` 0.50.
+  - *ingest* 6/8 : `char_extraction` 1.00, **`role_accuracy` 0.00**.
+  - *chatbot* 16/26 : `facts_score` 0.43.
+  - **Hypothèse** : ce n'est probablement **pas** une dégradation de modèle (scores à *zéro net*, pas du bruit). Le pipeline **extrait** bien les personnages mais leurs **IDs / groupes / backgrounds ne matchent plus les attendus**. Causes candidates : dérive du Qwen 2.5-7B servi par Together en 2 mois, et/ou changement de format de sortie avec pydantic-ai 1.68 / Python 3.14. Le code `felix/` n'a **pas** changé. À investiguer **eval-first**.
+
+### Chantier « infra 3.14/evals » — non commité, sain, committable
+
+Reste hors du commit `354bf0b` (volontairement séparé) :
+- `pyproject.toml` : `requires-python >=3.14`, `torch>=2.10`, `protest` en git, `protest[evals]`→`protest`
+- `uv.lock` régénéré · `evals/session.py` (fix API) · `evals/pipeline/task.py` (séparateur profil `|`→`—`, affichage des erreurs pipeline)
+
+Nettoyages connus à faire au passage : warnings `pydantic-ai[logfire,mistral]` (extras périmés en 1.68) ; import mort `contains_expected_facts` dans `evals/session.py` (les evaluators sont attachés au niveau dataset) ; commentaire ruff `S101` « (pytest) ». Untracked à trancher : `data/scenes/education_canine_pour_auriane.md.pdf`.
+
+### Feuille de route à la reprise
+
+1. **Committer le chantier infra** (sécuriser) + nettoyages ci-dessus.
+2. **Investiguer la régression evals** (scores à 0) — déboguer un import réel vs IDs attendus, eval-first.
+3. **Prompting** (cf. entrée « Recherche & review prompting » + rapports `docs/`) : P1 few-shot non-attribution `profiler.py`, etc. — converge avec l'investigation evals.
+4. **Produit** : couche **Notes / Idées**, next step naturel identifié au 25/03.
+
+## Recherche & review prompting (état de l'art vs code) — 2026-06-06
+
+Recherche web sur les bonnes pratiques de prompting — focus **petits modèles (7B/8B)**, **neuro-symbolique** et évaluation — puis review du code Felix. Deux rapports écrits dans `docs/` : `prompting_best_practices.md` (synthèse + sources) et `felix_prompting_review.md` (review priorisée P1→P6).
+
+**Constat principal** : Felix est déjà un système neuro-symbolique bien décomposé (force, conforme état de l'art : pipeline découpé, pas de CoT libre, sortie structurée, vérifs symboliques post-extraction). Mais le prompting reste majoritairement **règles abstraites + instructions négatives** — le style le plus fragile pour un 7B. Le few-shot (doctrine maison) n'est appliqué que dans 2 prompts sur ~9.
+
+**Actions identifiées (eval-first)** : P1 few-shot de non-attribution dans `profiler.py` (le maillon de la contamination LOTR, toujours 100 % abstrait) ; P2 corriger une **eval circulaire** — l'exemple #4 de `RELATION_DEDUP_PROMPT` ("companion" vs "travel companion" → merge) reproduit le cas d'échec LOTR ; P3 passer les "DO NOT REPORT" du checker en formulation positive + few-shot ; P4 reason-first dans le checker (schéma forcé ↔ tâche raisonnante) ; P5 dédup/relations génériques côté symbolique (stoplist + embedding-similarity) ; P6 hygiène LLM-as-judge (panel/rubrique, garde-fou anti-circularité). Aucun code modifié — recherche/review seulement.
+
 ## Finalisation migration tests pytest → protest (commit) — 2026-06-06
 
 Reprise après ~5 semaines de pause. La migration des tests unitaires (cf. `JOURNAL_UNIT_PROTEST.md`, fin mars) était **écrite et fonctionnelle mais jamais commitée** : `tests/session.py` (committé) importait `tests.unit.*` / `tests.integration.*` / `tests.fixtures` qui n'étaient pas trackés, et les 8 anciens `test_*.py` plats + `conftest.py` (pytest) traînaient encore en double.
