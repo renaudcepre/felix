@@ -1,5 +1,17 @@
 # Journal de developpement — Felix
 
+## Sélecteur de profil dans l'UI + preuve du schéma émergent sans instruction — 2026-06-07
+
+Pour *tester* la claim centrale (« sans instruction de domaine, le modèle suit-il une structure ? ») directement à l'écran, on ajoute un **sélecteur de profil** dans la topbar de `/atelier` : **Scénario / Chantier / Aucun (noyau nu)**. Le mode « Aucun » fait tourner `create_core_agent()` sans profil ni persona de domaine — il garde seulement les tools + la discipline schemaless (`SYSTEM_PROMPT`), qui est le *moteur*, pas une instruction de domaine. Un 2ᵉ profil concret (`CHANTIER_PROFILE`, gestion de travaux) est ajouté pour que le sélecteur démontre le multi-domaine, pas juste avec/sans.
+
+- **Backend** : registre `AgentChoice` (clé/label/profil/persona) dans `atelier/agent.py` ; agents pré-construits par profil (`app.state.atelier_agents`, `AtelierAgentsDep`) ; `ChatRequest.profile` ; `GET /api/atelier/profiles` ; la route `/chat` résout le profil par requête (deps **et** `consistency_check` utilisent `choice.profile`). `create_atelier_agent()` garde sa signature (défaut scénario) pour les evals.
+- **Front** : sélecteur câblé (`useAtelier.profile/profiles/setProfile`) ; changer de mode repart d'une conversation neuve (l'historique d'un agent — tools/prompt — n'est pas interchangeable).
+- **Décision assumée** : le mode « Aucun » garde une persona *neutre, sans contenu de domaine* (« tiens une base, consulte-la avant de répondre ») pour rester utilisable (relecture), sinon le test paraîtrait pire qu'il n'est.
+
+**Preuve live (smoke SSE, mode `none`, domaine inconnu des profils = des plantes)** : tour 1 → crée `Monstera` **type `plante`** `{date_achat:'mars 2024', exposition:'mi-ombre'}` ; tour 2 → crée `Ficus` en **réutilisant le même type ET les mêmes clés**. Donc **le schéma émergent ne dépend pas du profil** : la discipline vient du noyau, le profil ne fait que canonicaliser/biaiser. Réponse empirique à la question : oui, sans instruction, il invente une structure cohérente et la tient.
+
+**Vérif** : `just test` 145/145 · ruff sans nouvelle erreur (drift pré-existant seulement) · eslint clean · smoke SSE `GET /profiles` + `/chat` en modes `none` et `scenario`.
+
 ## Promotion du noyau générique + bascule du bot B sur le checker — 2026-06-07
 
 Suite directe de l'expérience « generic-core » (validée 15/17, checks 6/6) : on **promeut le prototype** `evals/generic/proto.py` en package `src/felix/core/` et on fait **basculer le bot B (atelier) dessus**, checker de cohérence câblé à chaque écriture. Décisions actées : `:GenEntity` pur (aucun pont avec le vieux monde `:Character` — l'app cyan, l'ingest, le chatbot legacy restent intouchés, `era` meurt avec le nouveau monde) ; profil de domaine en **données Python** (`Profile`/`EntityType`, `frozen`, migrable plus tard vers un fichier de la couche auto-apprenante) ; pas de YAML, un seul profil câblé en dur. Mené en **5 commits, un par étape, vérif à chaque pas**.
