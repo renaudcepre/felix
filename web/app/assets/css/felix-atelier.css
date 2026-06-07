@@ -1,0 +1,39 @@
+/* Felix — atelier d'écriture : design tokens (papier / chaleureux).
+   Portés depuis resources/design-system/project/felix.css.
+   ADDITIF : noms neufs (--color-paper, --color-gold…), n'affecte pas le thème "Felix Cyan" existant.
+   Exposés à Tailwind 4 via @theme → utilitaires bg-paper / text-ink / text-gold / font-serif-felix… */
+
+@theme {
+  /* Papier & encre */
+  --color-paper: #f3ede1;
+  --color-paper-2: #ece3d2;
+  --color-card: #fbf8f1;
+  --color-card-2: #f7f1e6;
+  --color-ink: #2a251e;
+  --color-ink-2: #6b6052;
+  --color-ink-3: #9a8e7b;
+  --color-line: #e2d8c4;
+  --color-line-2: #d6c9b0;
+
+  /* Accents */
+  --color-gold: #a9772a;
+  --color-gold-deep: #8a5f1f;
+  --color-gold-soft: #f0e3c8;
+  --color-gold-line: #e3cd9b;
+  --color-terra: #b14a30;
+  --color-terra-soft: #f4ddd1;
+  --color-terra-line: #e6bda9;
+  --color-sage: #5e7355;
+  --color-sage-soft: #e2e8da;
+  --color-sage-line: #c5d2b8;
+
+  /* Typo */
+  --font-serif-felix: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-sans-felix: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --font-mono-felix: 'IBM Plex Mono', 'SFMono-Regular', Menlo, monospace;
+
+  /* Rayons */
+  --radius-felix-sm: 7px;
+  --radius-felix-md: 11px;
+  --radius-felix-lg: 16px;
+}

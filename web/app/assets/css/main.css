@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
+@import "./felix-atelier.css";
 
 @font-face {
   font-family: 'Neuropol';

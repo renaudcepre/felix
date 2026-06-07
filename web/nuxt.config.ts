@@ -2,6 +2,15 @@ export default defineNuxtConfig({
   future: { compatibilityVersion: 4 },
   modules: ['@nuxt/ui', '@nuxt/eslint', '@nuxt/fonts'],
   ssr: false,
+
+  // Polices de l'atelier (papier) — en plus de celles du thème cyan existant.
+  fonts: {
+    families: [
+      { name: 'Newsreader', provider: 'google' },
+      { name: 'Hanken Grotesk', provider: 'google' },
+      { name: 'IBM Plex Mono', provider: 'google' },
+    ],
+  },
   devtools: { enabled: true },
 
   devServer: {

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Felix — Jean · Fiche personnage</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="felix.css" />
+<style>
+  .page { min-height: 100vh; }
+
+  /* Barre */
+  .fbar {
+    height: 58px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; border-bottom: 1px solid var(--line);
+    background: rgba(243,237,225,.82); backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 5;
+  }
+  .back-link { display: inline-flex; align-items: center; gap: 7px; font-family: var(--sans); font-weight: 600; font-size: 14px; color: var(--ink-2); text-decoration: none; transition: color .15s ease; white-space: nowrap; }
+  .back-link:hover { color: var(--gold-deep); }
+  .fbar-brand { display: flex; align-items: center; gap: 9px; }
+  .felix-mark.sm { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; background: var(--gold); color: #fdfaf2; }
+  .fbar-project { font-family: var(--serif); font-weight: 600; font-size: 16px; color: var(--ink); }
+
+  .fwrap { max-width: 840px; margin: 0 auto; padding: 30px 24px 64px; }
+
+  /* En-tête personnage */
+  .char-head { display: flex; align-items: center; gap: 18px; margin-bottom: 22px; }
+  .char-name { font-family: var(--serif); font-weight: 600; font-size: 34px; line-height: 1; margin: 0 0 9px; color: var(--ink); letter-spacing: -.01em; }
+  .char-tags { display: flex; align-items: center; gap: 10px; }
+  .char-tags .badge { white-space: nowrap; }
+  .char-ref { font-size: 12px; color: var(--ink-3); letter-spacing: .04em; }
+
+  /* Cartes */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-md); }
+  .form-card { padding: 26px 28px; margin-bottom: 22px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 22px; margin-bottom: 18px; }
+  .field { margin-bottom: 18px; }
+  .grid2 .field { margin-bottom: 0; }
+
+  .form-actions { display: flex; align-items: center; gap: 10px; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .act-spacer { flex: 1; }
+
+  /* Panneau Vérifier */
+  .verify-panel { margin-top: 20px; border-radius: var(--r-md); border: 1px solid; padding: 13px 15px; animation: vrise .28s ease both; }
+  @keyframes vrise { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .verify-panel.ok   { border-color: var(--sage-line);  background: var(--sage-soft); }
+  .verify-panel.warn { border-color: var(--terra-line); background: var(--terra-soft); }
+  .verify-top { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+  .verify-ic { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; color: #fff; flex: none; }
+  .verify-panel.ok .verify-ic   { background: var(--sage); }
+  .verify-panel.warn .verify-ic { background: var(--terra); }
+  .verify-sum { font-family: var(--sans); font-weight: 700; font-size: 13.5px; flex: 1; }
+  .verify-panel.ok .verify-sum   { color: var(--sage); }
+  .verify-panel.warn .verify-sum { color: var(--terra); }
+  .verify-close { background: none; border: none; color: var(--ink-3); display: grid; place-items: center; padding: 2px; border-radius: 5px; }
+  .verify-close:hover { color: var(--ink); background: rgba(0,0,0,.05); }
+  .verify-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .verify-item { display: flex; align-items: flex-start; gap: 9px; }
+  .vi-ic { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; flex: none; margin-top: 1px; background: var(--sage-soft); color: var(--sage); border: 1px solid var(--sage-line); }
+  .verify-item.bad .vi-ic { background: #fff; color: var(--terra); border-color: var(--terra-line); }
+  .vi-main { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .vi-label { font-family: var(--sans); font-size: 13.5px; font-weight: 500; color: var(--ink); }
+  .vi-detail { font-family: var(--serif); font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
+  .vi-action { display: inline-flex; align-items: center; gap: 4px; font-family: var(--sans); font-weight: 600; font-size: 12.5px; color: var(--terra); text-decoration: none; white-space: nowrap; flex: none; margin-top: 1px; }
+  .vi-action:hover { text-decoration: underline; }
+
+  /* Relations */
+  .rel-card { padding: 22px 28px 24px; }
+  .rel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .rel-title { font-family: var(--serif); font-weight: 600; font-size: 20px; margin: 0; color: var(--ink); }
+  .rel-list { display: flex; flex-direction: column; }
+  .rel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+  .rel-row:first-child { border-top: none; }
+  .rel-left { display: flex; align-items: center; gap: 12px; }
+  .rel-name { font-family: var(--sans); font-weight: 600; font-size: 15px; color: var(--ink); }
+  .rel-x { background: none; border: none; color: var(--ink-3); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; transition: color .15s ease, background .15s ease; }
+  .rel-x:hover { color: var(--terra); background: var(--terra-soft); }
+  .rel-add-row { display: flex; align-items: center; gap: 9px; padding: 13px 0 2px; border-top: 1px dashed var(--line-2); margin-top: 4px; }
+  .rel-input { flex: 1; }
+  .rel-select { flex: none; width: 150px; font-family: var(--sans); cursor: pointer; }
+
+  .fiche-foot { font-size: 11.5px; color: var(--ink-3); text-align: center; margin: 26px 0 0; }
+
+  @media (max-width: 680px) {
+    .grid2 { grid-template-columns: 1fr; }
+    .form-actions { flex-wrap: wrap; }
+    .act-spacer { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .verify-panel { animation: none; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="felix-ui.jsx"></script>
+<script type="text/babel" src="fiche-app.jsx"></script>
+<script type="text/babel">
+  ReactDOM.createRoot(document.getElementById("root")).render(
+    React.createElement(window.FicheApp)
+  );
+</script>
+</body>
+</html>
