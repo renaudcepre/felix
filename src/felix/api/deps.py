@@ -32,8 +32,9 @@ def get_agent(request: Request) -> Agent:
     return request.app.state.agent
 
 
-def get_atelier_agent(request: Request) -> Agent:
-    return request.app.state.atelier_agent
+def get_atelier_agents(request: Request) -> dict[str, Agent]:
+    """Agents du bot B pré-construits par profil (scenario/chantier/none)."""
+    return request.app.state.atelier_agents
 
 
 def get_import_state(request: Request) -> ImportState:
@@ -43,5 +44,5 @@ def get_import_state(request: Request) -> ImportState:
 Neo4jDriver: TypeAlias = Annotated[AsyncDriver, Depends(get_driver)]
 Collection: TypeAlias = Annotated[chromadb.Collection, Depends(get_collection)]
 ChatAgent: TypeAlias = Annotated[Agent, Depends(get_agent)]
-AtelierAgentDep: TypeAlias = Annotated[Agent, Depends(get_atelier_agent)]
+AtelierAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_atelier_agents)]
 ImportStateDep: TypeAlias = Annotated[ImportState, Depends(get_import_state)]

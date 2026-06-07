@@ -13,9 +13,10 @@ from felix.core.check import CheckVerdict, consistency_check
 from felix.core.deps import GenericDeps
 from felix.core.graph import all_entities, all_relations
 from felix.core.models import ToolCard
-from felix.core.profile import SCENARIO_PROFILE, EntityType, Profile
+from felix.core.profile import CHANTIER_PROFILE, SCENARIO_PROFILE, EntityType, Profile
 
 __all__ = [
+    "CHANTIER_PROFILE",
     "SCENARIO_PROFILE",
     "SYSTEM_PROMPT",
     "CheckVerdict",

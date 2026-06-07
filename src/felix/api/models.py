@@ -168,6 +168,8 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     message_history: list[dict[str, object]] = []
+    # Bot B uniquement : clé de profil/mode choisie dans l'UI (scenario/chantier/none).
+    profile: str = "scenario"
 
 
 class UsageInfo(BaseModel):

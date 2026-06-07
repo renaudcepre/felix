@@ -19,9 +19,10 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from felix.api.deps import AtelierAgentDep, Neo4jDriver
+from felix.api.deps import AtelierAgentsDep, Neo4jDriver
 from felix.api.models import ChatRequest
-from felix.core import SCENARIO_PROFILE, GenericDeps, consistency_check
+from felix.atelier.agent import ATELIER_CHOICES, DEFAULT_PROFILE
+from felix.core import GenericDeps, consistency_check
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -31,11 +32,19 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/atelier", tags=["atelier"])
 
 
+@router.get("/profiles")
+async def atelier_profiles() -> list[dict[str, str]]:
+    """Modes proposés par le sélecteur de l'UI (clé + libellé)."""
+    return [{"key": c.key, "label": c.label} for c in ATELIER_CHOICES.values()]
+
+
 @router.post("/chat")
 async def atelier_chat(
-    body: ChatRequest, agent: AtelierAgentDep, driver: Neo4jDriver
+    body: ChatRequest, agents: AtelierAgentsDep, driver: Neo4jDriver
 ) -> EventSourceResponse:
-    deps = GenericDeps(driver=driver, profile=SCENARIO_PROFILE)
+    choice = ATELIER_CHOICES.get(body.profile, ATELIER_CHOICES[DEFAULT_PROFILE])
+    agent = agents[choice.key]
+    deps = GenericDeps(driver=driver, profile=choice.profile)
 
     message_history = None
     if body.message_history:
@@ -88,7 +97,7 @@ async def atelier_chat(
                 try:
                     for touched in deps.touched_ids:
                         verdict = await consistency_check(
-                            driver, touched, deps.write_log, SCENARIO_PROFILE
+                            driver, touched, deps.write_log, choice.profile
                         )
                         if verdict.contradiction:
                             yield ServerSentEvent(

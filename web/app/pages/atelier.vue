@@ -6,11 +6,16 @@ definePageMeta({ layout: false })
 useHead({ title: 'Felix — Atelier · Rivière basse' })
 
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
-const { messages, typing, sendMessage } = useAtelier()
+const { messages, typing, sendMessage, profile, profiles, loadProfiles, setProfile } = useAtelier()
 
 const draft = ref('')
 const scrollRef = ref<HTMLElement | null>(null)
 const taRef = ref<HTMLTextAreaElement | null>(null)
+
+onMounted(loadProfiles)
+function onProfileChange(e: Event) {
+  setProfile((e.target as HTMLSelectElement).value)
+}
 
 function patch(id: number, fn: (m: AtelierMsg) => AtelierMsg) {
   messages.value = messages.value.map(x => (x.id === id ? fn(x) : x))
@@ -83,6 +88,12 @@ function onKeydown(e: KeyboardEvent) {
         <span class="tb-project">Rivière basse</span>
       </div>
       <div class="tb-right">
+        <label v-if="profiles.length" class="profile-pick">
+          <span class="profile-label">Profil</span>
+          <select class="profile-select" :value="profile" @change="onProfileChange">
+            <option v-for="p in profiles" :key="p.key" :value="p.key">{{ p.label }}</option>
+          </select>
+        </label>
         <span class="tb-save"><span class="save-dot" />Enregistré</span>
         <NuxtLink class="btn btn-outline" to="/characters"><AtelierIcon name="people" :size="16" />Personnages</NuxtLink>
       </div>
@@ -266,6 +277,11 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .tb-project { font-family: var(--sans); font-weight: 600; font-size: 14px; color: var(--ink-2); }
 .felix-atelier .tb-save { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); }
 .felix-atelier .save-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); box-shadow: 0 0 0 3px var(--sage-soft); }
+.felix-atelier .profile-pick { display: flex; align-items: center; gap: 7px; }
+.felix-atelier .profile-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.felix-atelier .profile-select { font-family: var(--sans); font-weight: 600; font-size: 13px; color: var(--ink); background: var(--card); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 7px 10px; cursor: pointer; }
+.felix-atelier .profile-select:hover { border-color: var(--gold-line); background: var(--gold-soft); }
+.felix-atelier .profile-select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
 /* Fil */
 .felix-atelier .thread-wrap { flex: 1; overflow-y: auto; }

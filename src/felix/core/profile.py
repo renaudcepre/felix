@@ -108,3 +108,40 @@ SCENARIO_PROFILE = Profile(
         "Deux dates ou deux lieux donnés pour un même fait doivent être compatibles.",
     ),
 )
+
+
+# Second domaine concret (gestion de travaux) — démontre que le « scénario »
+# n'est qu'un profil parmi d'autres posés sur le même noyau.
+CHANTIER_PROFILE = Profile(
+    name="chantier",
+    description="Tu tiens le suivi d'un chantier : outils, matériaux, ouvrages "
+    "et intervenants.",
+    entity_types=(
+        EntityType(
+            "outil", ("date_achat", "prix", "fournisseur", "etat"),
+            "Une perceuse, un marteau ; prix et date sont des propriétés.",
+        ),
+        EntityType(
+            "materiau", ("essence", "quantite", "prix", "fournisseur"),
+            "Du bois, des panneaux ; la quantité est une propriété.",
+        ),
+        EntityType(
+            "ouvrage", ("largeur", "longueur", "hauteur", "date"),
+            "Une dalle, un abri ; ses dimensions sont des propriétés.",
+        ),
+        EntityType(
+            "intervenant", ("role", "tarif_jour", "telephone"),
+            "Un maçon, un client ; son métier est une propriété 'role'.",
+        ),
+    ),
+    modeling_rules=(
+        "Un prix, une date, une dimension sont des PROPRIÉTÉS, pas des entités.",
+        "Quand un ouvrage repose sur un autre ou qu'un matériau vient d'un "
+        "fournisseur, crée la relation.",
+    ),
+    consistency_rules=(
+        "Un ouvrage posé sur un autre ne peut pas être plus grand que son support.",
+        "Les dates (achat, coulage, livraison) doivent être cohérentes entre elles.",
+        "Une quantité ou un prix ne peut pas être négatif.",
+    ),
+)
