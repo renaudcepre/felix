@@ -362,6 +362,36 @@ def involves_only_entities(ctx: EvalContext) -> InvolvesTargetResult:
     )
 
 
+# Relations RÉSERVÉES aux entités : elles ne doivent jamais toucher un événement
+# (un event ne se relie qu'via INVOLVES/NEXT/LOCATED_AT, posés par add_event).
+ENTITY_ONLY_RELS = {
+    "fights", "knows", "owns", "creates", "kills",
+    "member_of", "allied_with", "targets", "witnesses",
+}
+
+
+@dataclass
+class RelEventResult:
+    rels_clean_ok: Annotated[bool, Verdict]
+    rels_clean_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def relations_skip_events(ctx: EvalContext) -> RelEventResult:
+    """Aucune relation entre entités (FIGHTS/KNOWS/OWNS/…) ne doit avoir un node
+    événement pour extrémité : sinon le relieur relie des actions comme des choses
+    (« Vance FIGHTS [event] », « event KNOWS perso » — la corruption vue en live)."""
+    event_ids = {normalize(str(e.get("id", ""))) for e in _events(ctx)}
+    bad = [
+        f"{r.get('from')}-[{r.get('rel_type')}]->{r.get('to')}"
+        for r in ctx.output.relations
+        if normalize(str(r.get("rel_type", ""))) in ENTITY_ONLY_RELS
+        and (normalize(str(r.get("from", ""))) in event_ids
+             or normalize(str(r.get("to", ""))) in event_ids)
+    ]
+    return RelEventResult(rels_clean_ok=not bad, rels_clean_detail="; ".join(bad[:5]))
+
+
 @dataclass
 class EventsDistinctResult:
     distinct_ratio: Annotated[float, Metric]

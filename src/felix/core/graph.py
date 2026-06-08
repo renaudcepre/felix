@@ -36,6 +36,29 @@ async def find_node(driver: AsyncDriver, ref: str) -> dict | None:
         return dict(record["e"]) if record else None
 
 
+async def find_non_event(driver: AsyncDriver, ref: str) -> dict | None:
+    """Comme find_node mais IGNORE les nodes événement (entity_type='evenement').
+
+    Les participants d'un événement et les extrémités d'une relation entre entités
+    sont de VRAIES entités (personnage/lieu/objet…), jamais des événements — sinon
+    on relie des actions comme si c'étaient des choses (« Vance FIGHTS [event] »,
+    ou un événement qui se résout vers lui-même par collision de nom).
+    """
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:GenEntity)
+            WHERE e.entity_type <> 'evenement'
+              AND (e.id = $slug OR toLower(e.name) CONTAINS toLower($ref))
+            RETURN e LIMIT 1
+            """,
+            slug=slugify(ref),
+            ref=ref,
+        )
+        record = await result.single()
+        return dict(record["e"]) if record else None
+
+
 async def all_entities(driver: AsyncDriver) -> list[dict]:
     async with driver.session() as session:
         result = await session.run("MATCH (e:GenEntity) RETURN e ORDER BY e.id")

@@ -15,6 +15,16 @@
 
 **Pointeurs** : noyau `src/felix/core/` (tools.py `add_event` + garde `manages_events`, agent.py `CHRONICLE_SYSTEM_PROMPT`, profile.py `manages_events`, deps.py `event_seq_lock`) ; chroniqueur `src/felix/atelier/agent.py` (`build_chronicle_agent`) ; route **3 passes** `src/felix/api/routes/atelier.py` (helper `_consistency_alerts`) ; evals `evals/atelier/` (cas `event_chrono` + `roue_de_sang`, evaluators `events_*`/`relations_present`/`rel_vocab_coverage`). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## Modèle événementiel — bugfixes live round 2 (relations vers events, doublons) — 2026-06-08
+
+2e test live « Le Nadir » → graphe inspecté : **63 events pour ~6 tours**, 3 familles de bugs.
+
+- **Relations entité↔ÉVÉNEMENT (corruption).** `add_relation` (relieur) résolvait ses extrémités via `find_node`, qui matche les nodes evenement → `vance -[FIGHTS]-> event-11`, `event-33 -[KNOWS]-> capitaine`, `event-35 -[OWNS]-> combinaison`. **Fix** : helper `find_non_event` (exclut `entity_type='evenement'`), utilisé par `add_relation` (2 extrémités) ET `add_event` (participants, en remplacement de la requête inline). Un événement ne se relie qu'via add_event (INVOLVES/NEXT/LOCATED_AT). Garde : evaluator `relations_skip_events` (gate) + set `ENTITY_ONLY_RELS`.
+- **Events en double.** Le chroniqueur appelle add_event 2× pour la même action dans une réponse → `add_event` **dédup par resume** (skip si un event au resume identique existe déjà). Garde : `events_distinct`.
+- **Volume (63) = en partie STALE.** Le serveur tournait encore le chroniqueur AVEC historique (le fix `message_history=None` de round 1 n'était pas rechargé) → re-chroniquage à chaque tour. **Restart `felix-api` requis** pour charger le fix.
+- **Reste (round 3, eval-first sur données fraîches).** Sur-extraction PAR TOUR : chaque sous-clause devient un event, et les « Vance réalise que… / comprend que… » (pensées) sont traités comme des actions → resserrer `CHRONICLE_SYSTEM_PROMPT` (max strict, exclure les états mentaux, garder les actions externes). Intrus décrit indirectement jamais créé comme `personnage` (trou de passe 1). Le Nadir typé `objet` au lieu de `lieu`.
+- **Vérif** : `event_chrono` + `event_no_bleed` verts (`rels_clean_ok=✓`, `distinct=1.0`, `stray=0`) ; `find_node` matchait bien un node evenement, `find_non_event` non (déterministe).
+
 ## Modèle événementiel — bugfixes du test live « Le Nadir » — 2026-06-08
 
 Test live du v0 par l'utilisateur → 3 bugs que l'eval propre (`event_chrono`, 3 actions nettes) ne montrait pas. Reproduits via un cas plus dur (`event_no_bleed` : 1 tour DESCRIPTIF puis 1 tour à événements, le scénario réel de l'utilisateur).

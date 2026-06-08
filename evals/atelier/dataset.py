@@ -25,6 +25,7 @@ from evals.atelier.evaluators import (
     no_tool_cards,
     rel_vocab_coverage,
     relations_present,
+    relations_skip_events,
 )
 
 # Scénario complet « La Roue de Sang » (steampunk noir) joué beat par beat sur le
@@ -277,6 +278,9 @@ atelier_cases = ForEach(
                 ),
                 # Dérive des noms de relations : métrique-only (ne gate pas encore).
                 rel_vocab_coverage(min_coverage=0.0),
+                # Hygiène événements : pas de doublon, pas de relation entité↔event.
+                events_distinct,
+                relations_skip_events,
             ],
         ),
         # --- modèle événementiel (chronologie des actions, pas d'écrasement) ---
@@ -305,6 +309,8 @@ atelier_cases = ForEach(
                 events_distinct,
                 # Aucun INVOLVES vers un event (auto-référence du bug live).
                 involves_only_entities,
+                # Aucune relation entité↔event (relieur qui relie des actions).
+                relations_skip_events,
             ],
         ),
     ]

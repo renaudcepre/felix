@@ -14,6 +14,7 @@ from felix.core.graph import (
     all_entities,
     all_relations,
     find_node,
+    find_non_event,
     fmt_props,
 )
 from felix.core.models import ToolCard
@@ -206,8 +207,11 @@ async def add_relation(
             aucun canonique ne convient.
         props: Propriétés factuelles de la relation (ex: date).
     """
-    a = await find_node(ctx.deps.driver, from_name)
-    b = await find_node(ctx.deps.driver, to_name)
+    # Résolution HORS événements : une relation entre entités ne doit jamais avoir
+    # un node événement pour extrémité (sinon « Vance FIGHTS [event] », « event KNOWS
+    # perso »…). Les événements ne se relient qu'via add_event (INVOLVES/NEXT/LOCATED_AT).
+    a = await find_non_event(ctx.deps.driver, from_name)
+    b = await find_non_event(ctx.deps.driver, to_name)
     if not a or not b:
         missing = from_name if not a else to_name
         return f"« {missing} » n'existe pas — crée d'abord l'entité avec add_entity."
@@ -263,6 +267,15 @@ async def add_event(
     # proches ne doivent PAS fusionner, donc surtout pas de slug du résumé. Le lock
     # sérialise les add_event concurrents d'un même run (sinon collision d'ordre/id).
     async with ctx.deps.event_seq_lock, ctx.deps.driver.session() as session:
+        # Dédup : ne pas recréer un événement au resume identique (le chroniqueur
+        # appelle parfois add_event 2× pour la même action dans une seule réponse).
+        dup = await session.run(
+            "MATCH (e:GenEntity {entity_type: 'evenement'})"
+            " WHERE toLower(e.resume) = toLower($r) RETURN e.id LIMIT 1",
+            r=text,
+        )
+        if await dup.single():
+            return f"Événement déjà enregistré (ignoré) : {text}."
         result = await session.run(
             "MATCH (e:GenEntity {entity_type: 'evenement'}) RETURN max(e.ordre) AS maxo"
         )
@@ -294,18 +307,8 @@ async def add_event(
     if lieu:
         targets.append((lieu, "LOCATED_AT"))
     for raw, rel in targets:
-        async with ctx.deps.driver.session() as session:
-            result = await session.run(
-                "MATCH (t:GenEntity) WHERE t.entity_type <> 'evenement'"
-                " AND (t.id = $slug OR toLower(t.name) CONTAINS toLower($ref))"
-                " RETURN t LIMIT 1",
-                slug=slugify(raw), ref=raw,
-            )
-            record = await result.single()
-        if not record:
-            continue
-        node = dict(record["t"])
-        if node["id"] in seen_ids:
+        node = await find_non_event(ctx.deps.driver, raw)
+        if not node or node["id"] in seen_ids:
             continue
         seen_ids.add(node["id"])
         async with ctx.deps.driver.session() as session:
