@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AtelierMsg, ChoiceOption, ResolveOption } from '~/types/atelier'
+import { marked } from 'marked'
 
 const props = defineProps<{ msg: AtelierMsg }>()
 const emit = defineEmits<{
@@ -11,14 +12,10 @@ const emit = defineEmits<{
 
 const freeText = ref('')
 
-// Met *en valeur* le texte entre astérisques (titres d'œuvres).
-const parts = computed(() => {
-  const body = props.msg.body ?? ''
-  return body
-    .split(/(\*[^*]+\*)/g)
-    .filter(Boolean)
-    .map(p => (p.startsWith('*') && p.endsWith('*') ? { t: p.slice(1, -1), em: true } : { t: p, em: false }))
-})
+// Felix répond en markdown (**gras**, listes, *italique* pour les titres).
+// On le rend tel quel — gfm + breaks pour respecter les retours à la ligne.
+marked.setOptions({ breaks: true, gfm: true })
+const html = computed(() => marked.parse(props.msg.body ?? '') as string)
 
 function submitFree() {
   const t = freeText.value.trim()
@@ -40,13 +37,8 @@ function submitFree() {
       <span class="mono-avatar">F</span>
     </div>
     <div class="msg-main">
-      <!-- text -->
-      <p v-if="msg.kind === 'text'" class="felix-text">
-        <template v-for="(p, i) in parts" :key="i">
-          <em v-if="p.em" class="work">{{ p.t }}</em>
-          <template v-else>{{ p.t }}</template>
-        </template>
-      </p>
+      <!-- text (markdown rendu via marked) -->
+      <div v-if="msg.kind === 'text'" class="felix-text" v-html="html" />
 
       <!-- tool use -->
       <div v-else-if="msg.kind === 'tool'" class="tool-card">

@@ -6,16 +6,11 @@ definePageMeta({ layout: false })
 useHead({ title: 'Felix — Atelier · Rivière basse' })
 
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
-const { messages, typing, sendMessage, profile, profiles, loadProfiles, setProfile } = useAtelier()
+const { messages, typing, sendMessage } = useAtelier()
 
 const draft = ref('')
 const scrollRef = ref<HTMLElement | null>(null)
 const taRef = ref<HTMLTextAreaElement | null>(null)
-
-onMounted(loadProfiles)
-function onProfileChange(e: Event) {
-  setProfile((e.target as HTMLSelectElement).value)
-}
 
 function patch(id: number, fn: (m: AtelierMsg) => AtelierMsg) {
   messages.value = messages.value.map(x => (x.id === id ? fn(x) : x))
@@ -88,12 +83,6 @@ function onKeydown(e: KeyboardEvent) {
         <span class="tb-project">Rivière basse</span>
       </div>
       <div class="tb-right">
-        <label v-if="profiles.length" class="profile-pick">
-          <span class="profile-label">Profil</span>
-          <select class="profile-select" :value="profile" @change="onProfileChange">
-            <option v-for="p in profiles" :key="p.key" :value="p.key">{{ p.label }}</option>
-          </select>
-        </label>
         <span class="tb-save"><span class="save-dot" />Enregistré</span>
         <NuxtLink class="btn btn-outline" to="/characters"><AtelierIcon name="people" :size="16" />Personnages</NuxtLink>
       </div>
@@ -277,11 +266,6 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .tb-project { font-family: var(--sans); font-weight: 600; font-size: 14px; color: var(--ink-2); }
 .felix-atelier .tb-save { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); }
 .felix-atelier .save-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); box-shadow: 0 0 0 3px var(--sage-soft); }
-.felix-atelier .profile-pick { display: flex; align-items: center; gap: 7px; }
-.felix-atelier .profile-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
-.felix-atelier .profile-select { font-family: var(--sans); font-weight: 600; font-size: 13px; color: var(--ink); background: var(--card); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 7px 10px; cursor: pointer; }
-.felix-atelier .profile-select:hover { border-color: var(--gold-line); background: var(--gold-soft); }
-.felix-atelier .profile-select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px var(--gold-soft); }
 
 /* Fil */
 .felix-atelier .thread-wrap { flex: 1; overflow-y: auto; }
@@ -297,7 +281,18 @@ function onKeydown(e: KeyboardEvent) {
 @keyframes felix-rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 
 .felix-atelier .felix-text { font-family: var(--serif); font-size: 17px; line-height: 1.68; color: var(--ink); margin: 4px 0; max-width: 62ch; text-wrap: pretty; }
-.felix-atelier .felix-text .work { font-style: italic; color: var(--gold-deep); }
+.felix-atelier .felix-text > :first-child { margin-top: 0; }
+.felix-atelier .felix-text > :last-child { margin-bottom: 0; }
+.felix-atelier .felix-text p { margin: 0 0 8px; }
+.felix-atelier .felix-text strong { font-weight: 650; color: var(--ink); }
+.felix-atelier .felix-text em { font-style: italic; color: var(--gold-deep); }
+.felix-atelier .felix-text ul,
+.felix-atelier .felix-text ol { margin: 6px 0 8px; padding-left: 1.35em; }
+.felix-atelier .felix-text li { margin: 2px 0; padding-left: 2px; }
+.felix-atelier .felix-text li::marker { color: var(--gold); }
+.felix-atelier .felix-text a { color: var(--gold-deep); text-decoration: underline; text-underline-offset: 2px; }
+.felix-atelier .felix-text code { font-family: var(--mono); font-size: 0.88em; background: var(--gold-soft); padding: 0.05em 0.35em; border-radius: 4px; }
+.felix-atelier .felix-text blockquote { margin: 6px 0; padding-left: 12px; border-left: 2px solid var(--gold-line); color: var(--ink-2); font-style: italic; }
 
 .felix-atelier .bubble {
   font-family: var(--serif);

@@ -36,31 +36,11 @@ export function useAtelier() {
   const typing = ref(false)
   const messageHistory = ref<object[]>([])
 
-  // Sélecteur de profil/mode (scenario / chantier / none) — cf. /api/atelier/profiles.
-  const profile = ref('scenario')
-  const profiles = ref<{ key: string, label: string }[]>([])
-
-  async function loadProfiles() {
-    try {
-      const res = await fetch(`${apiStreamBase}/api/atelier/profiles`)
-      if (res.ok) profiles.value = await res.json() as { key: string, label: string }[]
-    }
-    catch { /* sélecteur muet si l'API ne répond pas */ }
-  }
-
-  // Changer de mode repart d'une conversation neuve : l'historique d'un agent
-  // (tools/prompt) n'est pas interchangeable avec celui d'un autre.
-  function setProfile(key: string) {
-    if (key === profile.value) return
-    profile.value = key
-    messages.value = [{ id: uid(), ...WELCOME }]
-    messageHistory.value = []
-  }
-
   function append(msg: Omit<AtelierMsg, 'id'>): AtelierMsg {
-    const full = { id: uid(), ...msg }
-    messages.value.push(full)
-    return full
+    messages.value.push({ id: uid(), ...msg })
+    // Renvoyer le PROXY réactif (pas l'objet brut) : sinon `current.body += …`
+    // mute hors réactivité et l'enfant ne re-render qu'au 1ᵉ chunk de texte.
+    return messages.value[messages.value.length - 1]!
   }
 
   async function sendMessage(text: string) {
@@ -80,7 +60,6 @@ export function useAtelier() {
         body: JSON.stringify({
           message: t,
           message_history: messageHistory.value,
-          profile: profile.value,
         }),
       })
 
@@ -137,5 +116,5 @@ export function useAtelier() {
     }
   }
 
-  return { messages, typing, sendMessage, profile, profiles, loadProfiles, setProfile }
+  return { messages, typing, sendMessage }
 }
