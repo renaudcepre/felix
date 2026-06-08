@@ -105,6 +105,16 @@ _check_seed = [
      "props": {"adresse": "8 quai de Bondy, Lyon"}},
 ]
 
+# Seed partagé des deux cas « checker temporel » (mort-puis-agit). Borin est un
+# garde, le Baron son maître, la salle du trône le décor — entités stables pour
+# que le chroniqueur résolve les participants des events au lieu d'en créer.
+_garde_seed = [
+    {"name": "Borin", "props": {"role": "garde du corps du Baron Arkham"}},
+    {"name": "Le Baron Arkham", "props": {"role": "seigneur du château"}},
+    {"name": "La salle du trône", "entity_type": "lieu",
+     "props": {"description": "la grande salle du château d'Arkham"}},
+]
+
 atelier_cases = ForEach(
     [
         # --- création ---
@@ -249,6 +259,43 @@ atelier_cases = ForEach(
             },
             # Fait additif sans rapport avec l'alibi → pas de contradiction, pas
             # d'alerte (garde-fou anti-faux-positif du checker).
+            evaluators=[alert_emitted(expected=False)],
+        ),
+        # --- checker TEMPOREL (mort-puis-agit) : A/B, même graphe final, ordre
+        # INVERSÉ. Prouve que le verdict repose sur l'ORDRE des événements (la
+        # chronologie dérivée), pas sur la coprésence « mort + action ». ---
+        EvalCase(
+            name="check_death_then_act",
+            inputs={
+                "beats": [
+                    "Le Baron Arkham dégaine et abat Borin d'une balle en plein "
+                    "cœur ; le garde s'effondre, mort, sur les dalles de la salle "
+                    "du trône.",
+                    "Plus tard, Borin se relève, verrouille la lourde porte "
+                    "blindée de la salle et coupe les communications du château.",
+                ],
+                "seed": _garde_seed,
+                "check": "borin",
+            },
+            # Mort (#1) PUIS action propre de Borin (#2) → impossibilité
+            # temporelle : un mort ne peut plus agir. Alerte attendue.
+            evaluators=[alert_emitted(expected=True)],
+        ),
+        EvalCase(
+            name="check_act_then_death",
+            inputs={
+                "beats": [
+                    "Borin verrouille la lourde porte blindée de la salle du "
+                    "trône et coupe les communications du château.",
+                    "Plus tard, Le Baron Arkham dégaine et abat Borin d'une balle "
+                    "en plein cœur ; le garde s'effondre, mort, sur les dalles.",
+                ],
+                "seed": _garde_seed,
+                "check": "borin",
+            },
+            # MÊMES faits, ordre inversé : action (#1) AVANT la mort (#2) → normal.
+            # Garde anti-lecture-naïve : même si `statut='mort'` finit posé sur
+            # Borin, l'action lui est ANTÉRIEURE → aucune alerte.
             evaluators=[alert_emitted(expected=False)],
         ),
         # --- scénario complet multi-beats (extraction cumulative + résolution) ---

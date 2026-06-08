@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
-from felix.core.graph import neighborhood
+from felix.core.graph import entity_timeline, neighborhood
 from felix.llm import build_checker_model
 
 if TYPE_CHECKING:
@@ -42,13 +42,20 @@ Tu vérifies la cohérence d'une base de connaissances après une écriture.
 
 Dans `reason`, raisonne pas à pas en COMMENÇANT par les écritures récentes.
 Compare les dates entre elles, les dimensions entre elles, les lieux entre eux.
+Si une CHRONOLOGIE est fournie (événements numérotés par ordre croissant),
+repère l'événement où le sujet meurt / est détruit, puis vérifie s'il AGIT de
+lui-même à un événement d'ordre SUPÉRIEUR.
 
 Puis conclus avec `contradiction` : deux informations ne peuvent-elles
 normalement pas être vraies ENSEMBLE pour le même sujet ? Exemples de
 contradictions à signaler :
 - une interdiction ou une règle explicite, et un fait qui la viole
 - deux états qui s'excluent (vivant ET mort ; à deux lieux différents au même instant)
-- impossibilité temporelle : agir sur une chose après sa destruction, sa mort ou sa fin
+- impossibilité temporelle : le sujet AGIT de lui-même (parle, frappe, se
+  déplace, verrouille…) à un événement d'ordre SUPÉRIEUR à celui de sa mort, de
+  sa destruction ou de sa fin. Un ordre INFÉRIEUR ou ÉGAL est NORMAL — il a agi
+  AVANT, ne signale pas. Sans chronologie, un statut terminal déjà posé ET une
+  NOUVELLE action dans les écritures récentes sont suspects.
 - impossibilité spatiale : un objet plus grand que ce qui le porte ou le contient
 - valeurs qui s'excluent pour une même propriété
 {domain_rules}
@@ -56,6 +63,9 @@ ATTENTION : « différent » n'est PAS « incompatible ». Un sujet cumule des
 attributs (coder en Rust ET gérer son ops avec AWS ; être X ET Y). Une valeur
 nouvelle, mise à jour, ou remplacée par une autre qui POURRAIT coexister n'est
 qu'une mise à jour, PAS une contradiction. Une information absente ou imprécise
+non plus. Un sujet mort ou détruit peut RESTER SUJET PASSIF sans contradiction :
+on retrouve son corps, on l'enterre, on le venge, on examine l'épave — seul son
+AGIR PROPRE après sa fin est impossible ; un retour en arrière assumé (flash-back)
 non plus. Ne signale que si la lecture naturelle des deux faits est réellement
 incompatible.
 
@@ -77,6 +87,12 @@ async def consistency_check(
     context = await neighborhood(driver, ref)
     if context is None:
         return CheckVerdict(reason=f"entité « {ref} » introuvable", contradiction=False)
+    # Chronologie ORDONNÉE de l'entité, concaténée au voisinage : donne au juge le
+    # sens du temps (mort #k puis agit #>k) que neighborhood ne trie pas. Vide si
+    # l'entité n'a aucun événement → le contexte reste inchangé.
+    timeline = await entity_timeline(driver, ref)
+    if timeline:
+        context = f"{context}\n\n{timeline}"
     writes = "\n".join(f"- {w}" for w in write_log) if write_log else "(aucune)"
     domain_rules = profile.render_check_rules() if profile is not None else ""
     # Modèle DÉDIÉ au checker (FLX_LLM_CHECKER_MODEL, fallback llm_model) : le check

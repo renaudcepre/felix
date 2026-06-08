@@ -124,8 +124,10 @@ SCENARIO_PROFILE = Profile(
         "On n'écrase alibi que si l'auteur corrige explicitement.",
     ),
     consistency_rules=(
-        "Un personnage mort ne peut plus agir ni apparaître après sa mort "
-        "(la mort est un état terminal).",
+        "Un personnage ne peut plus AGIR de lui-même (parler, frapper, se "
+        "déplacer…) après l'ÉVÉNEMENT de sa mort ; il peut en revanche rester "
+        "sujet passif (on retrouve son corps, on l'enterre, on le venge) — ce "
+        "n'est pas une contradiction. Seul l'agir d'ordre postérieur à la mort l'est.",
         "Un même personnage ne peut pas être à deux lieux incompatibles au même moment.",
         "Deux dates ou deux lieux donnés pour un même fait doivent être compatibles.",
     ),

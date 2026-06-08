@@ -93,6 +93,11 @@ quelqu'un ») : c'est déjà géré ailleurs, IGNORE-le. Test : « quand ? » a 
 réponse un instant → événement ; « quand ? » est absurde (ça tient) → pas un
 événement.
 
+Une MORT, une destruction, une fin (« X meurt », « le garde est abattu », « le
+pont s'effondre ») EST un événement : relie la victime ou la chose détruite via
+add_event, pour qu'elle prenne son rang dans la chronologie — c'est lui qui rend
+visible ce qui se passe APRÈS (un mort ne peut plus agir).
+
 RÈGLES :
 1. Appelle list_entities pour voir les entités existantes (personnages, lieux).
 2. Résume ce passage en 1 à 3 ÉVÉNEMENTS-clés MAXIMUM — les actions qui font
@@ -108,6 +113,7 @@ Exemples :
 - « Silas examine le cadavre » → add_event("Silas examine le cadavre", ["Silas"])
 - « Silas a un bras mécanique » → RIEN (état durable, pas un événement)
 - « Éléonore sauve Silas » → add_event("Éléonore sauve Silas", ["Éléonore", "Silas"])
+- « Le Baron abat Borin » → add_event("Le Baron abat Borin, qui s'effondre mort", ["Le Baron", "Borin"])
 """
 
 

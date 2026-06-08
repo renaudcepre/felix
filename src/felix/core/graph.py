@@ -21,13 +21,22 @@ RESERVED_KEYS = {"id", "name", "entity_type"}
 
 
 async def find_node(driver: AsyncDriver, ref: str) -> dict | None:
-    """Entité par slug exact, sinon par nom (contains, insensible à la casse)."""
+    """Entité par slug exact, sinon par nom (contains, insensible à la casse).
+
+    Tie-break : on PRÉFÈRE l'id qui matche exactement, puis une entité
+    NON-événement. Sans tri, find_node("borin") pourrait rendre l'événement
+    « le Baron abat Borin » (name CONTAINS) au lieu du personnage → mauvais
+    sous-graphe au check. Préférer l'id-exact + le non-événement est le
+    comportement voulu partout (find_entity, dup-check, neighborhood…)."""
     async with driver.session() as session:
         result = await session.run(
             """
             MATCH (e:GenEntity)
             WHERE e.id = $slug OR toLower(e.name) CONTAINS toLower($ref)
-            RETURN e LIMIT 1
+            RETURN e
+            ORDER BY CASE WHEN e.id = $slug THEN 0 ELSE 1 END,
+                     CASE WHEN e.entity_type = 'evenement' THEN 1 ELSE 0 END
+            LIMIT 1
             """,
             slug=slugify(ref),
             ref=ref,
@@ -57,6 +66,41 @@ async def find_non_event(driver: AsyncDriver, ref: str) -> dict | None:
         )
         record = await result.single()
         return dict(record["e"]) if record else None
+
+
+async def entity_timeline(driver: AsyncDriver, ref: str) -> str:
+    """Chronologie ORDONNÉE des événements impliquant une entité (triés par `ordre`).
+
+    Le checker a besoin de l'ORDRE pour distinguer « agit APRÈS sa mort »
+    (contradiction) de « agit AVANT sa mort » (normal). `neighborhood` rend bien
+    ces événements, mais NON triés et noyés parmi KNOWS/LOCATED_AT : le juge ne
+    les ordonne pas de façon fiable. Ici on les isole et on les trie.
+
+    Le sujet est résolu via `find_non_event` (un événement n'est jamais le sujet
+    d'une chronologie, seulement un maillon). Rend "" si l'entité est introuvable
+    ou n'a aucun événement → auto-désactivation (pas de gate profil)."""
+    subject = await find_non_event(driver, ref)
+    if not subject:
+        return ""
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (ev:GenEntity {entity_type: 'evenement'})
+                  -[:REL {rel_type: 'INVOLVES'}]->(t:GenEntity {id: $id})
+            RETURN ev.ordre AS ordre, ev.resume AS resume
+            ORDER BY ev.ordre
+            """,
+            id=subject["id"],
+        )
+        rows = await result.data()
+    if not rows:
+        return ""
+    lines = [
+        f"CHRONOLOGIE de {subject['name']} "
+        "(événements où il/elle est impliqué(e), dans l'ordre) :"
+    ]
+    lines.extend(f"  #{r['ordre']} : {r['resume']}" for r in rows)
+    return "\n".join(lines)
 
 
 async def all_entities(driver: AsyncDriver) -> list[dict]:
