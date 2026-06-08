@@ -15,6 +15,14 @@
 
 **Pointeurs** : noyau `src/felix/core/` (tools.py `add_event` + garde `manages_events`, agent.py `CHRONICLE_SYSTEM_PROMPT`, profile.py `manages_events`, deps.py `event_seq_lock`) ; chroniqueur `src/felix/atelier/agent.py` (`build_chronicle_agent`) ; route **3 passes** `src/felix/api/routes/atelier.py` (helper `_consistency_alerts`) ; evals `evals/atelier/` (cas `event_chrono` + `roue_de_sang`, evaluators `events_*`/`relations_present`/`rel_vocab_coverage`). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## Tiering modèle (Small vs Large) : testé, Small partout — 2026-06-08
+
+Question parkée (`project_model_tiering`) tranchée **eval-driven** : faut-il un modèle plus fort par feature ? Câblé `build_checker_model()` dans `core/check.py` (au lieu de `build_chat_model()`) → le checker lit `FLX_LLM_CHECKER_MODEL` indépendamment de l'extraction (décou­plage propre, **neutre** : `.env` garde le checker en Small). Puis mesuré.
+
+- **Large sur l'extraction (e2e Le Nadir, pacé)** : timeline cohérente (11 events, 0 doublon, 0 relation entité↔event — les invariants tiennent sur les DEUX modèles, nos fixes sont structurels), mais **nommage verbeux** (« Intrus du Nadir » → pire pour la résolution), et surtout **mur de rate-limit** : `429 Rate limit exceeded` dès le tour 2 (les passes font ~10-15 appels/tour ; Large throttlé bien en dessous de Small 5M tok/min). Pacing 65s/tour obligatoire. Coût 5-10×.
+- **Large sur le checker (test contrôlé, 6 scénarios graphe-fixe)** : vrais positifs (alibi spatial, mort-puis-agit) + pièges à faux positifs (Rust+AWS, '45'→'45 ans', ajout neutre, **gros voisinage 3 villes** = la plaie historique) → **Small 6/6, Large 6/6**. Large n'apporte **rien** ; le prompt-engineering (reason-first, « différent ≠ incompatible ») a déjà mis Small au niveau.
+- **Décision** : Small (`mistral-small-2506`) **partout**. Garder le câblage `build_checker_model` comme option dormante (tiering = un env var si un cas futur le justifie). Vérif : checker via la nouvelle voie passe `-k check` 2/2.
+
 ## E2E route atelier (SSE in-process) + Le Nadir validé sur code frais — 2026-06-08
 
 Les evals protest **shuntent la route** (`run_atelier_case` appelle `agent.run()` direct) → les bugs de câblage (3 passes, chroniqueur sans `message_history`, ordre des events SSE) leur échappent. Nouveau harness `evals/atelier/e2e.py` (`just e2e-atelier`) : joue « Le Nadir » multi-tours contre la **vraie route SSE**, **in-process** (httpx ASGITransport sur l'app FastAPI → code TOUJOURS à jour, pas de serveur à relancer), re-injecte le `history` SSE au tour suivant comme le front, puis **asserte les invariants** (events bornés < 3×tours, 0 doublon de resume, 0 relation entité↔event, ordres distincts/complets, Vance=personnage), **exit 1** si cassé.

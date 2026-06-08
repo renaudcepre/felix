@@ -13,7 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
 from felix.core.graph import neighborhood
-from felix.llm import build_chat_model
+from felix.llm import build_checker_model
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
@@ -79,8 +79,11 @@ async def consistency_check(
         return CheckVerdict(reason=f"entité « {ref} » introuvable", contradiction=False)
     writes = "\n".join(f"- {w}" for w in write_log) if write_log else "(aucune)"
     domain_rules = profile.render_check_rules() if profile is not None else ""
+    # Modèle DÉDIÉ au checker (FLX_LLM_CHECKER_MODEL, fallback llm_model) : le check
+    # est du jugement à faible volume (1 appel/entité touchée) où un modèle plus fort
+    # peut valoir le coût, sans se heurter au rate-limit des passes d'extraction.
     judge = Agent(
-        build_chat_model(),
+        build_checker_model(),
         output_type=CheckVerdict,
         model_settings=ModelSettings(temperature=0.0),
         retries=3,
