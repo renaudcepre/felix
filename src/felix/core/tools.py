@@ -189,8 +189,10 @@ async def add_relation(
     Args:
         from_name: Nom de l'entité source.
         to_name: Nom de l'entité cible.
-        rel_type: Type de la relation (minuscules, ex: 'pose_sur', 'gerant_de') —
-            RÉUTILISER un type existant du schéma si le sens correspond.
+        rel_type: Type de la relation. RÉUTILISE un type CANONIQUE du domaine
+            (CAPITALES anglaises, ex: LOCATED_AT, FIGHTS, CREATES) listé dans le
+            bloc DOMAINE / describe_schema. N'invente un nouveau type que si
+            aucun canonique ne convient.
         props: Propriétés factuelles de la relation (ex: date).
     """
     a = await find_node(ctx.deps.driver, from_name)

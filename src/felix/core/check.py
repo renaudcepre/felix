@@ -26,6 +26,9 @@ class CheckVerdict(BaseModel):
     # le raisonnement doit précéder le verdict (leçon P4 « reason-first »).
     reason: str
     contradiction: bool
+    # message APRÈS le verdict : la phrase montrée à l'auteur, écrite une fois la
+    # décision prise. `reason` reste le brouillon interne et n'est jamais affiché.
+    message: str = ""
 
 
 CHECK_PROMPT = """\
@@ -37,22 +40,29 @@ Tu vérifies la cohérence d'une base de connaissances après une écriture.
 ÉCRITURES RÉCENTES (ce qui vient d'être ajouté ou remplacé) :
 {writes}
 
-Dans `reason`, raisonne pas à pas en COMMENÇANT par les écritures récentes :
-une valeur REMPLACÉE par une valeur incompatible est un conflit à signaler,
-pas une simple mise à jour. Compare ensuite les dates entre elles, les
-dimensions entre elles, les lieux entre eux.
+Dans `reason`, raisonne pas à pas en COMMENÇANT par les écritures récentes.
+Compare les dates entre elles, les dimensions entre elles, les lieux entre eux.
 
 Puis conclus avec `contradiction` : deux informations ne peuvent-elles
-normalement pas être vraies ensemble ? Exemples de contradictions :
-- valeurs incompatibles pour une même propriété (avant/après une écriture)
+normalement pas être vraies ENSEMBLE pour le même sujet ? Exemples de
+contradictions à signaler :
+- une interdiction ou une règle explicite, et un fait qui la viole
+- deux états qui s'excluent (vivant ET mort ; à deux lieux différents au même instant)
 - impossibilité temporelle : agir sur une chose après sa destruction, sa mort ou sa fin
-- impossibilité spatiale : un objet plus grand que ce qui le porte ou le contient ;
-  être à deux endroits en même temps
-- états mutuellement exclusifs
+- impossibilité spatiale : un objet plus grand que ce qui le porte ou le contient
+- valeurs qui s'excluent pour une même propriété
 {domain_rules}
-Une information nouvelle, absente ou imprécise n'est PAS une contradiction.
-Mais n'invente pas de scénario improbable pour réconcilier deux faits
-incompatibles : si la lecture naturelle des faits est incompatible, signale-le.
+ATTENTION : « différent » n'est PAS « incompatible ». Un sujet cumule des
+attributs (coder en Rust ET gérer son ops avec AWS ; être X ET Y). Une valeur
+nouvelle, mise à jour, ou remplacée par une autre qui POURRAIT coexister n'est
+qu'une mise à jour, PAS une contradiction. Une information absente ou imprécise
+non plus. Ne signale que si la lecture naturelle des deux faits est réellement
+incompatible.
+
+Enfin, si `contradiction` est vrai, écris dans `message` UNE phrase courte et
+concrète pour l'auteur : nomme les deux faits qui s'opposent, sans numérotation
+ni vocabulaire d'analyse (« écriture récente », « propriété », « entité »…).
+Sinon, laisse `message` vide.
 """
 
 

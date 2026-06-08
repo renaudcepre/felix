@@ -39,6 +39,10 @@ class Profile:
     entity_types: tuple[EntityType, ...]
     modeling_rules: tuple[str, ...] = ()
     consistency_rules: tuple[str, ...] = ()
+    # Types de relation canoniques : (PRÉDICAT en CAPITALES anglaises, glose FR).
+    # L'anglais UPPER_SNAKE (convention Neo4j) a des priors plus stables qu'une
+    # locution verbale FR → réduit la dérive des noms de relations.
+    relation_vocabulary: tuple[tuple[str, str], ...] = ()
 
     def render_prompt_block(self) -> str:
         """Bloc concaténé au system prompt — volontairement compact (petit modèle)."""
@@ -50,6 +54,9 @@ class Profile:
         if self.modeling_rules:
             lines.append("Modélisation :")
             lines.extend(f"- {rule}" for rule in self.modeling_rules)
+        if self.relation_vocabulary:
+            lines.append("Relations (réutilise ces types EXACTS, en CAPITALES anglaises) :")
+            lines.extend(f"- {pred} : {gloss}" for pred, gloss in self.relation_vocabulary)
         return "\n".join(lines)
 
     def render_schema_hint(self) -> str:
@@ -60,6 +67,9 @@ class Profile:
         ]
         for et in self.entity_types:
             lines.append(f"- {et.name} · propriétés usuelles : {', '.join(et.keys)}")
+        if self.relation_vocabulary:
+            lines.append("Types de relations à réutiliser (CAPITALES anglaises) :")
+            lines.extend(f"- {pred} : {gloss}" for pred, gloss in self.relation_vocabulary)
         return "\n".join(lines)
 
     def render_check_rules(self) -> str:
@@ -100,12 +110,31 @@ SCENARIO_PROFILE = Profile(
         "Une caractéristique d'une chose (âge, couleur, rôle…) est une PROPRIÉTÉ, "
         "jamais une entité séparée.",
         "Quand deux personnages interagissent, crée la relation qui les lie.",
+        "Un fait qui DIVERGE d'une valeur déjà posée se range sous une NOUVELLE "
+        "clé, on n'écrase pas. Ex. : alibi='chez sa mère à Marseille' existe ; "
+        "« un témoin l'a vu au Vesuvio à Lyon » → garde alibi ET ajoute "
+        "alibi_temoin='au Vesuvio à Lyon le 12' (deux propriétés, pas une). "
+        "On n'écrase alibi que si l'auteur corrige explicitement.",
     ),
     consistency_rules=(
         "Un personnage mort ne peut plus agir ni apparaître après sa mort "
         "(la mort est un état terminal).",
         "Un même personnage ne peut pas être à deux lieux incompatibles au même moment.",
         "Deux dates ou deux lieux donnés pour un même fait doivent être compatibles.",
+    ),
+    relation_vocabulary=(
+        ("LOCATED_AT", "se trouve / se déroule dans un lieu"),
+        ("MEMBER_OF", "appartient à une faction, un groupe, une organisation"),
+        ("OWNS", "possède un objet"),
+        ("KNOWS", "connaît / est lié à un personnage (lien neutre)"),
+        ("ALLIED_WITH", "est allié de / aide un personnage ou un groupe"),
+        ("FIGHTS", "affronte / combat"),
+        ("KILLS", "tue ou détruit"),
+        ("CREATES", "crée, fabrique, forge"),
+        ("TARGETS", "vise, traque, prend pour cible ou pour victime"),
+        ("CAUSES", "provoque un événement ou un état"),
+        ("PART_OF", "fait partie d'un ensemble plus grand"),
+        ("WITNESSES", "découvre, observe, examine"),
     ),
 )
 
