@@ -108,6 +108,158 @@ def alert_emitted(ctx: EvalContext, expected: bool = True) -> AlertResult:
     )
 
 
+def _entity_keys(ctx: EvalContext) -> list[str]:
+    keys = []
+    for e in ctx.output.entities:
+        keys.append(normalize(str(e.get("id", ""))))
+        keys.append(normalize(str(e.get("name", ""))))
+    return [k for k in keys if k]
+
+
+@dataclass
+class EntitiesResult:
+    entity_recall: Annotated[float, Metric]
+    entities_ok: Annotated[bool, Verdict]
+    missing_entities: Annotated[str, Reason] = ""
+
+
+@evaluator
+def graph_has_entities(ctx: EvalContext, ids: str = "", min_recall: float = 1.0) -> EntitiesResult:
+    """Recall sur TOUTES les entités (tous types) — pour les cas scénario multi-beats."""
+    expected = [normalize(e.strip()) for e in ids.split(",") if e.strip()]
+    keys = _entity_keys(ctx)
+    matched = [e for e in expected if any(e in k or k in e for k in keys)]
+    score = len(matched) / len(expected) if expected else 1.0
+    missing = [e for e in expected if e not in matched]
+    return EntitiesResult(
+        entity_recall=score,
+        entities_ok=score >= min_recall,
+        missing_entities=", ".join(missing),
+    )
+
+
+@dataclass
+class UniqueResult:
+    unique_ok: Annotated[bool, Verdict]
+    unique_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def entity_unique(ctx: EvalContext, names: str = "") -> UniqueResult:
+    """Chaque nom = EXACTEMENT une entité : teste la résolution (pas de doublon sur
+    plusieurs beats, pas d'absence). Le mode d'échec multi-tours typique."""
+    targets = [normalize(n.strip()) for n in names.split(",") if n.strip()]
+    problems = []
+    for t in targets:
+        # Match EXACT (nom ou id normalisé) — surtout pas en sous-chaîne : sinon
+        # « Supérieur de Silas » compterait comme un 2e « Silas ». Donner le nom
+        # canonique tel que l'agent le nomme (« Baron Arkham », pas « Arkham »).
+        n = sum(
+            1 for e in ctx.output.entities
+            if normalize(str(e.get("name", ""))) == t or normalize(str(e.get("id", ""))) == t
+        )
+        if n != 1:
+            problems.append(f"{t}×{n}")
+    return UniqueResult(unique_ok=not problems, unique_detail=", ".join(problems))
+
+
+@dataclass
+class RelResult:
+    rel_recall: Annotated[float, Metric]
+    rel_ok: Annotated[bool, Verdict]
+    missing_rels: Annotated[str, Reason] = ""
+
+
+@evaluator
+def relations_present(ctx: EvalContext, pairs: str = "", min_recall: float = 1.0) -> RelResult:
+    """Chaque paire 'from->to' (ids souples, sens ignoré) doit avoir une relation."""
+    want = []
+    for p in pairs.split(","):
+        if "->" in p:
+            a, b = p.split("->", 1)
+            want.append((normalize(a.strip()), normalize(b.strip())))
+    rels = [
+        (normalize(str(r.get("from", ""))), normalize(str(r.get("to", ""))))
+        for r in ctx.output.relations
+    ]
+
+    def hit(a: str, b: str) -> bool:
+        pairwise = [(a, b), (b, a)]
+        return any(
+            (x in f or f in x) and (y in t or t in y)
+            for f, t in rels for x, y in pairwise
+        )
+
+    matched = [(a, b) for a, b in want if hit(a, b)]
+    score = len(matched) / len(want) if want else 1.0
+    missing = [f"{a}->{b}" for a, b in want if (a, b) not in matched]
+    return RelResult(rel_recall=score, rel_ok=score >= min_recall, missing_rels=", ".join(missing))
+
+
+# Formes normalisées (minuscules) du SCENARIO_PROFILE.relation_vocabulary.
+CANONICAL_RELS = {
+    "located_at", "member_of", "owns", "knows", "allied_with", "fights",
+    "kills", "creates", "targets", "causes", "part_of", "witnesses",
+}
+
+
+@dataclass
+class RelVocabResult:
+    rel_vocab_coverage: Annotated[float, Metric]
+    rel_type_count: Annotated[float, Metric]
+    vocab_ok: Annotated[bool, Verdict]
+    drift_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def rel_vocab_coverage(ctx: EvalContext, min_coverage: float = 0.0) -> RelVocabResult:
+    """Part des rel_type DISTINCTS qui sont canoniques (mesure la dérive de nommage).
+    Métrique-only au départ (min_coverage=0.0) ; on montera le seuil une fois la
+    convergence constatée, car relations_present ignore rel_type."""
+    distinct = sorted({normalize(str(r.get("rel_type", ""))) for r in ctx.output.relations} - {""})
+    in_vocab = [t for t in distinct if t in CANONICAL_RELS]
+    coverage = len(in_vocab) / len(distinct) if distinct else 1.0
+    off = [t for t in distinct if t not in CANONICAL_RELS]
+    return RelVocabResult(
+        rel_vocab_coverage=coverage,
+        rel_type_count=float(len(distinct)),
+        vocab_ok=coverage >= min_coverage,
+        drift_detail=f"hors-vocab : {', '.join(off)}" if off else "",
+    )
+
+
+@dataclass
+class PropResult:
+    props_ok: Annotated[bool, Verdict]
+    props_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def char_props(ctx: EvalContext, name: str = "", has: str = "", hasnt: str = "") -> PropResult:
+    """Contenu des propriétés d'un personnage : toutes les sous-chaînes `has` (CSV)
+    présentes, toutes les `hasnt` (CSV) absentes — sur la concaténation normalisée
+    de ses valeurs de props. Teste overwrite vs add : une valeur divergente s'AJOUTE
+    (ancien `has` toujours là), une correction explicite REMPLACE (`hasnt`)."""
+    target = normalize(name)
+    blob = ""
+    for c in ctx.output.characters:
+        if target and (target in normalize(str(c.get("name", ""))) or target in normalize(str(c.get("id", "")))):
+            blob = normalize(" ".join(
+                str(v) for k, v in c.items() if k not in ("id", "name", "entity_type")
+            ))
+            break
+    want = [normalize(s.strip()) for s in has.split(",") if s.strip()]
+    deny = [normalize(s.strip()) for s in hasnt.split(",") if s.strip()]
+    missing = [w for w in want if w not in blob]
+    present = [d for d in deny if d in blob]
+    detail = ""
+    if missing:
+        detail += f"attendu absent : {', '.join(missing)}. "
+    if present:
+        detail += f"interdit présent : {', '.join(present)}."
+    return PropResult(props_ok=not missing and not present, props_detail=detail.strip())
+
+
 @dataclass
 class AnswerResult:
     answer_score: Annotated[float, Metric]

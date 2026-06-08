@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from felix.core import CHANTIER_PROFILE, SCENARIO_PROFILE, create_core_agent
+from felix.core.agent import RELATION_SYSTEM_PROMPT
 from felix.core.tools import list_entities
 
 if TYPE_CHECKING:
@@ -45,6 +46,18 @@ brièvement chaque écriture. Pour répondre à une question sur le contenu de l
 base, consulte-le d'abord (list_entities, find_entity) — ne devine jamais.
 """
 
+# Passe 2 dédiée : le « relieur ». Décompose l'extraction (entités d'abord, puis
+# relations) — un sous-agent à un seul job rate moins ses relations qu'un gros
+# tour qui jongle avec tout (cf. sous-extraction mesurée en mono-passe).
+RELATION_PERSONA = """\
+Tu es le relieur du graphe. Les entités de ce passage existent DÉJÀ dans la base
+(consulte-les avec list_entities / describe_schema). Ta SEULE tâche : créer les
+relations qui les lient pour ce passage, avec add_relation, en réutilisant les
+types de relation canoniques du domaine (CAPITALES anglaises). N'ajoute, ne
+modifie, ne supprime AUCUNE entité ; si une entité te semble manquante, ignore-la.
+Procède relation par relation, puis confirme en une phrase.
+"""
+
 
 @dataclass(frozen=True)
 class AgentChoice:
@@ -72,3 +85,20 @@ def build_atelier_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
 
 def create_atelier_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
     return build_atelier_agent(ATELIER_CHOICES[profile_key])
+
+
+def build_relation_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
+    """2e passe « relieur » : noyau complet (5 tools) mais discipline + persona qui
+    priorisent add_relation. Il garde add_entity en filet (backfill d'une entité
+    ratée par la 1re passe) au lieu de boucler en erreur sur un outil manquant."""
+    agent = create_core_agent(
+        profile=choice.profile,
+        persona=RELATION_PERSONA,
+        system_prompt=RELATION_SYSTEM_PROMPT,
+    )
+    agent.tool(list_entities)
+    return agent
+
+
+def create_relation_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
+    return build_relation_agent(ATELIER_CHOICES[profile_key])

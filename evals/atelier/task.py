@@ -18,9 +18,9 @@ from protest import fixture
 from protest.evals import TaskResult
 
 from evals._judge import MISTRAL_SMALL_INPUT_COST, MISTRAL_SMALL_OUTPUT_COST
-from felix.atelier.agent import create_atelier_agent
+from felix.atelier.agent import create_atelier_agent, create_relation_agent
 from felix.atelier.deps import AtelierDeps
-from felix.core import SCENARIO_PROFILE, all_entities, consistency_check
+from felix.core import SCENARIO_PROFILE, all_entities, all_relations, consistency_check
 from felix.graph.driver import get_driver, setup_constraints
 from felix.ingest.resolver import slugify
 
@@ -38,6 +38,10 @@ class AtelierRunResult:
     answer: str
     characters: list[dict[str, Any]] = field(default_factory=list)
     cards: list[dict[str, str]] = field(default_factory=list)
+    # Graphe complet (tous types, + relations) pour les cas scénario multi-beats :
+    # recall d'entités, résolution (entité unique sur plusieurs tours), relations.
+    entities: list[dict[str, Any]] = field(default_factory=list)
+    relations: list[dict[str, Any]] = field(default_factory=list)
     # Verdict du consistency_check rejoué quand le cas demande "check" (la route
     # SSE émet une alerte ssi contradiction est True) ; None sinon.
     alert: dict[str, Any] | None = None
@@ -80,13 +84,35 @@ async def run_atelier_case(
         await _wipe_graph(driver)
         await _seed_entities(driver, inputs.get("seed", []))
 
-        deps = AtelierDeps(driver=driver, profile=SCENARIO_PROFILE)
         agent = create_atelier_agent()
-        result = await agent.run(inputs["message"], deps=deps)
+        relation_agent = create_relation_agent()
+        # Un cas est soit mono-tour ("message"), soit multi-beats ("beats") joués
+        # en séquence sur le MÊME graphe, l'historique threadé tour à tour (comme
+        # une vraie conversation : teste l'extraction cumulative + la résolution).
+        # Chaque beat = 2 passes sur le MÊME deps : agent d'entités, puis relieur
+        # dédié (récupère les relations lâchées en fin de tour mono-passe).
+        beats = inputs.get("beats") or [inputs["message"]]
+        history = None
+        cards: list[Any] = []
+        in_tok = out_tok = 0
+        deps = result = None
+        for beat in beats:
+            prev = history  # historique d'AVANT ce beat (Option B, partagé)
+            deps = AtelierDeps(driver=driver, profile=SCENARIO_PROFILE)
+            result = await agent.run(beat, deps=deps, message_history=prev)
+            rel_result = await relation_agent.run(beat, deps=deps, message_history=prev)
+            history = result.all_messages()  # le tour relieur est interne/jetable
+            cards.extend(deps.ui_events)
+            usage, rusage = result.usage(), rel_result.usage()
+            in_tok += (usage.request_tokens or 0) + (rusage.request_tokens or 0)
+            out_tok += (usage.response_tokens or 0) + (rusage.response_tokens or 0)
 
-        # Lecture filtrée sur les personnages : une entité « lieu » créée en
-        # passant ne doit pas fausser les graph_char_count.
+        assert result is not None and deps is not None  # beats non vide → boucle exécutée
+
         entities = await all_entities(driver)
+        relations = await all_relations(driver)
+        # Sous-ensemble personnages : une entité « lieu » créée en passant ne doit
+        # pas fausser les graph_char_count des cas mono-tour.
         characters = [
             e for e in entities
             if "personnage" in str(e.get("entity_type", "")).lower()
@@ -101,13 +127,13 @@ async def run_atelier_case(
             )
             alert = verdict.model_dump()
 
-    usage = result.usage()
-    in_tok, out_tok = usage.request_tokens or 0, usage.response_tokens or 0
     return TaskResult(
         output=AtelierRunResult(
             answer=result.output,
             characters=[dict(c) for c in characters],
-            cards=[card.model_dump() for card in deps.ui_events],
+            entities=[dict(e) for e in entities],
+            relations=[dict(r) for r in relations],
+            cards=[card.model_dump() for card in cards],
             alert=alert,
         ),
         input_tokens=in_tok,

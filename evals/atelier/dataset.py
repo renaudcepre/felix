@@ -12,10 +12,56 @@ from evals.atelier.evaluators import (
     alert_emitted,
     answer_mentions,
     cards_for_subjects,
+    char_props,
+    entity_unique,
     graph_char_count,
     graph_has_characters,
+    graph_has_entities,
     no_tool_cards,
+    rel_vocab_coverage,
+    relations_present,
 )
+
+# Scénario complet « La Roue de Sang » (steampunk noir) joué beat par beat sur le
+# même graphe : teste l'extraction cumulative, la résolution (Silas = 1 nœud sur
+# 7 tours) et les relations clés. Représente l'usage réel « je raconte au fil de
+# l'eau » plutôt qu'un message isolé.
+_roue_de_sang_beats = [
+    "Néo-Londres, 1899 alternatif. Le ciel est une chape de plomb striée par des "
+    "zeppelins militaires. Silas, un détective privé désabusé doté d'un bras "
+    "mécanique à vapeur, examine un cadavre dans les bas-fonds. La victime n'a plus "
+    "de sang : il a été remplacé par une huile noire visqueuse, et son cœur "
+    "mécanique bat encore, gravé de runes occultes.",
+    "Silas tente d'apporter les preuves à la Milice du Cuivre. Son supérieur lui "
+    "ordonne d'étouffer l'affaire et lui confisque les pièces à conviction. Silas "
+    "comprend que la corruption dépasse la simple pègre locale. En sortant, il est "
+    "attaqué par des « Golems de suie », des colosses de métal animés par de la "
+    "nécromancie. Il s'échappe de justesse grâce à la surcharge de son bras.",
+    "Silas remonte la piste de l'huile noire jusqu'à une fonderie clandestine dans "
+    "les niveaux inférieurs de la ville. Là, il découvre l'horreur : des ouvriers "
+    "disparus sont enchaînés à des machines rituelles. Des mages noirs en tablier "
+    "de cuir et masques à gaz drainent leur essence vitale pour forger de "
+    "« l'Athanor », un carburant magico-mécanique surpuissant.",
+    "Silas est repéré. Alors qu'il est sur le point d'être capturé, il est sauvé "
+    "par Éléonore, une ingénieure rebelle qui utilise une magie runique « propre » "
+    "(liée à la pression de l'eau). Elle lui révèle la vérité : la Grande Chaudière "
+    "Centrale, qui chauffe toute la mégapole, va être convertie à l'Athanor lors de "
+    "la prochaine éclipse de Lune, ce qui transformera la ville en autel sacrificiel.",
+    "Pour arrêter le rituel, Silas et Éléonore doivent saboter le Vapor-Dominus, le "
+    "zeppelin-forteresse du Grand Mage Industriel, le Baron Arkham. Ils infiltrent "
+    "les docks suspendus au milieu d'une tempête de grêle. Mais Éléonore est "
+    "capturée sous les yeux de Silas, qui doit fuir en sautant dans le vide, sauvé "
+    "par son grappin pneumatique.",
+    "L'Éclipse commence. Le ciel devient rouge sang. Silas assaille le Vapor-Dominus "
+    "en solo, utilisant les conduits de vapeur pour se faufiler. Il atteint la salle "
+    "du réacteur où Arkham s'apprête à sacrifier Éléonore. Un duel s'engage au "
+    "milieu des pistons géants. Silas sacrifie son bras cybernétique pour bloquer "
+    "l'engrenage principal du rituel.",
+    "Le réacteur explose, détruisant le zeppelin. Silas et Éléonore s'échappent en "
+    "parachute alors que la forteresse volante s'écrase dans les quartiers riches. "
+    "La ville est sauvée de l'annihilation, mais la Grande Chaudière est détruite : "
+    "le gel commence à s'installer sur Néo-Londres.",
+]
 
 # Seed partagé des cas de check : Marco (alibi à Marseille le 12 juin) et le
 # Vesuvio localisé à Lyon — sans l'adresse, Marseille vs « au Vesuvio » ne serait
@@ -124,6 +170,32 @@ atelier_cases = ForEach(
                 no_tool_cards,
             ],
         ),
+        # --- overwrite vs add (règle 4 : diverge → ajoute, corrige → remplace) ---
+        EvalCase(
+            name="diverge_adds_keeps_old",
+            inputs={
+                "message": "Ajoute que Marco était au Vesuvio, à Lyon, le soir du 12 juin.",
+                "seed": [
+                    {"name": "Marco Santi",
+                     "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
+                ],
+            },
+            # Fait divergent (autre lieu, même soir) → s'AJOUTE sans écraser l'alibi :
+            # les DEUX doivent finir dans les props de Marco (ancien + nouveau).
+            evaluators=[char_props(name="Marco Santi", has="marseille, lyon")],
+        ),
+        EvalCase(
+            name="explicit_correction_overwrites",
+            inputs={
+                "message": "Correction : en fait l'alibi de Marco Santi, c'était Lyon, pas Marseille.",
+                "seed": [
+                    {"name": "Marco Santi",
+                     "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
+                ],
+            },
+            # Correction explicite (« correction », « en fait ») → REMPLACE.
+            evaluators=[char_props(name="Marco Santi", has="lyon", hasnt="marseille")],
+        ),
         # --- check de cohérence (alerte d'incohérence dans le fil) ---
         EvalCase(
             name="check_contradiction",
@@ -146,6 +218,35 @@ atelier_cases = ForEach(
             # Fait additif sans rapport avec l'alibi → pas de contradiction, pas
             # d'alerte (garde-fou anti-faux-positif du checker).
             evaluators=[alert_emitted(expected=False)],
+        ),
+        # --- scénario complet multi-beats (extraction cumulative + résolution) ---
+        EvalCase(
+            name="roue_de_sang",
+            inputs={"beats": _roue_de_sang_beats, "seed": []},
+            evaluators=[
+                # extraction cumulative : les entités phares sont présentes (souple)
+                graph_has_entities(
+                    ids="silas, eleonore, arkham, athanor, fonderie, golems, mages, "
+                        "milice, grande chaudiere, vapor-dominus, eclipse",
+                    min_recall=0.8,
+                ),
+                # résolution : les 2 leads = UN seul nœud sur 7 beats. Noms propres
+                # stables (match exact) ; on omet « Baron Arkham » dont la forme de
+                # surface varie (Arkham / Le Baron Arkham) et ferait flaker l'exact.
+                entity_unique(names="Silas, Éléonore"),
+                # relations clés (sens ignoré, ids souples). Seuil ASPIRATIONNEL :
+                # l'extraction de relations est la dimension faible aujourd'hui
+                # (~60-80 % selon les runs, noms qui dérivent). On garde la barre
+                # haute comme cible — l'améliorer est le prochain chantier, pas la
+                # baisser pour faire passer (cf. evals aspirationnelles Felix).
+                relations_present(
+                    pairs="silas->cadavre, mages->athanor, mages->ouvriers, "
+                          "eleonore->silas, silas->arkham",
+                    min_recall=0.8,
+                ),
+                # Dérive des noms de relations : métrique-only (ne gate pas encore).
+                rel_vocab_coverage(min_coverage=0.0),
+            ],
         ),
     ]
 )
