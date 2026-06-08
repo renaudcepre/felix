@@ -339,6 +339,53 @@ def events_involve(ctx: EvalContext, who: str = "", min_recall: float = 1.0) -> 
 
 
 @dataclass
+class InvolvesTargetResult:
+    involves_clean_ok: Annotated[bool, Verdict]
+    involves_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def involves_only_entities(ctx: EvalContext) -> InvolvesTargetResult:
+    """Aucune relation INVOLVES ne cible un node événement : un participant est un
+    personnage/lieu/objet, jamais un événement (ni l'événement lui-même). Attrape
+    l'auto-référence quand add_event résout un participant vers un node evenement."""
+    event_ids = {normalize(str(e.get("id", ""))) for e in _events(ctx)}
+    bad = [
+        f"{r.get('from')}→{r.get('to')}"
+        for r in ctx.output.relations
+        if normalize(str(r.get("rel_type", ""))) == "involves"
+        and normalize(str(r.get("to", ""))) in event_ids
+    ]
+    return InvolvesTargetResult(
+        involves_clean_ok=not bad,
+        involves_detail=f"INVOLVES vers un event : {', '.join(bad)}" if bad else "",
+    )
+
+
+@dataclass
+class EventsDistinctResult:
+    distinct_ratio: Annotated[float, Metric]
+    distinct_ok: Annotated[bool, Verdict]
+    distinct_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def events_distinct(ctx: EvalContext) -> EventsDistinctResult:
+    """Pas de resume d'événement en double : le chroniqueur ne doit pas recréer le
+    même événement (symptôme du re-chroniquage de l'historique conversationnel)."""
+    resumes = [normalize(str(e.get("resume", e.get("name", "")))) for e in _events(ctx)]
+    resumes = [r for r in resumes if r]
+    uniq = set(resumes)
+    dups = sorted(r for r in uniq if resumes.count(r) > 1)
+    ratio = len(uniq) / len(resumes) if resumes else 1.0
+    return EventsDistinctResult(
+        distinct_ratio=ratio,
+        distinct_ok=not dups,
+        distinct_detail=f"{len(resumes) - len(uniq)} doublon(s) : {'; '.join(dups)}" if dups else "",
+    )
+
+
+@dataclass
 class PropResult:
     props_ok: Annotated[bool, Verdict]
     props_detail: Annotated[str, Reason] = ""

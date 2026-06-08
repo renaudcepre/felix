@@ -14,12 +14,14 @@ from evals.atelier.evaluators import (
     cards_for_subjects,
     char_props,
     entity_unique,
+    events_distinct,
     events_involve,
     events_ordered,
     graph_char_count,
     graph_has_characters,
     graph_has_entities,
     graph_has_events,
+    involves_only_entities,
     no_tool_cards,
     rel_vocab_coverage,
     relations_present,
@@ -76,6 +78,20 @@ _action_beats = [
     "de navigation pour saboter le vaisseau.",
     "Vance verrouille l'écoutille de secours pour piéger l'équipage à l'intérieur.",
     "Vance traîne la mercenaire blessée jusqu'à la capsule de sauvetage.",
+]
+
+# Reproduction des bugs trouvés en live (« Le Nadir ») : un tour DESCRIPTIF (pose
+# le décor, Vance présent, peu/pas d'action) PUIS un tour à événements. Révèle ce
+# que `_action_beats` (3 actions nettes) ne montrait pas : (1) le chroniqueur qui
+# re-chronique le tour 1 au tour 2 (il voyait l'historique) → doublons ; (2)
+# add_event résolvant un participant vers le node événement lui-même (auto-INVOLVES).
+_nadir_beats = [
+    "Le Nadir, un cargo-benne usé jusqu'à la corde, dérive en silence dans un "
+    "secteur mort. Vance, le chef de la sécurité — un flic fatigué en fin de "
+    "contrat — traîne ses bottes dans les coursives vides.",
+    "L'IA de bord lance une alerte : le bilan de masse est faussé, 82 kilos de "
+    "trop non répertoriés à bord. Les capteurs thermiques de la soute 4 "
+    "s'éteignent un par un, comme si une ombre avançait en coupant les fils.",
 ]
 
 # Seed partagé des cas de check : Marco (alibi à Marseille le 12 juin) et le
@@ -276,6 +292,19 @@ atelier_cases = ForEach(
                 # Participants : la plupart des events relient Vance via INVOLVES
                 # (sous-chaîne souple : « Vance » ⊂ « Capitaine Vance »).
                 events_involve(who="Vance", min_recall=0.66),
+            ],
+        ),
+        # --- bugs live « Le Nadir » : pas de re-chroniquage ni d'auto-INVOLVES ---
+        EvalCase(
+            name="event_no_bleed",
+            inputs={"beats": _nadir_beats, "seed": []},
+            evaluators=[
+                # Au moins l'événement du tour 2 (alerte IA / capteurs), chaîne saine.
+                events_ordered(min_count=1),
+                # Pas de doublon : le tour 2 ne doit pas recréer le décor du tour 1.
+                events_distinct,
+                # Aucun INVOLVES vers un event (auto-référence du bug live).
+                involves_only_entities,
             ],
         ),
     ]

@@ -15,6 +15,15 @@
 
 **Pointeurs** : noyau `src/felix/core/` (tools.py `add_event` + garde `manages_events`, agent.py `CHRONICLE_SYSTEM_PROMPT`, profile.py `manages_events`, deps.py `event_seq_lock`) ; chroniqueur `src/felix/atelier/agent.py` (`build_chronicle_agent`) ; route **3 passes** `src/felix/api/routes/atelier.py` (helper `_consistency_alerts`) ; evals `evals/atelier/` (cas `event_chrono` + `roue_de_sang`, evaluators `events_*`/`relations_present`/`rel_vocab_coverage`). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## Modèle événementiel — bugfixes du test live « Le Nadir » — 2026-06-08
+
+Test live du v0 par l'utilisateur → 3 bugs que l'eval propre (`event_chrono`, 3 actions nettes) ne montrait pas. Reproduits via un cas plus dur (`event_no_bleed` : 1 tour DESCRIPTIF puis 1 tour à événements, le scénario réel de l'utilisateur).
+
+- **Bug 1 — re-chroniquage de l'historique (doublons cross-tour).** Le chroniqueur recevait l'historique de conversation (Option B) → au tour 2 il recréait des événements du tour 1 (« Vance patrouille » ×3, absents du tour 2). **Fix** : le chroniqueur tourne **sans `message_history`** (route + harness eval) — il ne chronique que le beat courant et (re)découvre les entités via le graphe. Bug **structurel** : il ne peut plus re-chroniquer ce qu'il ne voit pas.
+- **Bug 2 — auto-INVOLVES (mon code, déterministe).** `add_event` résolvait les participants via `find_node`, qui matche n'importe quelle `GenEntity` — y compris le node événement qu'on vient de créer (même nom) → INVOLVES event→lui-même. Prouvé déterministe (find_node renvoie le node evenement). **Fix** : résolution des participants restreinte aux entités **non-événement** (`entity_type <> 'evenement'`), jamais soi-même.
+- **Bug 3 — participants dupliqués** (« Le Nadir, Le Nadir »). **Fix** : dédup des participants résolus (set d'ids). NB : l'acteur manquant (IA de bord non créée en entité) reste un trou de passe 1, secondaire.
+- **Eval-first** : bug 2 prouvé déterministe (find_node direct) ; bugs 1/3 = variance LLM (le cas tombait parfois sur le chemin propre) → cas `event_no_bleed` + evaluators `involves_only_entities` (aucun INVOLVES vers un event) et `events_distinct` (pas de resume en double) comme garde. **Après fix : `event_no_bleed` vert ×2** (`chain_len=2`, `distinct=1.0`, `involves_clean=✓`), `event_chrono` non-régressé (`chain_len=5`). Backend Mistral très instable ce jour (400/503/request_limit sur retries) → 2 échecs runtime transients entre les passes propres (17 appels = pas une boucle), pas des régressions.
+
 ## Modèle événementiel v0 : nodes `evenement` ordonnés (état vs événement) — 2026-06-08
 
 Le test live « Le Nadir » montrait les ACTIONS écrasées dans une prop mutable du perso (chronologie perdue, seul le dernier geste survit). v0 du modèle événementiel, **eval-first**, ontologie et topologie tranchées avec l'utilisateur.

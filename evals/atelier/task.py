@@ -107,7 +107,9 @@ async def run_atelier_case(
             deps = AtelierDeps(driver=driver, profile=SCENARIO_PROFILE)
             result = await agent.run(beat, deps=deps, message_history=prev)
             rel_result = await relation_agent.run(beat, deps=deps, message_history=prev)
-            chr_result = await chronicle_agent.run(beat, deps=deps, message_history=prev)
+            # Chroniqueur SANS historique : il ne chronique que le beat courant (sinon
+            # re-chronique les tours passés → doublons) ; entités relues du graphe.
+            chr_result = await chronicle_agent.run(beat, deps=deps, message_history=None)
             history = result.all_messages()  # relieur/chroniqueur internes/jetables
             cards.extend(deps.ui_events)
             for u in (result.usage(), rel_result.usage(), chr_result.usage()):

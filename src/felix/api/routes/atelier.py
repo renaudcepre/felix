@@ -126,13 +126,17 @@ async def atelier_chat(
                 # Contexte = historique d'AVANT ce tour ; les entités du beat sont
                 # relues du graphe (list_entities).
                 extra_usages = []
-                for sub_agent, label in (
-                    (relation_agent, "relations"),
-                    (chronicle_agent, "événements"),
+                for sub_agent, label, hist in (
+                    (relation_agent, "relations", message_history),
+                    # Le chroniqueur tourne SANS historique : il ne doit chroniquer
+                    # que le BEAT courant — avec l'historique conversationnel il
+                    # re-chronique les tours passés (doublons). Il (re)découvre les
+                    # entités via le graphe (list_entities), pas via l'historique.
+                    (chronicle_agent, "événements", None),
                 ):
                     try:
                         sub = await sub_agent.run(
-                            body.message, deps=deps, message_history=message_history
+                            body.message, deps=deps, message_history=hist
                         )
                         extra_usages.append(sub.usage())
                         for event in drain_cards():

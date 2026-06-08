@@ -284,15 +284,30 @@ async def add_event(
                 po=prev_ordre, id=event_id,
             )
 
-    # Participants / lieu : reliés seulement s'ils existent déjà (le chroniqueur
-    # ne crée pas d'entité — passes 1/2 l'ont fait). Une cible manquante est ignorée.
+    # Participants / lieu : reliés seulement s'ils existent déjà comme VRAIES entités
+    # (le chroniqueur ne crée pas d'entité). Résolution restreinte aux NON-événements :
+    # sinon un participant nommé comme un résumé matche un node evenement — voire
+    # CELUI qu'on vient de créer (même nom) → auto-INVOLVES. Dédupliqué ; jamais soi.
     linked: list[str] = []
-    for raw, rel in [(p, "INVOLVES") for p in (participants or [])] + (
-        [(lieu, "LOCATED_AT")] if lieu else []
-    ):
-        node = await find_node(ctx.deps.driver, raw)
-        if not node:
+    seen_ids: set[str] = {event_id}
+    targets = [(p, "INVOLVES") for p in (participants or [])]
+    if lieu:
+        targets.append((lieu, "LOCATED_AT"))
+    for raw, rel in targets:
+        async with ctx.deps.driver.session() as session:
+            result = await session.run(
+                "MATCH (t:GenEntity) WHERE t.entity_type <> 'evenement'"
+                " AND (t.id = $slug OR toLower(t.name) CONTAINS toLower($ref))"
+                " RETURN t LIMIT 1",
+                slug=slugify(raw), ref=raw,
+            )
+            record = await result.single()
+        if not record:
             continue
+        node = dict(record["t"])
+        if node["id"] in seen_ids:
+            continue
+        seen_ids.add(node["id"])
         async with ctx.deps.driver.session() as session:
             await session.run(
                 "MATCH (e:GenEntity {id: $e}), (t:GenEntity {id: $t})"
