@@ -15,6 +15,12 @@
 
 **Pointeurs** : noyau `src/felix/core/` (tools.py `add_event` + garde `manages_events`, agent.py `CHRONICLE_SYSTEM_PROMPT`, profile.py `manages_events`, deps.py `event_seq_lock`) ; chroniqueur `src/felix/atelier/agent.py` (`build_chronicle_agent`) ; route **3 passes** `src/felix/api/routes/atelier.py` (helper `_consistency_alerts`) ; evals `evals/atelier/` (cas `event_chrono` + `roue_de_sang`, evaluators `events_*`/`relations_present`/`rel_vocab_coverage`). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## E2E route atelier (SSE in-process) + Le Nadir validé sur code frais — 2026-06-08
+
+Les evals protest **shuntent la route** (`run_atelier_case` appelle `agent.run()` direct) → les bugs de câblage (3 passes, chroniqueur sans `message_history`, ordre des events SSE) leur échappent. Nouveau harness `evals/atelier/e2e.py` (`just e2e-atelier`) : joue « Le Nadir » multi-tours contre la **vraie route SSE**, **in-process** (httpx ASGITransport sur l'app FastAPI → code TOUJOURS à jour, pas de serveur à relancer), re-injecte le `history` SSE au tour suivant comme le front, puis **asserte les invariants** (events bornés < 3×tours, 0 doublon de resume, 0 relation entité↔event, ordres distincts/complets, Vance=personnage), **exit 1** si cassé.
+
+**Validation décisive** : sur code frais, « Le Nadir » 5 tours → **7-9 events** (contre **63** en live), 0 doublon, 0 relation entité↔event, intrus créé comme personnage. Confirme que les 63 events du test live = **fantôme du code stale** (le serveur tournait le chroniqueur AVEC historique, fix round 1 pas rechargé) — les fixes round 1/2 tiennent de bout en bout. Reste cosmétique (round 3) : typage variable (« Le Nadir » lieu/objet selon run), quasi-doublon d'entité (« cadavre » / « cadavre du technicien »), et resserrage fin de la sur-extraction. Garde notée en mémoire `reference_e2e_atelier`.
+
 ## Modèle événementiel — bugfixes live round 2 (relations vers events, doublons) — 2026-06-08
 
 2e test live « Le Nadir » → graphe inspecté : **63 events pour ~6 tours**, 3 familles de bugs.

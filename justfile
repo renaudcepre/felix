@@ -39,6 +39,11 @@ evals-atelier *args:
 evals-generic *args:
     uv run protest eval evals.generic.session:session {{ args }}
 
+# E2E de la route atelier SSE (in-process) — joue « Le Nadir », asserte les
+# invariants événementiels. ≈40 appels LLM ; wipe le graphe, ne pas lancer avec l'API.
+e2e-atelier *args:
+    uv run python evals/atelier/e2e.py {{ args }}
+
 # Historique des evals
 evals-history *args:
     uv run protest history --evals {{ args }}
