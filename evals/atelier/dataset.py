@@ -14,9 +14,12 @@ from evals.atelier.evaluators import (
     cards_for_subjects,
     char_props,
     entity_unique,
+    events_involve,
+    events_ordered,
     graph_char_count,
     graph_has_characters,
     graph_has_entities,
+    graph_has_events,
     no_tool_cards,
     rel_vocab_coverage,
     relations_present,
@@ -61,6 +64,18 @@ _roue_de_sang_beats = [
     "parachute alors que la forteresse volante s'écrase dans les quartiers riches. "
     "La ville est sauvée de l'annihilation, mais la Grande Chaudière est détruite : "
     "le gel commence à s'installer sur Néo-Londres.",
+]
+
+# Scénario d'ACTION pur (3 beats) : un même personnage enchaîne trois gestes
+# distincts. Aujourd'hui l'agent fourre l'action dans une prop `action`/`etat`
+# écrasée à chaque beat → la chronologie est perdue (verrue « Le Nadir »). Le
+# modèle événementiel doit produire 3 nodes evenement ORDONNÉS reliés au perso,
+# pas trois écrasements d'une même prop.
+_action_beats = [
+    "Le capitaine Vance fait irruption sur la passerelle et tire sur les consoles "
+    "de navigation pour saboter le vaisseau.",
+    "Vance verrouille l'écoutille de secours pour piéger l'équipage à l'intérieur.",
+    "Vance traîne la mercenaire blessée jusqu'à la capsule de sauvetage.",
 ]
 
 # Seed partagé des cas de check : Marco (alibi à Marseille le 12 juin) et le
@@ -246,6 +261,21 @@ atelier_cases = ForEach(
                 ),
                 # Dérive des noms de relations : métrique-only (ne gate pas encore).
                 rel_vocab_coverage(min_coverage=0.0),
+            ],
+        ),
+        # --- modèle événementiel (chronologie des actions, pas d'écrasement) ---
+        EvalCase(
+            name="event_chrono",
+            inputs={"beats": _action_beats, "seed": []},
+            evaluators=[
+                # Chaque geste = un node evenement (resume contient l'action), pas
+                # une prop écrasée. Seuil souple (extraction = dimension neuve).
+                graph_has_events(resumes="tire, verrouille, traine", min_recall=0.66),
+                # Chronologie : >= 3 events, ordre distinct, chaîne NEXT complète.
+                events_ordered(min_count=3),
+                # Participants : la plupart des events relient Vance via INVOLVES
+                # (sous-chaîne souple : « Vance » ⊂ « Capitaine Vance »).
+                events_involve(who="Vance", min_recall=0.66),
             ],
         ),
     ]

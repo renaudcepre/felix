@@ -18,7 +18,11 @@ from protest import fixture
 from protest.evals import TaskResult
 
 from evals._judge import MISTRAL_SMALL_INPUT_COST, MISTRAL_SMALL_OUTPUT_COST
-from felix.atelier.agent import create_atelier_agent, create_relation_agent
+from felix.atelier.agent import (
+    create_atelier_agent,
+    create_chronicle_agent,
+    create_relation_agent,
+)
 from felix.atelier.deps import AtelierDeps
 from felix.core import SCENARIO_PROFILE, all_entities, all_relations, consistency_check
 from felix.graph.driver import get_driver, setup_constraints
@@ -86,11 +90,13 @@ async def run_atelier_case(
 
         agent = create_atelier_agent()
         relation_agent = create_relation_agent()
+        chronicle_agent = create_chronicle_agent()
         # Un cas est soit mono-tour ("message"), soit multi-beats ("beats") joués
         # en séquence sur le MÊME graphe, l'historique threadé tour à tour (comme
         # une vraie conversation : teste l'extraction cumulative + la résolution).
-        # Chaque beat = 2 passes sur le MÊME deps : agent d'entités, puis relieur
-        # dédié (récupère les relations lâchées en fin de tour mono-passe).
+        # Chaque beat = 3 passes sur le MÊME deps : agent d'entités, relieur
+        # (relations lâchées en fin de tour), chroniqueur (événements ordonnés).
+        # Toutes en Option B (historique d'AVANT le beat ; entités relues du graphe).
         beats = inputs.get("beats") or [inputs["message"]]
         history = None
         cards: list[Any] = []
@@ -101,11 +107,12 @@ async def run_atelier_case(
             deps = AtelierDeps(driver=driver, profile=SCENARIO_PROFILE)
             result = await agent.run(beat, deps=deps, message_history=prev)
             rel_result = await relation_agent.run(beat, deps=deps, message_history=prev)
-            history = result.all_messages()  # le tour relieur est interne/jetable
+            chr_result = await chronicle_agent.run(beat, deps=deps, message_history=prev)
+            history = result.all_messages()  # relieur/chroniqueur internes/jetables
             cards.extend(deps.ui_events)
-            usage, rusage = result.usage(), rel_result.usage()
-            in_tok += (usage.request_tokens or 0) + (rusage.request_tokens or 0)
-            out_tok += (usage.response_tokens or 0) + (rusage.response_tokens or 0)
+            for u in (result.usage(), rel_result.usage(), chr_result.usage()):
+                in_tok += u.request_tokens or 0
+                out_tok += u.response_tokens or 0
 
         assert result is not None and deps is not None  # beats non vide → boucle exécutée
 

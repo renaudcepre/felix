@@ -111,6 +111,17 @@ async def add_entity(
         props: Propriétés factuelles données par l'utilisateur. RÉUTILISER les
             noms de propriétés existants du schéma quand le sens correspond.
     """
+    # Garde de coordination : quand le domaine gère une chronologie (manages_events),
+    # le type 'evenement' est RÉSERVÉ à add_event (ordre/NEXT). Le créer ici en
+    # entité plate produirait un node hors-chaîne. Refus best-effort (retour normal,
+    # pas d'erreur d'outil → l'agent passe à autre chose, pas de boucle).
+    prof = ctx.deps.profile
+    if (prof is not None and prof.manages_events
+            and entity_type.strip().lower() in {"evenement", "événement", "évènement", "event"}):
+        return (f"« {entity_type} » est un type réservé : une action/un événement ne "
+                f"s'enregistre pas comme entité (il est tenu à part dans la chronologie). "
+                f"Garde « {name} » pour une vraie entité (personnage, lieu, objet).")
+
     entity_id = slugify(name)
     if not entity_id:
         return f"Nom invalide : « {name} »."
@@ -218,3 +229,85 @@ async def add_relation(
     ctx.deps.touched_ids.add(a["id"])
     ctx.deps.touched_ids.add(b["id"])
     return f"Relation : {a['name']} —[{rel_type}]→ {b['name']}."
+
+
+async def add_event(
+    ctx: RunContext[GenericDeps],
+    resume: str,
+    participants: list[str] | None = None,
+    lieu: str | None = None,
+) -> str:
+    """Enregistre un ÉVÉNEMENT du récit : une action qui SE PASSE à un instant donné
+    (ex. « Vance tire sur les consoles », « le réacteur explose »).
+
+    À n'utiliser QUE pour ce qui ARRIVE et fait avancer l'histoire — jamais pour un
+    état durable (« est ingénieure », « a un bras mécanique ») qui, lui, est une
+    PROPRIÉTÉ du personnage (update_entity). Test : « quand ? » a pour réponse un
+    instant → événement ; « quand ? » est absurde (ça tient tout le temps) → ce
+    n'est pas un événement.
+
+    L'ordre chronologique et le chaînage NEXT sont gérés AUTOMATIQUEMENT : tu n'as
+    pas à numéroter, chaque événement se range à la suite du précédent.
+
+    Args:
+        resume: Ce qui se passe, en une phrase courte (« Silas examine le cadavre »).
+        participants: Noms d'entités EXISTANTES qui prennent part à l'événement
+            (personnages, objets) — reliées par INVOLVES.
+        lieu: Nom du lieu EXISTANT où ça se passe — relié par LOCATED_AT.
+    """
+    text = resume.strip()
+    if not text:
+        return "Résumé d'événement vide — rien enregistré."
+
+    # ordre auto-incrémenté (en code, pas par le modèle) + id unique : deux actions
+    # proches ne doivent PAS fusionner, donc surtout pas de slug du résumé. Le lock
+    # sérialise les add_event concurrents d'un même run (sinon collision d'ordre/id).
+    async with ctx.deps.event_seq_lock, ctx.deps.driver.session() as session:
+        result = await session.run(
+            "MATCH (e:GenEntity {entity_type: 'evenement'}) RETURN max(e.ordre) AS maxo"
+        )
+        record = await result.single()
+        prev_ordre = record["maxo"] if record else None
+        ordre = (prev_ordre + 1) if prev_ordre is not None else 1
+        event_id = f"event-{ordre}"
+        await session.run(
+            "CREATE (e:GenEntity {id: $id, name: $name, entity_type: 'evenement',"
+            " resume: $resume, ordre: $ordre})",
+            id=event_id, name=text, resume=text, ordre=ordre,
+        )
+        # Chaîne NEXT depuis l'événement de plus grand ordre précédent.
+        if prev_ordre is not None:
+            await session.run(
+                "MATCH (p:GenEntity {entity_type: 'evenement', ordre: $po}),"
+                " (e:GenEntity {id: $id})"
+                " MERGE (p)-[:REL {rel_type: 'NEXT'}]->(e)",
+                po=prev_ordre, id=event_id,
+            )
+
+    # Participants / lieu : reliés seulement s'ils existent déjà (le chroniqueur
+    # ne crée pas d'entité — passes 1/2 l'ont fait). Une cible manquante est ignorée.
+    linked: list[str] = []
+    for raw, rel in [(p, "INVOLVES") for p in (participants or [])] + (
+        [(lieu, "LOCATED_AT")] if lieu else []
+    ):
+        node = await find_node(ctx.deps.driver, raw)
+        if not node:
+            continue
+        async with ctx.deps.driver.session() as session:
+            await session.run(
+                "MATCH (e:GenEntity {id: $e}), (t:GenEntity {id: $t})"
+                " MERGE (e)-[r:REL {rel_type: $rel}]->(t)",
+                e=event_id, t=node["id"], rel=rel,
+            )
+        linked.append(node["name"])
+        ctx.deps.touched_ids.add(node["id"])
+
+    ctx.deps.ui_events.append(
+        ToolCard(tool="people", title="Événement", subject=text,
+                 field=f"#{ordre}", added=", ".join(linked) or "—")
+    )
+    ctx.deps.write_log.append(
+        f"événement #{ordre} : {text} (participants : {', '.join(linked) or '—'})"
+    )
+    ctx.deps.touched_ids.add(event_id)
+    return f"Événement #{ordre} enregistré : {text} (participants : {', '.join(linked) or '—'})."

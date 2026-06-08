@@ -42,6 +42,11 @@ def get_relation_agents(request: Request) -> dict[str, Agent]:
     return request.app.state.relation_agents
 
 
+def get_chronicle_agents(request: Request) -> dict[str, Agent]:
+    """Sous-agents « chroniqueur » (3e passe, événements) pré-construits par profil."""
+    return request.app.state.chronicle_agents
+
+
 def get_import_state(request: Request) -> ImportState:
     return request.app.state.import_state
 
@@ -51,4 +56,5 @@ Collection: TypeAlias = Annotated[chromadb.Collection, Depends(get_collection)]
 ChatAgent: TypeAlias = Annotated[Agent, Depends(get_agent)]
 AtelierAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_atelier_agents)]
 RelationAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_relation_agents)]
+ChronicleAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_chronicle_agents)]
 ImportStateDep: TypeAlias = Annotated[ImportState, Depends(get_import_state)]

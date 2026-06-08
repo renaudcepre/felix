@@ -19,7 +19,12 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
-from felix.api.deps import AtelierAgentsDep, Neo4jDriver, RelationAgentsDep
+from felix.api.deps import (
+    AtelierAgentsDep,
+    ChronicleAgentsDep,
+    Neo4jDriver,
+    RelationAgentsDep,
+)
 from felix.api.models import ChatRequest
 from felix.atelier.agent import ATELIER_CHOICES, DEFAULT_PROFILE
 from felix.core import GenericDeps, consistency_check
@@ -27,9 +32,43 @@ from felix.core import GenericDeps, consistency_check
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+    from neo4j import AsyncDriver
+
+    from felix.core import Profile
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/atelier", tags=["atelier"])
+
+
+async def _consistency_alerts(
+    driver: AsyncDriver, deps: GenericDeps, profile: Profile | None
+) -> AsyncGenerator[ServerSentEvent]:
+    """Carte `alert` par contradiction DISTINCTE sur les entités touchées ce tour.
+
+    Dédupliqué : une même incohérence remonte souvent de plusieurs entités voisines
+    (voisinages qui se recouvrent) → une seule carte par tour. `message` = phrase
+    courte pour l'auteur ; `reason` (brouillon du judge) sert de filet de secours.
+    """
+    seen: set[str] = set()
+    for touched in deps.touched_ids:
+        verdict = await consistency_check(driver, touched, deps.write_log, profile)
+        if not verdict.contradiction:
+            continue
+        alert_body = verdict.message.strip() or verdict.reason
+        key = alert_body.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        yield ServerSentEvent(
+            data=json.dumps({
+                "kind": "alert",
+                "title": "Incohérence possible",
+                "body": alert_body,
+                "status": "open",
+            }),
+            event="alert",
+        )
 
 
 @router.get("/profiles")
@@ -43,11 +82,13 @@ async def atelier_chat(
     body: ChatRequest,
     agents: AtelierAgentsDep,
     relation_agents: RelationAgentsDep,
+    chronicle_agents: ChronicleAgentsDep,
     driver: Neo4jDriver,
 ) -> EventSourceResponse:
     choice = ATELIER_CHOICES.get(body.profile, ATELIER_CHOICES[DEFAULT_PROFILE])
     agent = agents[choice.key]
     relation_agent = relation_agents[choice.key]
+    chronicle_agent = chronicle_agents[choice.key]
     deps = GenericDeps(driver=driver, profile=choice.profile)
 
     message_history = None
@@ -78,32 +119,34 @@ async def atelier_chat(
                 for event in drain_cards():
                     yield event
 
-                # 2e passe « relieur » : crée les relations que l'agent d'entités
-                # a tendance à lâcher en fin de tour. NON streamée — on ne lit
-                # jamais son output et on n'émet aucun `text` → une seule bulle.
-                # Contexte = historique d'AVANT ce tour (message_history) ; les
-                # entités du beat sont relues via le graphe (list_entities).
-                rel_usage = None
-                try:
-                    rel_result = await relation_agent.run(
-                        body.message, deps=deps, message_history=message_history
-                    )
-                    rel_usage = rel_result.usage()
-                    for event in drain_cards():  # cartes « Relation ajoutée »
-                        yield event
-                except Exception:
-                    logger.exception("passe relations échouée (tour non bloqué)")
+                # 2e passe « relieur » (relations lâchées en fin de tour) puis 3e
+                # passe « chroniqueur » (événements ordonnés du beat). Toutes deux
+                # NON streamées — on ne lit jamais leur output et on n'émet aucun
+                # `text` → une seule bulle ; leurs cartes sortent via deps.ui_events.
+                # Contexte = historique d'AVANT ce tour ; les entités du beat sont
+                # relues du graphe (list_entities).
+                extra_usages = []
+                for sub_agent, label in (
+                    (relation_agent, "relations"),
+                    (chronicle_agent, "événements"),
+                ):
+                    try:
+                        sub = await sub_agent.run(
+                            body.message, deps=deps, message_history=message_history
+                        )
+                        extra_usages.append(sub.usage())
+                        for event in drain_cards():
+                            yield event
+                    except Exception:
+                        logger.exception("passe %s échouée (tour non bloqué)", label)
 
-                usage = run.usage()
+                usages = [run.usage(), *extra_usages]
                 yield ServerSentEvent(
                     data=json.dumps(
                         {
-                            "request_tokens": (usage.request_tokens or 0)
-                            + (rel_usage.request_tokens or 0 if rel_usage else 0),
-                            "response_tokens": (usage.response_tokens or 0)
-                            + (rel_usage.response_tokens or 0 if rel_usage else 0),
-                            "total_tokens": (usage.total_tokens or 0)
-                            + (rel_usage.total_tokens or 0 if rel_usage else 0),
+                            "request_tokens": sum(u.request_tokens or 0 for u in usages),
+                            "response_tokens": sum(u.response_tokens or 0 for u in usages),
+                            "total_tokens": sum(u.total_tokens or 0 for u in usages),
                         }
                     ),
                     event="usage",
@@ -115,35 +158,11 @@ async def atelier_chat(
                 yield ServerSentEvent(data=json.dumps(serialized), event="history")
 
                 # Check de cohérence sur les entités touchées ce tour. Best-effort :
-                # tout est isolé dans un try/except interne pour qu'une panne du
-                # judge n'empêche jamais l'événement `done`.
+                # isolé dans un try/except pour qu'une panne du judge n'empêche
+                # jamais l'événement `done`.
                 try:
-                    seen: set[str] = set()
-                    for touched in deps.touched_ids:
-                        verdict = await consistency_check(
-                            driver, touched, deps.write_log, choice.profile
-                        )
-                        if not verdict.contradiction:
-                            continue
-                        # `message` = phrase courte pour l'auteur ; `reason` (le
-                        # brouillon du judge) ne sert que de filet de secours.
-                        alert_body = verdict.message.strip() or verdict.reason
-                        # Dédup : une même contradiction remonte souvent depuis
-                        # plusieurs entités touchées (voisinages qui se recouvrent)
-                        # → une seule carte par tour.
-                        key = alert_body.lower()
-                        if key in seen:
-                            continue
-                        seen.add(key)
-                        yield ServerSentEvent(
-                            data=json.dumps({
-                                "kind": "alert",
-                                "title": "Incohérence possible",
-                                "body": alert_body,
-                                "status": "open",
-                            }),
-                            event="alert",
-                        )
+                    async for alert in _consistency_alerts(driver, deps, choice.profile):
+                        yield alert
                 except Exception:
                     logger.exception("consistency_check a échoué (tour non bloqué)")
 

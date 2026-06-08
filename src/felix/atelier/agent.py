@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from felix.core import CHANTIER_PROFILE, SCENARIO_PROFILE, create_core_agent
-from felix.core.agent import RELATION_SYSTEM_PROMPT
-from felix.core.tools import list_entities
+from felix.core.agent import CHRONICLE_SYSTEM_PROMPT, RELATION_SYSTEM_PROMPT
+from felix.core.tools import add_event, describe_schema, find_entity, list_entities
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -56,6 +56,17 @@ relations qui les lient pour ce passage, avec add_relation, en réutilisant les
 types de relation canoniques du domaine (CAPITALES anglaises). N'ajoute, ne
 modifie, ne supprime AUCUNE entité ; si une entité te semble manquante, ignore-la.
 Procède relation par relation, puis confirme en une phrase.
+"""
+
+# Passe 3 dédiée : le « chroniqueur ». Transforme le passage en ÉVÉNEMENTS ordonnés
+# (état vs événement) — un beat d'action ne doit plus s'écraser dans une prop. Job
+# unique = add_event ; l'ordre/NEXT/INVOLVES sont gérés en code par le tool.
+CHRONICLE_PERSONA = """\
+Tu es le chroniqueur du récit. Les entités de ce passage existent DÉJÀ dans la base
+(consulte-les avec list_entities). Ta SEULE tâche : repérer les 1 à 3 actions-clés
+qui SE PASSENT dans ce passage et les enregistrer avec add_event, en y reliant les
+participants existants. Tu ne touches à rien d'autre ; un état durable n'est pas un
+événement et ne te concerne pas.
 """
 
 
@@ -102,3 +113,22 @@ def build_relation_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
 
 def create_relation_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
     return build_relation_agent(ATELIER_CHOICES[profile_key])
+
+
+def build_chronicle_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
+    """3e passe « chroniqueur » : transforme le beat en événements ordonnés. Outils
+    RESTREINTS (lecture + add_event) — add_event absorbe les participants manquants,
+    donc pas de boucle sur outil absent (contrairement au piège du relieur restreint
+    qui réclamait add_entity)."""
+    agent = create_core_agent(
+        profile=choice.profile,
+        persona=CHRONICLE_PERSONA,
+        system_prompt=CHRONICLE_SYSTEM_PROMPT,
+        tools=(describe_schema, find_entity, add_event),
+    )
+    agent.tool(list_entities)
+    return agent
+
+
+def create_chronicle_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
+    return build_chronicle_agent(ATELIER_CHOICES[profile_key])

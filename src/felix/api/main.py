@@ -18,7 +18,12 @@ from felix.agent.chat_agent import create_agent
 from felix.api.deps import ImportState
 from felix.api.routes import atelier, characters, chat, checks, export, groups, ingest, locations, timeline
 from felix.api.routes import settings as settings_routes
-from felix.atelier.agent import ATELIER_CHOICES, build_atelier_agent, build_relation_agent
+from felix.atelier.agent import (
+    ATELIER_CHOICES,
+    build_atelier_agent,
+    build_chronicle_agent,
+    build_relation_agent,
+)
 from felix.config import settings
 from felix.graph.driver import close_driver, get_driver, setup_constraints
 from felix.vectorstore.store import get_collection
@@ -42,6 +47,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     }
     app.state.relation_agents = {
         key: build_relation_agent(choice) for key, choice in ATELIER_CHOICES.items()
+    }
+    app.state.chronicle_agents = {
+        key: build_chronicle_agent(choice) for key, choice in ATELIER_CHOICES.items()
     }
     app.state.import_state = ImportState()
 

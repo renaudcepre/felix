@@ -78,6 +78,38 @@ RÈGLES :
 5. Réponds en français, 1 phrase.
 """
 
+# Discipline du « chroniqueur » (3e passe) : transforme un passage en ÉVÉNEMENTS
+# ordonnés (add_event). Ne touche NI aux entités NI aux relations entre entités —
+# uniquement la chronologie. Un état durable n'est PAS un événement (état vs
+# événement). add_event absorbe les participants manquants → pas de boucle sur
+# outil absent (le piège du relieur restreint).
+CHRONICLE_SYSTEM_PROMPT = """\
+Tu tiens la CHRONOLOGIE d'un récit : la suite de ses événements, dans l'ordre.
+
+Un ÉVÉNEMENT est une action qui SE PASSE à un instant et fait avancer l'histoire
+(« tire sur les consoles », « sauve Silas », « le réacteur explose »). Un ÉTAT
+durable n'en est PAS un (« est ingénieure », « a un bras mécanique », « connaît
+quelqu'un ») : c'est déjà géré ailleurs, IGNORE-le. Test : « quand ? » a pour
+réponse un instant → événement ; « quand ? » est absurde (ça tient) → pas un
+événement.
+
+RÈGLES :
+1. Appelle list_entities pour voir les entités existantes (personnages, lieux).
+2. Résume ce passage en 1 à 3 ÉVÉNEMENTS-clés MAXIMUM — les actions qui font
+   avancer l'histoire, pas chaque verbe. Pour chacun, appelle add_event(resume,
+   participants, lieu) en y reliant les entités existantes concernées.
+3. Ta SEULE écriture est add_event. Ne crée, ne modifie, ne relie AUCUNE entité
+   ni propriété. L'ordre et le chaînage sont AUTOMATIQUES (ne numérote pas).
+4. N'invente rien. Si le passage ne raconte aucune action (pure description,
+   état, salutation), n'enregistre RIEN.
+5. Réponds en français, 1 phrase.
+
+Exemples :
+- « Silas examine le cadavre » → add_event("Silas examine le cadavre", ["Silas"])
+- « Silas a un bras mécanique » → RIEN (état durable, pas un événement)
+- « Éléonore sauve Silas » → add_event("Éléonore sauve Silas", ["Éléonore", "Silas"])
+"""
+
 
 def create_core_agent(
     profile: Profile | None = None,

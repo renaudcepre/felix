@@ -43,6 +43,10 @@ class Profile:
     # L'anglais UPPER_SNAKE (convention Neo4j) a des priors plus stables qu'une
     # locution verbale FR → réduit la dérive des noms de relations.
     relation_vocabulary: tuple[tuple[str, str], ...] = ()
+    # Le domaine réserve le type 'evenement' au mécanisme add_event (ordre/NEXT) :
+    # add_entity refuse alors d'en créer un comme entité plate (sinon node hors
+    # chaîne, hors chronologie). False = domaine sans chronologie dédiée.
+    manages_events: bool = False
 
     def render_prompt_block(self) -> str:
         """Bloc concaténé au system prompt — volontairement compact (petit modèle)."""
@@ -98,10 +102,6 @@ SCENARIO_PROFILE = Profile(
             "Une ville, un bâtiment, une pièce sont des lieux.",
         ),
         EntityType(
-            "evenement", ("date", "lieu", "resume"),
-            "Un événement se DATE : pose sa date en propriété.",
-        ),
-        EntityType(
             "objet", ("description", "proprietaire"),
             "Une arme, un indice, un objet de l'intrigue.",
         ),
@@ -109,6 +109,13 @@ SCENARIO_PROFILE = Profile(
     modeling_rules=(
         "Une caractéristique d'une chose (âge, couleur, rôle…) est une PROPRIÉTÉ, "
         "jamais une entité séparée.",
+        "Une ACTION qui se passe à un instant — qu'on la nomme par un verbe "
+        "(« tire », « verrouille », « sauve ») ou par un nom (« le sabotage », "
+        "« le piégeage ») — n'est NI une propriété NI une entité : c'est un "
+        "ÉVÉNEMENT, tenu à part dans la chronologie. Ne la range pas dans une prop "
+        "(elle serait écrasée au geste suivant) et n'en fais pas une entité. Une "
+        "propriété décrit ce qu'un personnage EST durablement (background, âge, "
+        "traits, rôle, vivant/mort).",
         "Quand deux personnages interagissent, crée la relation qui les lie.",
         "Un fait qui DIVERGE d'une valeur déjà posée se range sous une NOUVELLE "
         "clé, on n'écrase pas. Ex. : alibi='chez sa mère à Marseille' existe ; "
@@ -136,6 +143,7 @@ SCENARIO_PROFILE = Profile(
         ("PART_OF", "fait partie d'un ensemble plus grand"),
         ("WITNESSES", "découvre, observe, examine"),
     ),
+    manages_events=True,
 )
 
 

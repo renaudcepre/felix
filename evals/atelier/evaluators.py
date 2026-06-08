@@ -196,10 +196,13 @@ def relations_present(ctx: EvalContext, pairs: str = "", min_recall: float = 1.0
     return RelResult(rel_recall=score, rel_ok=score >= min_recall, missing_rels=", ".join(missing))
 
 
-# Formes normalisées (minuscules) du SCENARIO_PROFILE.relation_vocabulary.
+# Formes normalisées (minuscules) du SCENARIO_PROFILE.relation_vocabulary, PLUS les
+# relations SYSTÈME créées en code par add_event (INVOLVES/NEXT) : elles ne sont pas
+# une dérive de nommage du LLM, donc ne doivent pas polluer rel_vocab_coverage.
 CANONICAL_RELS = {
     "located_at", "member_of", "owns", "knows", "allied_with", "fights",
     "kills", "creates", "targets", "causes", "part_of", "witnesses",
+    "involves", "next",
 }
 
 
@@ -225,6 +228,113 @@ def rel_vocab_coverage(ctx: EvalContext, min_coverage: float = 0.0) -> RelVocabR
         rel_type_count=float(len(distinct)),
         vocab_ok=coverage >= min_coverage,
         drift_detail=f"hors-vocab : {', '.join(off)}" if off else "",
+    )
+
+
+def _events(ctx: EvalContext) -> list[dict]:
+    """Nodes :GenEntity de type 'evenement' (la chronologie du récit)."""
+    return [
+        e for e in ctx.output.entities
+        if "evenement" in normalize(str(e.get("entity_type", "")))
+    ]
+
+
+@dataclass
+class EventsPresentResult:
+    event_recall: Annotated[float, Metric]
+    event_count: Annotated[float, Metric]
+    events_ok: Annotated[bool, Verdict]
+    missing_events: Annotated[str, Reason] = ""
+
+
+@evaluator
+def graph_has_events(ctx: EvalContext, resumes: str = "", min_recall: float = 1.0) -> EventsPresentResult:
+    """Recall des actions attendues (CSV de sous-chaînes) parmi les nodes evenement.
+    Un beat d'action doit produire un node evenement dont le `resume` contient
+    l'action — pas un écrasement de prop sur le personnage (la perte de chrono)."""
+    events = _events(ctx)
+    blobs = [normalize(f"{e.get('resume', '')} {e.get('name', '')}") for e in events]
+    expected = [normalize(s.strip()) for s in resumes.split(",") if s.strip()]
+    matched = [x for x in expected if any(x in b for b in blobs)]
+    recall = len(matched) / len(expected) if expected else (1.0 if events else 0.0)
+    missing = [x for x in expected if x not in matched]
+    return EventsPresentResult(
+        event_recall=recall,
+        event_count=float(len(events)),
+        events_ok=recall >= min_recall and bool(events),
+        missing_events=", ".join(missing),
+    )
+
+
+@dataclass
+class EventsOrderedResult:
+    chain_len: Annotated[float, Metric]
+    stray_events: Annotated[float, Metric]
+    ordered_ok: Annotated[bool, Verdict]
+    ordered_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def events_ordered(ctx: EvalContext, min_count: int = 2) -> EventsOrderedResult:
+    """La CHRONOLOGIE = la colonne d'events porteurs d'un `ordre` (créés par add_event) :
+    >= min_count, des `ordre` distincts, une chaîne NEXT complète (count-1). C'est ça
+    qu'on juge (gate). Un node 'evenement' SANS ordre (passe 1/relieur qui déborde
+    malgré la garde add_entity) n'est pas la chronologie : compté en métrique
+    `stray_events` (visible, non-bloquant) — la dérive de coordination reste suivie
+    sans flaker l'eval du modèle événementiel."""
+    events = _events(ctx)
+    chain = [e for e in events if e.get("ordre") is not None]
+    count = len(chain)
+    ordres = [e["ordre"] for e in chain]
+    next_rels = [
+        r for r in ctx.output.relations
+        if normalize(str(r.get("rel_type", ""))) == "next"
+    ]
+    stray = len(events) - count
+    problems = []
+    if count < min_count:
+        problems.append(f"{count} event(s) ordonné(s) < {min_count}")
+    if len(set(ordres)) != count:
+        problems.append("ordres non distincts")
+    if count >= 1 and len(next_rels) != count - 1:
+        problems.append(f"chaîne NEXT incomplète ({len(next_rels)} pour {count})")
+    detail = "; ".join(problems)
+    if stray:
+        detail += ("; " if detail else "") + f"{stray} stray(s) sans ordre (non-bloquant)"
+    return EventsOrderedResult(
+        chain_len=float(count),
+        stray_events=float(stray),
+        ordered_ok=not problems,
+        ordered_detail=detail,
+    )
+
+
+@dataclass
+class EventsInvolveResult:
+    involve_recall: Annotated[float, Metric]
+    involve_ok: Annotated[bool, Verdict]
+    involve_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def events_involve(ctx: EvalContext, who: str = "", min_recall: float = 1.0) -> EventsInvolveResult:
+    """Fraction des events qui pointent vers `who` via une relation INVOLVES."""
+    events = _events(ctx)
+    event_ids = {normalize(str(e.get("id", ""))) for e in events}
+    target = normalize(who)
+    involving = {
+        normalize(str(r.get("from", "")))
+        for r in ctx.output.relations
+        if normalize(str(r.get("rel_type", ""))) == "involves"
+        and (target in normalize(str(r.get("to", "")))
+             or normalize(str(r.get("to", ""))) in target)
+    }
+    hit = involving & event_ids
+    recall = len(hit) / len(events) if events else 0.0
+    return EventsInvolveResult(
+        involve_recall=recall,
+        involve_ok=recall >= min_recall and bool(events),
+        involve_detail=f"{len(hit)}/{len(events)} events relient {who}" if events else "aucun event",
     )
 
 

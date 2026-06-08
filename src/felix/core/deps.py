@@ -6,6 +6,7 @@ sous le nom AtelierDeps). Elle porte le driver, les cartes UI, le journal des
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -32,3 +33,9 @@ class GenericDeps:
     touched_ids: set[str] = field(default_factory=set)
     # Profil de domaine optionnel : oriente describe_schema, le prompt et le check.
     profile: Profile | None = None
+    # Sérialise l'allocation d'`ordre` d'add_event : un même run peut émettre
+    # plusieurs add_event dans une seule réponse → pydantic-ai les exécute en
+    # parallèle, et un max(ordre)+1 concurrent collisionnerait sur le même id.
+    event_seq_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock, repr=False, compare=False
+    )
