@@ -179,7 +179,7 @@ SCENARIO_PROFILE = Profile(
     "événements et objets.",
     entity_types=(
         EntityType(
-            "personnage", ("background", "age", "traits", "arc", "alibi"),
+            "personnage", ("background", "age", "traits", "alibi"),
             "Un alibi, un trait ou un âge est une PROPRIÉTÉ du personnage, pas une entité.",
         ),
         EntityType(
@@ -206,6 +206,14 @@ SCENARIO_PROFILE = Profile(
         "(elle serait écrasée au geste suivant) et n'en fais pas une entité. Une "
         "propriété décrit ce qu'un personnage EST durablement (background, âge, "
         "traits, rôle, vivant/mort).",
+        "Ce qu'un personnage FAIT ou ressent dans un beat (« sourit », « rouge de "
+        "colère », « serre le tract », « avale une pilule », « ferme les yeux ») est "
+        "une ACTION → un ÉVÉNEMENT, et n'enrichit AUCUNE propriété. En particulier "
+        "n'ALLONGE JAMAIS `traits` avec une action : `traits` ne porte que le DURABLE "
+        "(« colonial pur suif », « cheveux gris », « parle arabe couramment »). Sa "
+        "trajectoire se lit dans la chronologie, pas dans une prop (« arc », "
+        "« situation »…). Si le beat ne t'apprend aucun fait durable NOUVEAU sur un "
+        "personnage existant, ne le mets PAS à jour.",
         "Quand deux personnages interagissent, crée la relation qui les lie.",
         "Un fait qui DIVERGE d'une valeur déjà posée se range sous une NOUVELLE "
         "clé, on n'écrase pas. Ex. : alibi='chez sa mère à Marseille' existe ; "

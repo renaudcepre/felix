@@ -148,49 +148,97 @@ async def add_entity(
     return f"Entité créée : {name} (id: {entity_id}, type: {entity_type})."
 
 
+def plan_property_update(
+    existing: dict, props: dict[str, str], *, is_correction: bool
+) -> tuple[dict[str, str], list[str]]:
+    """Partitionne les props d'un update_entity : ce qu'on APPLIQUE vs ce qu'on BLOQUE.
+
+    Règle (cf. SYSTEM_PROMPT 4) : on n'ÉCRASE JAMAIS une valeur existante non-vide par
+    une valeur différente — SAUF correction explicite de l'auteur (``is_correction``).
+    Une clé NOUVELLE, une valeur IDENTIQUE, ou une clé vide/absente passent toujours
+    (enrichissement additif). Bloquer l'écrasement empêche qu'une action du beat
+    (« sourit », « ferme les yeux ») détruise un trait durable. Pur → testable sans Neo4j.
+    """
+    to_set: dict[str, str] = {}
+    blocked: list[str] = []
+    for key, value in props.items():
+        old = existing.get(key)
+        overwrites = old is not None and str(old) != "" and str(old) != str(value)
+        if overwrites and not is_correction:
+            blocked.append(key)
+        else:
+            to_set[key] = value
+    return to_set, blocked
+
+
 async def update_entity(
-    ctx: RunContext[GenericDeps], name: str, props: dict[str, str]
+    ctx: RunContext[GenericDeps], name: str, props: dict[str, str],
+    is_correction: bool = False,
 ) -> str:
     """Ajoute ou met à jour des propriétés d'une entité existante.
+
+    N'ÉCRASE PAS une valeur déjà posée : une action qui se passe est un ÉVÉNEMENT (pas
+    une propriété), et un fait durable nouveau se range sous une AUTRE clé. Ne mets
+    ``is_correction=True`` que si l'auteur CORRIGE explicitement une valeur (« en fait »,
+    « plutôt », « correction ») — alors seulement l'ancienne valeur est remplacée.
 
     Args:
         name: Nom ou id de l'entité existante.
         props: Propriétés à poser. RÉUTILISER les noms de propriétés existants
             du schéma quand le sens correspond (ne pas créer de synonyme).
+        is_correction: True UNIQUEMENT pour une correction explicite de l'auteur
+            (autorise alors le remplacement d'une valeur existante).
     """
     node = await find_node(ctx.deps.driver, name)
     if not node:
         return f"« {name} » n'existe pas — utilise add_entity pour la créer."
     clean = {k: v for k, v in props.items() if k not in RESERVED_KEYS}
+    to_set, blocked = plan_property_update(node, clean, is_correction=is_correction)
 
-    # Journal du delta AVANT application — un écrasement de valeur est une
+    # Journal du delta AVANT application — un écrasement (de correction) est une
     # information que le check de cohérence doit voir (finding round 1).
     replaced = []
-    for key, value in clean.items():
+    for key, value in to_set.items():
         old = node.get(key)
-        if old is not None and str(old) != str(value):
-            ctx.deps.write_log.append(f"{node['id']}.{key} : {old!r} REMPLACÉ PAR {value!r}")
+        if old is not None and str(old) != "" and str(old) != str(value):
+            ctx.deps.write_log.append(
+                f"{node['id']}.{key} : {old!r} REMPLACÉ PAR {value!r} (correction)")
             replaced.append(f"{key} (remplaçait : {old!r})")
         else:
             ctx.deps.write_log.append(f"{node['id']}.{key} = {value!r} (nouveau)")
 
-    async with ctx.deps.driver.session() as session:
-        await session.run(
-            "MATCH (e:GenEntity {id: $id}) SET e += $props",
-            id=node["id"], props=clean,
+    if to_set:
+        async with ctx.deps.driver.session() as session:
+            await session.run(
+                "MATCH (e:GenEntity {id: $id}) SET e += $props",
+                id=node["id"], props=to_set,
+            )
+        ctx.deps.ui_events.append(
+            ToolCard(title="Entité mise à jour", subject=node["name"],
+                     field=node.get("entity_type", "?"),
+                     added=fmt_props(to_set, skip_reserved=False))
         )
-    ctx.deps.ui_events.append(
-        ToolCard(title="Entité mise à jour", subject=node["name"],
-                 field=node.get("entity_type", "?"),
-                 added=fmt_props(clean, skip_reserved=False))
-    )
-    ctx.deps.touched_ids.add(node["id"])
-    # Un ÉCRASEMENT de valeur peut masquer une contradiction (cf. write_log) →
-    # candidat au check. Une prop purement additive, non (rien à contredire).
-    if replaced:
-        ctx.deps.check_candidates.add(node["id"])
-    suffix = f" — attention, valeurs remplacées : {', '.join(replaced)}" if replaced else ""
-    return f"{node['name']} mis à jour : {fmt_props(clean, skip_reserved=False)}.{suffix}"
+        ctx.deps.touched_ids.add(node["id"])
+        # Un ÉCRASEMENT (correction) peut masquer une contradiction → candidat au check.
+        # Une prop purement additive, non (rien à contredire).
+        if replaced:
+            ctx.deps.check_candidates.add(node["id"])
+
+    # Écrasement refusé : message GUIDANT (pas d'exception → pas de boucle ModelRetry).
+    if blocked:
+        keys = ", ".join(f"« {k} »" for k in blocked)
+        guide = (
+            f"Je n'écrase pas {keys} (déjà renseigné). Si c'est une action qui se passe, "
+            f"c'est un ÉVÉNEMENT (pas une propriété) ; si c'est un fait DURABLE nouveau, "
+            f"range-le sous une AUTRE clé ; si l'auteur corrige explicitement, rappelle "
+            f"update_entity avec is_correction=true."
+        )
+        if to_set:
+            return f"{node['name']} : {fmt_props(to_set, skip_reserved=False)} ajouté. {guide}"
+        return guide
+
+    suffix = f" — valeurs corrigées : {', '.join(replaced)}" if replaced else ""
+    return f"{node['name']} mis à jour : {fmt_props(to_set, skip_reserved=False)}.{suffix}"
 
 
 async def add_relation(

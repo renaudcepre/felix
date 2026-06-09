@@ -13,7 +13,21 @@ from typing import TYPE_CHECKING
 
 from felix.core import CHANTIER_PROFILE, SCENARIO_PROFILE, create_core_agent
 from felix.core.agent import CHRONICLE_SYSTEM_PROMPT, RELATION_SYSTEM_PROMPT
-from felix.core.tools import add_event, describe_schema, find_entity, list_entities
+from felix.core.tools import (
+    add_entity,
+    add_event,
+    add_relation,
+    describe_schema,
+    find_entity,
+    list_entities,
+)
+
+# Outils du relieur (passe 2) : le noyau SANS update_entity. Sa tâche est de RELIER
+# (add_relation), pas de toucher aux propriétés — le churn de props (ex. `arc`
+# réécrit à chaque beat) venait en partie de re-updates ici, par-dessus la passe 1.
+# Il garde add_entity en BACKFILL (relier une entité ratée par la 1re passe sans
+# boucler sur un outil manquant — le piège du relieur trop restreint).
+RELATION_TOOLS = (describe_schema, find_entity, add_entity, add_relation)
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -99,13 +113,15 @@ def create_atelier_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDep
 
 
 def build_relation_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
-    """2e passe « relieur » : noyau complet (5 tools) mais discipline + persona qui
-    priorisent add_relation. Il garde add_entity en filet (backfill d'une entité
-    ratée par la 1re passe) au lieu de boucler en erreur sur un outil manquant."""
+    """2e passe « relieur » : outils RESTREINTS (RELATION_TOOLS = noyau sans
+    update_entity) + discipline/persona qui priorisent add_relation. Sans
+    update_entity, il ne PEUT plus re-toucher les props (fin du churn) ; il garde
+    add_entity en filet (backfill d'une entité ratée par la 1re passe)."""
     agent = create_core_agent(
         profile=choice.profile,
         persona=RELATION_PERSONA,
         system_prompt=RELATION_SYSTEM_PROMPT,
+        tools=RELATION_TOOLS,
     )
     agent.tool(list_entities)
     return agent
