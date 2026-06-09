@@ -7,6 +7,10 @@ const props = withDefaults(
 
 interface IconDef { paths: string[], filled?: boolean, stroke?: number }
 
+// Repli typé non-optionnel : sert de défaut au computed (sinon l'accès indexé
+// rend IconDef | undefined sous noUncheckedIndexedAccess).
+const FALLBACK: IconDef = { paths: ['M12 12h.01'], stroke: 3 }
+
 const ICONS: Record<string, IconDef> = {
   send: { paths: ['M12 19V5 M6 11l6-6 6 6'] },
   felix: { paths: ['M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z'] },
@@ -21,10 +25,10 @@ const ICONS: Record<string, IconDef> = {
   check: { paths: ['M5 12.5l4.5 4.5L19 7'] },
   pencil: { paths: ['M12 20h9', 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z'] },
   people: { paths: ['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2', 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8', 'M22 21v-2a4 4 0 0 0-3-3.9', 'M16 3.1A4 4 0 0 1 16 11'] },
-  dot: { paths: ['M12 12h.01'], stroke: 3 },
+  dot: FALLBACK,
 }
 
-const icon = computed(() => ICONS[props.name] ?? ICONS.dot)
+const icon = computed<IconDef>(() => ICONS[props.name] ?? FALLBACK)
 const fill = computed(() => (icon.value.filled ? 'currentColor' : 'none'))
 const strokeColor = computed(() => (icon.value.filled ? 'none' : 'currentColor'))
 const strokeWidth = computed(() => icon.value.stroke ?? props.stroke)

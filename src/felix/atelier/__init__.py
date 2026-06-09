@@ -1,5 +1,5 @@
 """Bot B — copilote d'écriture conversationnel (atelier).
 
-Module séparé de felix.agent (le chatbot lecture-seule historique, conservé
-comme référence) : ici les tools écrivent le world model au fil de la parole.
+Les tools écrivent le world model schemaless (:GenEntity/:REL) au fil de la
+parole, via le noyau générique felix.core.
 """

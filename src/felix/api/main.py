@@ -14,9 +14,7 @@ logger = logging.getLogger(__name__)
 # Must be called before pydantic-ai imports so logfire can instrument the models.
 setup_logfire()
 
-from felix.agent.chat_agent import create_agent
-from felix.api.deps import ImportState
-from felix.api.routes import atelier, characters, chat, checks, entities, export, groups, ingest, locations, timeline
+from felix.api.routes import atelier, entities
 from felix.api.routes import settings as settings_routes
 from felix.atelier.agent import (
     ATELIER_CHOICES,
@@ -37,11 +35,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     driver = get_driver()
     await setup_constraints(driver)
     collection = get_collection()
-    agent = create_agent()
 
     app.state.driver = driver
     app.state.collection = collection
-    app.state.agent = agent
     app.state.atelier_agents = {
         key: build_atelier_agent(choice) for key, choice in ATELIER_CHOICES.items()
     }
@@ -51,7 +47,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.chronicle_agents = {
         key: build_chronicle_agent(choice) for key, choice in ATELIER_CHOICES.items()
     }
-    app.state.import_state = ImportState()
 
     logger.info("Felix API started — model=%s, base_url=%s", settings.llm_model, settings.llm_base_url)
     yield
@@ -70,16 +65,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(characters.router)
-app.include_router(checks.router)
-app.include_router(groups.router)
-app.include_router(locations.router)
-app.include_router(timeline.router)
-app.include_router(chat.router)
 app.include_router(atelier.router)
 app.include_router(entities.router)
-app.include_router(ingest.router)
-app.include_router(export.router)
 app.include_router(settings_routes.router)
 
 

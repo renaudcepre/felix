@@ -18,20 +18,12 @@ def get_driver(
 
 
 async def setup_constraints(driver: AsyncDriver) -> None:
-    """Create all constraints and indexes if they don't exist."""
+    """Create constraints and indexes if they don't exist.
+
+    Modèle 100 % schemaless : une seule contrainte d'unicité sur l'id des
+    :GenEntity. Les anciennes contraintes legacy (:Character/:Scene/…) déjà
+    créées en base sont inertes (plus aucun code ne les lit)."""
     statements = [
-        "CREATE CONSTRAINT char_id_unique   IF NOT EXISTS FOR (c:Character)    REQUIRE c.id IS UNIQUE",
-        "CREATE CONSTRAINT loc_id_unique    IF NOT EXISTS FOR (l:Location)      REQUIRE l.id IS UNIQUE",
-        "CREATE CONSTRAINT scene_id_unique  IF NOT EXISTS FOR (s:Scene)         REQUIRE s.id IS UNIQUE",
-        "CREATE CONSTRAINT event_id_unique  IF NOT EXISTS FOR (e:TimelineEvent) REQUIRE e.id IS UNIQUE",
-        "CREATE CONSTRAINT issue_id_unique  IF NOT EXISTS FOR (i:Issue)         REQUIRE i.id IS UNIQUE",
-        "CREATE CONSTRAINT fact_id_unique   IF NOT EXISTS FOR (f:Fact)          REQUIRE f.id IS UNIQUE",
-        "CREATE INDEX char_name  IF NOT EXISTS FOR (c:Character)    ON (c.name)",
-        "CREATE INDEX scene_date IF NOT EXISTS FOR (s:Scene)        ON (s.date)",
-        "CREATE INDEX scene_era  IF NOT EXISTS FOR (s:Scene)        ON (s.era)",
-        "CREATE INDEX issue_type IF NOT EXISTS FOR (i:Issue)        ON (i.type)",
-        "CREATE INDEX fact_type  IF NOT EXISTS FOR (f:Fact)         ON (f.type)",
-        "CREATE CONSTRAINT beat_id_unique IF NOT EXISTS FOR (b:NarrativeBeat) REQUIRE b.id IS UNIQUE",
         "CREATE CONSTRAINT genentity_id_unique IF NOT EXISTS FOR (e:GenEntity) REQUIRE e.id IS UNIQUE",
     ]
     async with driver.session() as session:

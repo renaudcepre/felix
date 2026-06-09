@@ -40,7 +40,7 @@ def _props(entity: dict) -> dict:
 @router.get("")
 async def list_entities(
     driver: Neo4jDriver,
-    type: str | None = Query(default=None),  # noqa: A002 — paramètre d'URL public
+    type: str | None = Query(default=None),  # paramètre d'URL public (type d'entité)
 ) -> list[EntitySummary]:
     """Entités filtrées par `entity_type`. Sans filtre : tout sauf les événements
     (la chronologie n'est pas une liste de fiches)."""

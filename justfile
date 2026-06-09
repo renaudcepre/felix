@@ -27,11 +27,7 @@ web:
 test *args:
     uv run protest run tests.session:session {{ args }}
 
-# Evals via protest — options: --tag pipeline|ingest|chatbot, --last-failed, -n 4
-evals *args:
-    uv run protest eval evals.session:session {{ args }}
-
-# Evals du bot B (atelier) — session séparée ; wipe le graphe, ne pas lancer avec `just evals`
+# Evals du bot B (atelier) — session séparée ; wipe le graphe
 evals-atelier *args:
     uv run protest eval evals.atelier.session:session {{ args }}
 
@@ -53,10 +49,6 @@ db-clean:
     rm -rf {{ chroma_path }}
     docker compose exec neo4j cypher-shell -u neo4j -p felixpassword "MATCH (n) DETACH DELETE n"
     @echo "ChromaDB and Neo4j cleaned."
-
-# Export graph DB vers exports/<timestamp>.json
-export:
-    uv run felix-export
 
 # Archive database then clean
 db-archive:

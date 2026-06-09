@@ -27,9 +27,7 @@ dependencies = [
 ]
 
 [project.scripts]
-felix = "felix.cli:main"
 felix-api = "felix.api.main:cli"
-felix-export = "felix.cli:export"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -71,9 +69,6 @@ ignore = [
     "PLR0913",  # Many arguments in parametrized tests
     "S604",     # shell=True in tests
 ]
-"src/felix/cli.py" = [
-    "T201",     # print allowed in CLI
-]
 "scripts/**" = [
     "T201",     # print allowed in scripts
 ]
@@ -81,9 +76,6 @@ ignore = [
     "T201",      # print allowed in eval scripts
     "PLR2004",   # magic values in comparisons
     "S101",      # assert allowed
-]
-"src/felix/agent/tools.py" = [
-    "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
 ]
 "src/felix/core/tools.py" = [
     "TCH001", "TCH002",  # pydantic-ai resolves type hints at runtime
