@@ -219,6 +219,20 @@ async def add_relation(
     if not a or not b:
         missing = from_name if not a else to_name
         return f"« {missing} » n'existe pas — crée d'abord l'entité avec add_entity."
+
+    # Typage du domaine : vocab dur + pas de boucle + domaine/portée (refus des seules
+    # violations CLAIRES). Refus = message guidant renvoyé tel quel (pas d'écriture, pas
+    # d'exception → l'agent rejoue avec un type/sens valides, sans boucle ModelRetry).
+    if ctx.deps.profile is not None:
+        problem = ctx.deps.profile.validate_relation(
+            rel_type,
+            a.get("entity_type", ""),
+            b.get("entity_type", ""),
+            same_node=a["id"] == b["id"],
+        )
+        if problem:
+            return problem
+
     async with ctx.deps.driver.session() as session:
         await session.run(
             """
