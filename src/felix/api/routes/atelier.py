@@ -26,8 +26,10 @@ from felix.api.deps import (
     Neo4jDriver,
     RelationAgentsDep,
 )
+from felix.api.history import window_history_by_tokens
 from felix.api.models import ChatRequest
 from felix.atelier.agent import ATELIER_CHOICES, DEFAULT_PROFILE
+from felix.config import settings
 from felix.core import GenericDeps, consistency_check
 
 if TYPE_CHECKING:
@@ -109,7 +111,12 @@ async def atelier_chat(
 
     message_history = None
     if body.message_history:
-        message_history = ModelMessagesTypeAdapter.validate_python(body.message_history)
+        full = ModelMessagesTypeAdapter.validate_python(body.message_history)
+        # Borne l'historique threadé par budget de tokens : on garde les tours
+        # récents, le graphe (list_entities/find_entity) sert de mémoire longue.
+        # Au niveau route plutôt que via history_processors → borne AUSSI le payload
+        # SSE `history` renvoyé au front (réseau + mémoire front), pas que l'input modèle.
+        message_history = window_history_by_tokens(full, settings.history_token_budget)
 
     async def stream_pass(
         sub_agent: Agent, history: list | None, *, stream_text: bool, holder: dict

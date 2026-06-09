@@ -38,6 +38,10 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    # Budget de tokens de l'historique LLM threadé entre tours (le graphe sert de
+    # mémoire longue au-delà). Borne le coût/tour à l'échelle ; cf. felix.api.history.
+    history_token_budget: int = 8000
+
     segmenter_max_tokens: int = 2500
     segmenter_overlap_ratio: float = 0.20
     segmenter_threshold: float = 0.45

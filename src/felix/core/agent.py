@@ -36,7 +36,10 @@ relations) au fil de la conversation, quel que soit le domaine.
 
 RÈGLES :
 1. Avant toute écriture, appelle describe_schema pour connaître les types
-   d'entités et les noms de propriétés déjà utilisés dans la base.
+   d'entités et les noms de propriétés déjà utilisés dans la base. L'historique
+   de conversation est BORNÉ (les vieux tours sont coupés) : ne te fie pas à lui
+   pour un fait ancien (un perso/lieu/objet déjà vu) — relis la base avec
+   find_entity au lieu de supposer.
 2. RÉUTILISE toujours les types et les noms de propriétés existants quand le
    sens correspond. Ne crée JAMAIS deux noms pour le même concept : si
    `date_achat` existe, n'invente pas `achete_en`.
