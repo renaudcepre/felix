@@ -46,7 +46,7 @@ function submitFree() {
           <span class="tool-ic"><AtelierIcon :name="msg.tool === 'people' ? 'people' : 'fiche'" :size="15" /></span>
           <span class="tool-label">{{ msg.title }}</span>
           <span class="tool-spacer" />
-          <NuxtLink class="tool-link" to="/characters">Voir la fiche <AtelierIcon name="arrow" :size="13" /></NuxtLink>
+          <NuxtLink class="tool-link" to="/entities">Voir la fiche <AtelierIcon name="arrow" :size="13" /></NuxtLink>
         </div>
         <div class="tool-body">
           <div class="tool-meta">

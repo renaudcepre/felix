@@ -68,20 +68,16 @@ async def find_non_event(driver: AsyncDriver, ref: str) -> dict | None:
         return dict(record["e"]) if record else None
 
 
-async def entity_timeline(driver: AsyncDriver, ref: str) -> str:
-    """Chronologie ORDONNÉE des événements impliquant une entité (triés par `ordre`).
-
-    Le checker a besoin de l'ORDRE pour distinguer « agit APRÈS sa mort »
-    (contradiction) de « agit AVANT sa mort » (normal). `neighborhood` rend bien
-    ces événements, mais NON triés et noyés parmi KNOWS/LOCATED_AT : le juge ne
-    les ordonne pas de façon fiable. Ici on les isole et on les trie.
+async def entity_events(driver: AsyncDriver, ref: str) -> list[dict]:
+    """Événements ORDONNÉS impliquant une entité, en lignes brutes `{ordre, resume}`.
 
     Le sujet est résolu via `find_non_event` (un événement n'est jamais le sujet
-    d'une chronologie, seulement un maillon). Rend "" si l'entité est introuvable
-    ou n'a aucun événement → auto-désactivation (pas de gate profil)."""
+    d'une chronologie, seulement un maillon). Rend `[]` si l'entité est introuvable
+    ou n'a aucun événement. Source partagée de `entity_timeline` (texte pour le juge)
+    et de la fiche d'entité de l'API (chronologie affichée)."""
     subject = await find_non_event(driver, ref)
     if not subject:
-        return ""
+        return []
     async with driver.session() as session:
         result = await session.run(
             """
@@ -92,11 +88,26 @@ async def entity_timeline(driver: AsyncDriver, ref: str) -> str:
             """,
             id=subject["id"],
         )
-        rows = await result.data()
+        return [dict(r) for r in await result.data()]
+
+
+async def entity_timeline(driver: AsyncDriver, ref: str) -> str:
+    """Chronologie ORDONNÉE des événements impliquant une entité (triés par `ordre`).
+
+    Le checker a besoin de l'ORDRE pour distinguer « agit APRÈS sa mort »
+    (contradiction) de « agit AVANT sa mort » (normal). `neighborhood` rend bien
+    ces événements, mais NON triés et noyés parmi KNOWS/LOCATED_AT : le juge ne
+    les ordonne pas de façon fiable. Ici on les isole et on les trie.
+
+    Rend "" si l'entité est introuvable ou n'a aucun événement →
+    auto-désactivation (pas de gate profil)."""
+    rows = await entity_events(driver, ref)
     if not rows:
         return ""
+    subject = await find_non_event(driver, ref)
+    name = subject["name"] if subject else ref
     lines = [
-        f"CHRONOLOGIE de {subject['name']} "
+        f"CHRONOLOGIE de {name} "
         "(événements où il/elle est impliqué(e), dans l'ordre) :"
     ]
     lines.extend(f"  #{r['ordre']} : {r['resume']}" for r in rows)

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-const { loading: importLoading } = useImport()
 const settingsOpen = ref(false)
 
 const subtitles = [
@@ -15,37 +14,25 @@ function isUpperCase(char: string) {
 }
 
 const items = computed(() => [[{
-  label: 'Dashboard',
-  icon: 'i-lucide-layout-dashboard',
-  to: '/',
-}, {
   label: 'Chat',
   icon: 'i-lucide-message-square',
   to: '/chat',
 }, {
-  label: 'Characters',
+  label: 'Personnages',
   icon: 'i-lucide-users',
-  to: '/characters',
+  to: '/entities?type=personnage',
 }, {
-  label: 'Groups',
-  icon: 'i-lucide-shield',
-  to: '/groups',
-}, {
-  label: 'Locations',
+  label: 'Lieux',
   icon: 'i-lucide-map-pin',
-  to: '/locations',
+  to: '/entities?type=lieu',
 }, {
-  label: 'Timeline',
-  icon: 'i-lucide-calendar',
-  to: '/timeline',
+  label: 'Objets',
+  icon: 'i-lucide-box',
+  to: '/entities?type=objet',
 }, {
-  label: 'Import',
-  icon: importLoading.value ? 'i-lucide-loader-circle' : 'i-lucide-upload',
-  to: '/import',
-}, {
-  label: 'Issues',
-  icon: 'i-lucide-alert-triangle',
-  to: '/issues',
+  label: 'Entités',
+  icon: 'i-lucide-shapes',
+  to: '/entities',
 }]])
 </script>
 

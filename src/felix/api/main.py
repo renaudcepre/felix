@@ -16,7 +16,7 @@ setup_logfire()
 
 from felix.agent.chat_agent import create_agent
 from felix.api.deps import ImportState
-from felix.api.routes import atelier, characters, chat, checks, export, groups, ingest, locations, timeline
+from felix.api.routes import atelier, characters, chat, checks, entities, export, groups, ingest, locations, timeline
 from felix.api.routes import settings as settings_routes
 from felix.atelier.agent import (
     ATELIER_CHOICES,
@@ -77,6 +77,7 @@ app.include_router(locations.router)
 app.include_router(timeline.router)
 app.include_router(chat.router)
 app.include_router(atelier.router)
+app.include_router(entities.router)
 app.include_router(ingest.router)
 app.include_router(export.router)
 app.include_router(settings_routes.router)
