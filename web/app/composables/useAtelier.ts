@@ -34,6 +34,10 @@ export function useAtelier() {
 
   const messages = ref<AtelierMsg[]>([{ id: uid(), ...WELCOME }])
   const typing = ref(false)
+  // Activité en cours côté backend (passes relieur/chroniqueur, check de
+  // cohérence) — affichée près de l'indicateur de frappe pour ne pas laisser
+  // l'auteur devant un long silence pendant ces passes non streamées.
+  const phase = ref<string | null>(null)
   const messageHistory = ref<object[]>([])
 
   function append(msg: Omit<AtelierMsg, 'id'>): AtelierMsg {
@@ -70,8 +74,14 @@ export function useAtelier() {
 
       for await (const sse of parseSSEStream(response)) {
         switch (sse.event) {
+          case 'phase':
+            // Une passe non streamée commence (relieur / chroniqueur / check).
+            phase.value = sse.data
+            typing.value = true
+            break
           case 'text':
             typing.value = false
+            phase.value = null
             if (!current) current = append({ role: 'felix', kind: 'text', body: '' })
             current.body += sse.data
             messages.value = [...messages.value]
@@ -113,8 +123,9 @@ export function useAtelier() {
     }
     finally {
       typing.value = false
+      phase.value = null
     }
   }
 
-  return { messages, typing, sendMessage }
+  return { messages, typing, phase, sendMessage }
 }

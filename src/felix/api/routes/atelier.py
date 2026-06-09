@@ -105,6 +105,7 @@ async def atelier_chat(
 
     async def event_generator() -> AsyncGenerator[ServerSentEvent]:
         try:
+            yield ServerSentEvent(data="Felix écrit…", event="phase")
             async with agent.iter(
                 body.message, deps=deps, message_history=message_history
             ) as run:
@@ -120,27 +121,33 @@ async def atelier_chat(
                     yield event
 
                 # 2e passe « relieur » (relations lâchées en fin de tour) puis 3e
-                # passe « chroniqueur » (événements ordonnés du beat). Toutes deux
-                # NON streamées — on ne lit jamais leur output et on n'émet aucun
-                # `text` → une seule bulle ; leurs cartes sortent via deps.ui_events.
+                # passe « chroniqueur » (événements ordonnés du beat). NON streamées
+                # en TEXTE (on ne lit jamais leur output → une seule bulle), mais on
+                # itère par node (.iter) pour vider leurs cartes EN LIVE — sinon
+                # l'auteur ne voit rien pendant ces passes (parfois longues). Un
+                # marqueur `phase` annonce l'activité en cours.
                 # Contexte = historique d'AVANT ce tour ; les entités du beat sont
                 # relues du graphe (list_entities).
                 extra_usages = []
-                for sub_agent, label, hist in (
-                    (relation_agent, "relations", message_history),
+                for sub_agent, label, hist, phase_text in (
+                    (relation_agent, "relations", message_history, "Felix relie les fiches…"),
                     # Le chroniqueur tourne SANS historique : il ne doit chroniquer
                     # que le BEAT courant — avec l'historique conversationnel il
                     # re-chronique les tours passés (doublons). Il (re)découvre les
                     # entités via le graphe (list_entities), pas via l'historique.
-                    (chronicle_agent, "événements", None),
+                    (chronicle_agent, "événements", None, "Felix note les événements…"),
                 ):
                     try:
-                        sub = await sub_agent.run(
+                        yield ServerSentEvent(data=phase_text, event="phase")
+                        async with sub_agent.iter(
                             body.message, deps=deps, message_history=hist
-                        )
-                        extra_usages.append(sub.usage())
-                        for event in drain_cards():
-                            yield event
+                        ) as sub_run:
+                            async for _node in sub_run:
+                                for event in drain_cards():
+                                    yield event
+                            for event in drain_cards():
+                                yield event
+                        extra_usages.append(sub_run.usage())
                     except Exception:
                         logger.exception("passe %s échouée (tour non bloqué)", label)
 
@@ -163,7 +170,9 @@ async def atelier_chat(
 
                 # Check de cohérence sur les entités touchées ce tour. Best-effort :
                 # isolé dans un try/except pour qu'une panne du judge n'empêche
-                # jamais l'événement `done`.
+                # jamais l'événement `done`. C'est le gros temps « silencieux » de
+                # fin de tour (un appel juge par entité touchée) → on l'annonce.
+                yield ServerSentEvent(data="Felix vérifie la cohérence…", event="phase")
                 try:
                     async for alert in _consistency_alerts(driver, deps, choice.profile):
                         yield alert

@@ -6,7 +6,7 @@ definePageMeta({ layout: false })
 useHead({ title: 'Felix — Atelier · Rivière basse' })
 
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
-const { messages, typing, sendMessage } = useAtelier()
+const { messages, typing, phase, sendMessage } = useAtelier()
 
 const draft = ref('')
 const scrollRef = ref<HTMLElement | null>(null)
@@ -105,7 +105,10 @@ function onKeydown(e: KeyboardEvent) {
         <div v-if="typing" class="msg msg-felix">
           <div class="msg-av"><span class="mono-avatar">F</span></div>
           <div class="msg-main">
-            <div class="typing"><span /><span /><span /></div>
+            <div class="typing-row">
+              <div class="typing"><span /><span /><span /></div>
+              <span v-if="phase" class="phase-label">{{ phase }}</span>
+            </div>
           </div>
         </div>
 
@@ -308,6 +311,8 @@ function onKeydown(e: KeyboardEvent) {
   text-wrap: pretty;
 }
 
+.felix-atelier .typing-row { display: flex; align-items: center; gap: 11px; }
+.felix-atelier .phase-label { font-family: var(--mono); font-size: 12px; letter-spacing: .02em; color: var(--ink-3); font-style: normal; }
 .felix-atelier .typing { display: inline-flex; gap: 5px; padding: 13px 2px; }
 .felix-atelier .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); animation: felix-bob 1.2s infinite ease-in-out; }
 .felix-atelier .typing span:nth-child(2) { animation-delay: .15s; }
