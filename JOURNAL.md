@@ -22,6 +22,16 @@
 
 **Pointeurs** : noyau `src/felix/core/` (graph.py `entity_timeline` + tie-break `find_node`, check.py `consistency_check` concatène la timeline + `CHECK_PROMPT` temporel, agent.py `CHRONICLE_SYSTEM_PROMPT` « mort = événement », profile.py `consistency_rules` rule 1 + `manages_events`, tools.py `add_event`/`find_non_event`, deps.py `event_seq_lock`) ; route **3 passes** `src/felix/api/routes/atelier.py` ; evals `evals/atelier/` (cas `check_death_then_act`/`check_act_then_death` A/B + `event_chrono` + `roue_de_sang`). Harness checker isolé `/tmp/check_temporal.py` (juge sur graphe fixe, 1 appel/cas — robuste aux transients) et `/tmp/compare_checker.py` (6 scénarios, non-régression faux positifs). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## Chat « utilisable » (2/2) : moins d'appels juge + parallélisation = fin des gros blancs — 2026-06-09
+
+Suite directe du diagnostic (section ci-dessous). Le « gros blanc » de fin de tour = le checker qui appelait le juge **une fois par entité touchée, en série**. Deux leviers, **eval-first** :
+
+- **Scoping (moins d'appels).** Nouveau `deps.check_candidates` (core/deps.py) : sous-ensemble de `touched_ids` où une contradiction est POSSIBLE ce tour — peuplé par `add_relation` (les 2 extrémités), `add_event` (participants/lieu), `update_entity` **seulement si écrasement** (`replaced`). PAS `add_entity` (création additive), PAS les nœuds événement (jamais sujets). La route (`_consistency_alerts`) itère `check_candidates` au lieu de `touched_ids`. Les checks prouvés (temporel « mort puis agit », spatial) sont tous portés par une relation/événement → couverts. **Tradeoff acté** : on laisse tomber le check de divergence purement additive sur prop (le `check_contradiction` flaky) — « les contradictions vivent dans les relations » (utilisateur). Réversible (ajouter `update_entity` sans la garde `replaced`).
+- **Parallélisation (moins d'attente).** Les juges des candidats tournent en `asyncio.gather` (`return_exceptions=True`) → le blanc passe de Σ(appels) à max(appels). Sûr sur Mistral Small (5M tok/min).
+- **Eval-first** : `/tmp/test_check_scope.py` (déterministe, sans LLM — appelle les tools directement, asserte `check_candidates`) : **fail-first** (AttributeError) → vert après (`{borin, le-baron, salle}`, **event-N exclus**, création/additif exclus). `consistency_check` **inchangé** → les cas `check_*` (qui l'appellent en direct avec un id explicite) ne régressent pas.
+- **Mesuré (graphe propre, beat Marlowe/Vera, 2 rel + events)** : gap check **13,4s → 5,3s** (séquentiel → parallèle), tour total **23s → 16,5s** ; et ça scale avec le nombre de candidats. Route OK de bout en bout. Refactor route au passage : helper `stream_pass` (closure) pour les 3 passes → corrige un PLR0912/0913 introduit par le fix progression.
+- **Reste** : si encore lent sur de gros beats, dédup des voisinages qui se recouvrent (1 check par composante connexe) ; et le fond = qualité de modélisation / relations typées ([[project_modeling_quality]]).
+
 ## Chat « utilisable » : progression en live + diagnostic des retries — 2026-06-09
 
 Retour utilisateur : « le chat n'est pas utilisable — je vois quand il a ajouté / quand c'est fini, mais PAS pendant ; et j'ai des milliers de retry ».

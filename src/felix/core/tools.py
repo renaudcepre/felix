@@ -185,6 +185,10 @@ async def update_entity(
                  added=fmt_props(clean, skip_reserved=False))
     )
     ctx.deps.touched_ids.add(node["id"])
+    # Un ÉCRASEMENT de valeur peut masquer une contradiction (cf. write_log) →
+    # candidat au check. Une prop purement additive, non (rien à contredire).
+    if replaced:
+        ctx.deps.check_candidates.add(node["id"])
     suffix = f" — attention, valeurs remplacées : {', '.join(replaced)}" if replaced else ""
     return f"{node['name']} mis à jour : {fmt_props(clean, skip_reserved=False)}.{suffix}"
 
@@ -232,6 +236,10 @@ async def add_relation(
     ctx.deps.write_log.append(f"relation {a['id']} —[{rel_type}]→ {b['id']}{extra}")
     ctx.deps.touched_ids.add(a["id"])
     ctx.deps.touched_ids.add(b["id"])
+    # Les deux extrémités d'une nouvelle relation sont candidates au check
+    # (relation = là où vivent les contradictions spatiales/relationnelles).
+    ctx.deps.check_candidates.add(a["id"])
+    ctx.deps.check_candidates.add(b["id"])
     return f"Relation : {a['name']} —[{rel_type}]→ {b['name']}."
 
 
@@ -319,6 +327,9 @@ async def add_event(
             )
         linked.append(node["name"])
         ctx.deps.touched_ids.add(node["id"])
+        # L'entité IMPLIQUÉE dans un événement est candidate au check (timeline →
+        # check temporel « mort puis agit »). Le nœud événement lui-même, non.
+        ctx.deps.check_candidates.add(node["id"])
 
     ctx.deps.ui_events.append(
         ToolCard(tool="people", title="Événement", subject=text,

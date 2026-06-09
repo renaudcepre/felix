@@ -10,6 +10,7 @@ Protocole d'événements (aligné sur le modèle AtelierMsg du front) :
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING
@@ -50,9 +51,24 @@ async def _consistency_alerts(
     (voisinages qui se recouvrent) → une seule carte par tour. `message` = phrase
     courte pour l'auteur ; `reason` (brouillon du judge) sert de filet de secours.
     """
+    # On ne juge QUE les entités où une contradiction est possible ce tour
+    # (relation / événement / valeur écrasée — cf. deps.check_candidates), pas
+    # chaque entité touchée : un juge par entité touchée = ~20-30 appels/tour. Les
+    # checks prouvés (temporel, spatial) sont tous portés par une relation ou un
+    # événement → couverts. Et on lance les juges EN PARALLÈLE (gather) : le blanc
+    # de fin de tour passe de Σ(appels) à max(appels) — Small encaisse (5M tok/min).
+    ids = list(deps.check_candidates)
+    if not ids:
+        return
+    verdicts = await asyncio.gather(
+        *(consistency_check(driver, i, deps.write_log, profile) for i in ids),
+        return_exceptions=True,
+    )
     seen: set[str] = set()
-    for touched in deps.touched_ids:
-        verdict = await consistency_check(driver, touched, deps.write_log, profile)
+    for verdict in verdicts:
+        if isinstance(verdict, BaseException):
+            logger.warning("un check a échoué (ignoré) : %r", verdict)
+            continue
         if not verdict.contradiction:
             continue
         alert_body = verdict.message.strip() or verdict.reason
@@ -95,91 +111,82 @@ async def atelier_chat(
     if body.message_history:
         message_history = ModelMessagesTypeAdapter.validate_python(body.message_history)
 
-    def drain_cards() -> list[ServerSentEvent]:
-        events = [
-            ServerSentEvent(data=card.model_dump_json(), event="tool")
-            for card in deps.ui_events
-        ]
-        deps.ui_events.clear()
-        return events
+    async def stream_pass(
+        sub_agent: Agent, history: list | None, *, stream_text: bool, holder: dict
+    ) -> AsyncGenerator[ServerSentEvent]:
+        """Joue une passe via `.iter()` : draine les cartes des tools EN LIVE (à
+        chaque node) et, si `stream_text`, streame le texte. Stocke `usage` +
+        `messages` dans `holder` (un générateur ne peut pas « return »). Factorisé
+        pour les 3 passes : entités (texte streamé) ; relieur/chroniqueur (cartes
+        live, pas de texte → une seule bulle). `deps`/`body.message` capturés."""
+        async with sub_agent.iter(
+            body.message, deps=deps, message_history=history
+        ) as run:
+            async for node in run:
+                for card in deps.ui_events:
+                    yield ServerSentEvent(data=card.model_dump_json(), event="tool")
+                deps.ui_events.clear()
+                if stream_text and Agent.is_model_request_node(node):
+                    async with node.stream(run.ctx) as request_stream:
+                        async for text in request_stream.stream_text(delta=True):
+                            yield ServerSentEvent(data=text, event="text")
+            for card in deps.ui_events:
+                yield ServerSentEvent(data=card.model_dump_json(), event="tool")
+            deps.ui_events.clear()
+            holder["usage"] = run.usage()
+            holder["messages"] = run.all_messages()
 
     async def event_generator() -> AsyncGenerator[ServerSentEvent]:
         try:
+            # Passe 1 « entités » : texte streamé + cartes live.
             yield ServerSentEvent(data="Felix écrit…", event="phase")
-            async with agent.iter(
-                body.message, deps=deps, message_history=message_history
-            ) as run:
-                async for node in run:
-                    # Cartes poussées par les tools du node précédent (CallToolsNode).
-                    for event in drain_cards():
-                        yield event
-                    if Agent.is_model_request_node(node):
-                        async with node.stream(run.ctx) as request_stream:
-                            async for text in request_stream.stream_text(delta=True):
-                                yield ServerSentEvent(data=text, event="text")
-                for event in drain_cards():
-                    yield event
+            main: dict = {}
+            async for ev in stream_pass(agent, message_history, stream_text=True, holder=main):
+                yield ev
 
-                # 2e passe « relieur » (relations lâchées en fin de tour) puis 3e
-                # passe « chroniqueur » (événements ordonnés du beat). NON streamées
-                # en TEXTE (on ne lit jamais leur output → une seule bulle), mais on
-                # itère par node (.iter) pour vider leurs cartes EN LIVE — sinon
-                # l'auteur ne voit rien pendant ces passes (parfois longues). Un
-                # marqueur `phase` annonce l'activité en cours.
-                # Contexte = historique d'AVANT ce tour ; les entités du beat sont
-                # relues du graphe (list_entities).
-                extra_usages = []
-                for sub_agent, label, hist, phase_text in (
-                    (relation_agent, "relations", message_history, "Felix relie les fiches…"),
-                    # Le chroniqueur tourne SANS historique : il ne doit chroniquer
-                    # que le BEAT courant — avec l'historique conversationnel il
-                    # re-chronique les tours passés (doublons). Il (re)découvre les
-                    # entités via le graphe (list_entities), pas via l'historique.
-                    (chronicle_agent, "événements", None, "Felix note les événements…"),
-                ):
-                    try:
-                        yield ServerSentEvent(data=phase_text, event="phase")
-                        async with sub_agent.iter(
-                            body.message, deps=deps, message_history=hist
-                        ) as sub_run:
-                            async for _node in sub_run:
-                                for event in drain_cards():
-                                    yield event
-                            for event in drain_cards():
-                                yield event
-                        extra_usages.append(sub_run.usage())
-                    except Exception:
-                        logger.exception("passe %s échouée (tour non bloqué)", label)
-
-                usages = [run.usage(), *extra_usages]
-                yield ServerSentEvent(
-                    data=json.dumps(
-                        {
-                            "request_tokens": sum(u.request_tokens or 0 for u in usages),
-                            "response_tokens": sum(u.response_tokens or 0 for u in usages),
-                            "total_tokens": sum(u.total_tokens or 0 for u in usages),
-                        }
-                    ),
-                    event="usage",
-                )
-
-                serialized = ModelMessagesTypeAdapter.dump_python(
-                    run.all_messages(), mode="json"
-                )
-                yield ServerSentEvent(data=json.dumps(serialized), event="history")
-
-                # Check de cohérence sur les entités touchées ce tour. Best-effort :
-                # isolé dans un try/except pour qu'une panne du judge n'empêche
-                # jamais l'événement `done`. C'est le gros temps « silencieux » de
-                # fin de tour (un appel juge par entité touchée) → on l'annonce.
-                yield ServerSentEvent(data="Felix vérifie la cohérence…", event="phase")
+            # Passe 2 « relieur » puis passe 3 « chroniqueur » : cartes EN LIVE,
+            # pas de texte (une seule bulle), un marqueur `phase` par passe. Le
+            # chroniqueur tourne SANS historique (sinon il re-chronique les tours
+            # passés → doublons ; il relit les entités du graphe).
+            extra_usages = []
+            for sub_agent, label, hist, phase_text in (
+                (relation_agent, "relations", message_history, "Felix relie les fiches…"),
+                (chronicle_agent, "événements", None, "Felix note les événements…"),
+            ):
                 try:
-                    async for alert in _consistency_alerts(driver, deps, choice.profile):
-                        yield alert
+                    yield ServerSentEvent(data=phase_text, event="phase")
+                    sub: dict = {}
+                    async for ev in stream_pass(sub_agent, hist, stream_text=False, holder=sub):
+                        yield ev
+                    extra_usages.append(sub["usage"])
                 except Exception:
-                    logger.exception("consistency_check a échoué (tour non bloqué)")
+                    logger.exception("passe %s échouée (tour non bloqué)", label)
 
-                yield ServerSentEvent(data="", event="done")
+            usages = [main["usage"], *extra_usages]
+            yield ServerSentEvent(
+                data=json.dumps(
+                    {
+                        "request_tokens": sum(u.request_tokens or 0 for u in usages),
+                        "response_tokens": sum(u.response_tokens or 0 for u in usages),
+                        "total_tokens": sum(u.total_tokens or 0 for u in usages),
+                    }
+                ),
+                event="usage",
+            )
+
+            serialized = ModelMessagesTypeAdapter.dump_python(main["messages"], mode="json")
+            yield ServerSentEvent(data=json.dumps(serialized), event="history")
+
+            # Check de cohérence (sur deps.check_candidates seulement). Best-effort :
+            # isolé pour qu'une panne du juge n'empêche jamais le `done`.
+            yield ServerSentEvent(data="Felix vérifie la cohérence…", event="phase")
+            try:
+                async for alert in _consistency_alerts(driver, deps, choice.profile):
+                    yield alert
+            except Exception:
+                logger.exception("consistency_check a échoué (tour non bloqué)")
+
+            yield ServerSentEvent(data="", event="done")
         except Exception as e:
             yield ServerSentEvent(data=str(e), event="error")
 

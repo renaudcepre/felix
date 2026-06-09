@@ -28,9 +28,16 @@ class GenericDeps:
     # qui écrase une valeur contradictoire rend l'état final auto-cohérent
     # (finding : l'alibi écrasé avant le check).
     write_log: list[str] = field(default_factory=list)
-    # Entités créées/modifiées ce tour — la route lance un consistency_check
-    # sur chacune après la boucle agent.
+    # Entités créées/modifiées ce tour (toutes confondues).
     touched_ids: set[str] = field(default_factory=set)
+    # Sous-ensemble de `touched_ids` où une contradiction est POSSIBLE ce tour :
+    # entité ayant reçu une RELATION, une participation à un ÉVÉNEMENT, ou un
+    # ÉCRASEMENT de valeur. C'est là que vivent les checks prouvés (temporel
+    # « mort puis agit », spatial, valeur divergente écrasée). La route ne lance
+    # le juge QUE sur ce sous-ensemble — pas sur chaque création/prop additive ni
+    # sur les nœuds événement (jamais sujets) : sinon ~20-30 appels/tour et de longs
+    # blancs en fin de tour sous rate-limit. Voir route `_consistency_alerts`.
+    check_candidates: set[str] = field(default_factory=set)
     # Profil de domaine optionnel : oriente describe_schema, le prompt et le check.
     profile: Profile | None = None
     # Sérialise l'allocation d'`ordre` d'add_event : un même run peut émettre
