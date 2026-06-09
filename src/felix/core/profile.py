@@ -56,10 +56,15 @@ class RelationSpec:
     """
 
     name: str  # PRÉDICAT en CAPITALES anglaises (convention Neo4j, priors stables)
-    gloss: str  # glose FR (rendue dans le prompt / describe_schema)
+    gloss: str  # glose FR COURTE (rendue dans le prompt ET dans les messages d'enforcement)
     subjects: tuple[str, ...] = ()  # entity_types admis comme source
     objects: tuple[str, ...] = ()  # entity_types admis comme cible
     allow_self: bool = False
+    # Exemples d'usage CONTRASTIFS (verbes du langage qui mappent vers ce type) —
+    # rendus dans le prompt SEULEMENT (pas dans les messages d'enforcement, qu'on garde
+    # courts). Combat l'attracteur « relation vague » : le petit modèle se rabat sur le
+    # type le plus neutre faute de savoir lequel colle (cf. KNOWS). Few-shot > règle.
+    examples: str = ""
 
 
 @dataclass(frozen=True)
@@ -91,8 +96,14 @@ class Profile:
             lines.append("Modélisation :")
             lines.extend(f"- {rule}" for rule in self.modeling_rules)
         if self.relation_vocabulary:
-            lines.append("Relations (réutilise ces types EXACTS, en CAPITALES anglaises) :")
-            lines.extend(f"- {spec.name} : {spec.gloss}" for spec in self.relation_vocabulary)
+            lines.append(
+                "Relations (réutilise ces types EXACTS, en CAPITALES anglaises). Choisis "
+                "TOUJOURS le type le PLUS PRÉCIS qui s'applique ; ne te rabats sur un type "
+                "neutre/vague qu'en DERNIER recours :"
+            )
+            for spec in self.relation_vocabulary:
+                ex = f"  (ex. : {spec.examples})" if spec.examples else ""
+                lines.append(f"- {spec.name} : {spec.gloss}{ex}")
         return "\n".join(lines)
 
     def render_schema_hint(self) -> str:
@@ -104,8 +115,10 @@ class Profile:
         for et in self.entity_types:
             lines.append(f"- {et.name} · propriétés usuelles : {', '.join(et.keys)}")
         if self.relation_vocabulary:
-            lines.append("Types de relations à réutiliser (CAPITALES anglaises) :")
-            lines.extend(f"- {spec.name} : {spec.gloss}" for spec in self.relation_vocabulary)
+            lines.append("Types de relations à réutiliser (CAPITALES anglaises, le PLUS précis) :")
+            for spec in self.relation_vocabulary:
+                ex = f"  (ex. : {spec.examples})" if spec.examples else ""
+                lines.append(f"- {spec.name} : {spec.gloss}{ex}")
         return "\n".join(lines)
 
     def render_check_rules(self) -> str:
@@ -235,30 +248,44 @@ SCENARIO_PROFILE = Profile(
     # l'exclut), mais reste listé pour la cohérence conceptuelle du domaine.
     relation_vocabulary=(
         RelationSpec("LOCATED_AT", "se trouve / se déroule dans un lieu",
-                     subjects=("personnage", "objet", "evenement"), objects=("lieu",)),
-        RelationSpec("MEMBER_OF", "appartient à une faction, un groupe, une organisation",
-                     subjects=("personnage",), objects=("groupe",)),
+                     subjects=("personnage", "objet", "evenement"), objects=("lieu",),
+                     examples="est à, vit à, se trouve dans, se déroule à"),
+        RelationSpec("MEMBER_OF", "appartient à un groupe / une organisation",
+                     subjects=("personnage",), objects=("groupe",),
+                     examples="est membre du FLN, appartient à la police, est dans le gang"),
         RelationSpec("OWNS", "possède un objet",
-                     subjects=("personnage", "groupe"), objects=("objet",)),
-        RelationSpec("KNOWS", "connaît / est lié à un personnage (lien neutre)",
-                     subjects=("personnage",), objects=("personnage",)),
-        RelationSpec("ALLIED_WITH", "est allié de / aide un personnage ou un groupe",
-                     subjects=("personnage", "groupe"), objects=("personnage", "groupe")),
-        RelationSpec("FIGHTS", "affronte / combat",
-                     subjects=("personnage", "groupe"), objects=("personnage", "groupe")),
+                     subjects=("personnage", "groupe"), objects=("objet",),
+                     examples="possède, porte sur lui, détient, a une arme"),
+        RelationSpec("ALLIED_WITH", "soutient / aide / est du même côté",
+                     subjects=("personnage", "groupe"), objects=("personnage", "groupe"),
+                     examples="protège, aide, soutient, est l'allié de, couvre"),
+        RelationSpec("FIGHTS", "affronte / se bat contre (hostilité ouverte)",
+                     subjects=("personnage", "groupe"), objects=("personnage", "groupe"),
+                     examples="attaque, combat, s'oppose à, claque la porte au nez de"),
+        RelationSpec("TARGETS", "vise / traque / prend pour cible ou victime",
+                     subjects=("personnage", "groupe"), objects=("personnage", "groupe"),
+                     examples="surveille, espionne, enquête sur, menace, dénonce, piste, soupçonne"),
         RelationSpec("KILLS", "tue ou détruit",
-                     subjects=("personnage", "groupe"), objects=("personnage", "objet")),
-        RelationSpec("CREATES", "crée, fabrique, forge",
-                     subjects=("personnage", "groupe"), objects=("objet", "evenement")),
-        RelationSpec("TARGETS", "vise, traque, prend pour cible ou pour victime",
-                     subjects=("personnage", "groupe"), objects=("personnage", "groupe")),
+                     subjects=("personnage", "groupe"), objects=("personnage", "objet"),
+                     examples="tue, assassine, abat, détruit, fait sauter"),
+        RelationSpec("CREATES", "crée, fabrique, écrit, forge",
+                     subjects=("personnage", "groupe"), objects=("objet", "evenement"),
+                     examples="fabrique, rédige, écrit, construit, dessine"),
+        RelationSpec("WITNESSES", "découvre / observe / examine un objet ou un fait",
+                     subjects=("personnage",), objects=("objet", "evenement"),
+                     examples="trouve, lit, observe, examine, remarque un objet/indice"),
         RelationSpec("CAUSES", "provoque un événement ou un état",
                      subjects=("personnage", "groupe", "objet", "evenement"),
-                     objects=("evenement",)),
+                     objects=("evenement",), examples="provoque, déclenche, entraîne"),
         RelationSpec("PART_OF", "fait partie d'un ensemble plus grand",
-                     subjects=("lieu", "objet", "groupe"), objects=("lieu", "objet", "groupe")),
-        RelationSpec("WITNESSES", "découvre, observe, examine",
-                     subjects=("personnage",), objects=("objet", "evenement")),
+                     subjects=("lieu", "objet", "groupe"), objects=("lieu", "objet", "groupe"),
+                     examples="la cave fait partie de l'école, une aile d'un bâtiment"),
+        # KNOWS en DERNIER : volontairement placé en fin de liste et cadré comme ultime
+        # recours — sinon le petit modèle s'y rabat (attracteur « lien vague »).
+        RelationSpec("KNOWS", "lien social NEUTRE, sans intention — DERNIER RECOURS",
+                     subjects=("personnage",), objects=("personnage",),
+                     examples="se connaissent, sont parents/amis/collègues. PAS pour "
+                     "surveiller/viser (→TARGETS), aider (→ALLIED_WITH), affronter (→FIGHTS)"),
     ),
     manages_events=True,
 )
