@@ -38,7 +38,43 @@ def test_slugify_accents() -> None:
 
 @resolver_suite.test()
 def test_slugify_special_chars() -> None:
-    assert slugify("L'inspecteur Benoit") == "l-inspecteur-benoit"
+    # Apostrophe MILIEU de phrase (pas un article de tête) → tiret, conservée.
+    assert slugify("Cartel d'Ophir") == "cartel-d-ophir"
+
+
+# ─────── Article de tête retiré → « le pêcheur » et « pêcheur » = même id (anti-doublon) ───────
+# Le doublon à l'article près (« le pêcheur »/« pêcheur », « l'équipe »/« équipe ») a persisté
+# sur Haiku ET Sonnet → c'est structurel (model-independent), réglé dans slugify : retirer
+# l'article de tête (le/la/les/l'/un/une/des) aligne l'id → fusion dès add_entity (MERGE sur id).
+@resolver_suite.test()
+def test_slugify_strips_leading_article() -> None:
+    assert slugify("le pêcheur") == slugify("pêcheur") == "pecheur"
+    assert slugify("les Sentinelles") == slugify("Sentinelles") == "sentinelles"
+    assert slugify("l'équipe de Castan") == slugify("équipe de Castan") == "equipe-de-castan"
+    assert slugify("une balise") == slugify("balise") == "balise"
+
+
+@resolver_suite.test()
+def test_slugify_strips_curly_apostrophe_article() -> None:
+    # Les LLM produisent souvent l'apostrophe typographique « ’ » — à traiter comme « ' ».
+    assert slugify("l’Aurore Pâle") == slugify("Aurore Pâle") == "aurore-pale"
+
+
+@resolver_suite.test()
+def test_slugify_keeps_non_article_words() -> None:
+    # Un mot qui COMMENCE par les lettres d'un article n'est pas un article (pas d'espace après).
+    assert slugify("lapin") == "lapin"        # pas « la » + reste
+    assert slugify("larme") == "larme"        # pas « l' » (aucune apostrophe)
+    assert slugify("Léviathan") == "leviathan"
+    # « de » au milieu n'est pas un article de tête → conservé.
+    assert slugify("sabre de Korr") == "sabre-de-korr"
+
+
+@resolver_suite.test()
+def test_slugify_article_only_name_not_emptied() -> None:
+    # Un nom réduit au seul article ne doit jamais devenir vide.
+    assert slugify("Le") == "le"
+    assert slugify("Les") == "les"
 
 
 @resolver_suite.test()

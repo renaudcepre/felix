@@ -31,8 +31,17 @@ class AmbiguousMatch:
     candidates: list[tuple[str, str, float]] = field(default_factory=list)
 
 
+# Article défini/indéfini de TÊTE (sur le texte normalisé : minuscule, sans accent).
+# « le/la/les/un/une/des » exigent un espace après (sinon « lapin », « unité »… seraient
+# rognés) ; « l' » (élision) couvre l'apostrophe droite ET typographique. Retirer l'article
+# de tête aligne l'id : « le pêcheur » et « pêcheur » → « pecheur » → fusion au MERGE.
+_LEADING_ARTICLE = re.compile(r"^(?:(?:le|la|les|un|une|des)\s+|l['’])")
+
+
 def slugify(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", normalize(name)).strip("-")
+    norm = normalize(name)
+    norm = _LEADING_ARTICLE.sub("", norm, count=1) or norm  # jamais vidé
+    return re.sub(r"[^a-z0-9]+", "-", norm).strip("-")
 
 
 def _has_different_first_name(norm_a: str, norm_b: str) -> bool:
