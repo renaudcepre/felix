@@ -20,6 +20,7 @@ from felix.atelier.agent import (
     ATELIER_CHOICES,
     build_atelier_agent,
     build_chronicle_agent,
+    build_master_agent,
     build_relation_agent,
 )
 from felix.config import settings
@@ -38,6 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     app.state.driver = driver
     app.state.collection = collection
+    app.state.master_agents = {
+        key: build_master_agent(choice) for key, choice in ATELIER_CHOICES.items()
+    }
     app.state.atelier_agents = {
         key: build_atelier_agent(choice) for key, choice in ATELIER_CHOICES.items()
     }

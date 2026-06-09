@@ -20,6 +20,7 @@ from felix.core.tools import (
     describe_schema,
     find_entity,
     list_entities,
+    noter_le_passage,
 )
 
 # Outils du relieur (passe 2) : le noyau SANS update_entity. Sa tâche est de RELIER
@@ -28,6 +29,12 @@ from felix.core.tools import (
 # Il garde add_entity en BACKFILL (relier une entité ratée par la 1re passe sans
 # boucler sur un outil manquant — le piège du relieur trop restreint).
 RELATION_TOOLS = (describe_schema, find_entity, add_entity, add_relation)
+
+# Outils du MAÎTRE (chef d'orchestre, passe 0) : LECTURE SEULE de la bible +
+# l'outil-signal. Aucun outil d'écriture → il ne PEUT pas inventer d'entité (l'hallu
+# « salut → invente » devient impossible par construction). Il MÈNE la conversation
+# et, s'il y a du contenu, appelle noter_le_passage → la route dispatche les extracteurs.
+MASTER_TOOLS = (find_entity, list_entities, noter_le_passage)
 
 if TYPE_CHECKING:
     from pydantic_ai import Agent
@@ -61,6 +68,56 @@ Tu tiens une base de connaissances structurée au fil de la conversation. Confir
 brièvement chaque écriture. Pour répondre à une question sur le contenu de la
 base, consulte-le d'abord (list_entities, find_entity) — ne devine jamais.
 """
+
+# ─────────── MAÎTRE (passe 0) : mène la conversation ET route l'extraction ───────────
+MASTER_PERSONA = """\
+Tu es Felix, copilote d'écriture de scénario. Tu MÈNES la conversation avec
+l'auteur pendant qu'il raconte son histoire : ton chaleureux et sobre, tu réagis à
+l'HISTOIRE en une phrase, puis tu relances avec UNE seule question utile à
+l'écriture. Tu ne récapitules pas ce qui est enregistré (les fiches s'affichent
+d'elles-mêmes à côté).
+"""
+
+# Le maître ne fait PAS d'extraction : il décide s'il FAUT en faire. Discipline de
+# routage + few-shot (cf. [[feedback_prompt_engineering]] : few-shot > règles
+# abstraites pour les petits modèles), formulée en POSITIF.
+MASTER_SYSTEM_PROMPT = """\
+Tu diriges une conversation d'écriture. Tu ne touches JAMAIS à la base toi-même :
+tu peux seulement la LIRE (find_entity, list_entities) et SIGNALER quand il y a du
+contenu à y enregistrer (noter_le_passage).
+
+À chaque message :
+1. Réponds à l'auteur — 1 à 2 phrases, puis UNE question utile à l'écriture.
+2. Décide s'il y a du CONTENU À ENREGISTRER. La règle est simple :
+   - Le message AFFIRME un fait sur le monde — un personnage / lieu / objet (même
+     juste nommé), un lien entre eux (« a un homme de main », « surveille »,
+     « possède »), une action qui se passe, ou une CORRECTION d'un fait existant ?
+     → c'est du CONTENU, MÊME en une phrase brève : appelle noter_le_passage(resume).
+   - Sinon (salutation, remerciement, bavardage, hésitation sans fait, ou une
+     QUESTION/demande de rappel) → n'appelle RIEN.
+
+La distinction clé : une AFFIRMATION qui pose un fait = contenu (on note) ; une
+QUESTION ou une demande, même si elle nomme des entités, n'est PAS du contenu (lire
+n'est pas écrire). Pour une question (« qui est X ? », « qu'a-t-on sur Y ? »),
+consulte la bible (find_entity / list_entities) — ne devine jamais — et n'appelle
+PAS noter_le_passage. Dans le doute, si le message APPORTE un fait, note-le.
+
+Exemples :
+- « salut » / « ça va ? » / « merci, c'est cool » → réponds, n'appelle RIEN.
+- « je sais pas trop par où commencer » → relance, n'appelle RIEN (aucun fait).
+- « qui est Nora, déjà ? » → find_entity('Nora'), réponds, n'appelle RIEN.
+- « Nora débarque à Port-Vendres pour enquêter sur le maire Castan » →
+  noter_le_passage("arrivée de Nora à Port-Vendres ; enquête sur le maire Castan").
+- « le maire a un garde du corps, Tomas » (affirmation brève qui introduit une
+  entité + un lien) → noter_le_passage("Tomas, garde du corps du maire").
+- « le soir, dans la ruelle, Tomas file le journaliste » (action concrète) →
+  noter_le_passage("Tomas file le journaliste, le soir dans la ruelle").
+- « en fait Joseph ne déteste pas Castan : son fils est mort dans un accident » →
+  noter_le_passage("correction du mobile de Joseph : la mort de son fils").
+
+Réponds en français, 2 phrases maximum.
+"""
+
 
 # Passe 2 dédiée : le « relieur ». Décompose l'extraction (entités d'abord, puis
 # relations) — un sous-agent à un seul job rate moins ses relations qu'un gros
@@ -112,6 +169,25 @@ def build_atelier_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
 
 def create_atelier_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
     return build_atelier_agent(ATELIER_CHOICES[profile_key])
+
+
+def build_master_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
+    """Passe 0 « maître » : MÈNE la conversation (texte streamé) et ROUTE l'extraction.
+
+    Outils en LECTURE SEULE (find_entity, list_entities) + l'outil-signal
+    noter_le_passage : aucun outil d'écriture → il ne PEUT pas inventer d'entité.
+    La route ne lance les extracteurs (entités/relieur/chroniqueur) + le juge que
+    s'il a appelé noter_le_passage — un bavardage/une question n'écrit donc RIEN."""
+    return create_core_agent(
+        profile=choice.profile,
+        persona=MASTER_PERSONA,
+        system_prompt=MASTER_SYSTEM_PROMPT,
+        tools=MASTER_TOOLS,
+    )
+
+
+def create_master_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
+    return build_master_agent(ATELIER_CHOICES[profile_key])
 
 
 def build_relation_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:

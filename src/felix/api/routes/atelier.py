@@ -23,6 +23,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 from felix.api.deps import (
     AtelierAgentsDep,
     ChronicleAgentsDep,
+    MasterAgentsDep,
     Neo4jDriver,
     RelationAgentsDep,
 )
@@ -96,14 +97,16 @@ async def atelier_profiles() -> list[dict[str, str]]:
 
 
 @router.post("/chat")
-async def atelier_chat(
+async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances FastAPI
     body: ChatRequest,
+    master_agents: MasterAgentsDep,
     agents: AtelierAgentsDep,
     relation_agents: RelationAgentsDep,
     chronicle_agents: ChronicleAgentsDep,
     driver: Neo4jDriver,
 ) -> EventSourceResponse:
     choice = ATELIER_CHOICES.get(body.profile, ATELIER_CHOICES[DEFAULT_PROFILE])
+    master_agent = master_agents[choice.key]
     agent = agents[choice.key]
     relation_agent = relation_agents[choice.key]
     chronicle_agent = chronicle_agents[choice.key]
@@ -145,31 +148,46 @@ async def atelier_chat(
 
     async def event_generator() -> AsyncGenerator[ServerSentEvent]:
         try:
-            # Passe 1 « entités » : texte streamé + cartes live.
-            yield ServerSentEvent(data="Felix écrit…", event="phase")
-            main: dict = {}
-            async for ev in stream_pass(agent, message_history, stream_text=True, holder=main):
+            # Passe 0 « maître » : MÈNE la conversation (texte streamé) et DÉCIDE s'il
+            # faut extraire. S'il appelle noter_le_passage, deps.extraction_requested
+            # passe à vrai → on dispatche les extracteurs ; sinon on s'arrête là.
+            yield ServerSentEvent(data="Felix répond…", event="phase")
+            master: dict = {}
+            async for ev in stream_pass(
+                master_agent, message_history, stream_text=True, holder=master
+            ):
                 yield ev
 
-            # Passe 2 « relieur » puis passe 3 « chroniqueur » : cartes EN LIVE,
-            # pas de texte (une seule bulle), un marqueur `phase` par passe. Le
-            # chroniqueur tourne SANS historique (sinon il re-chronique les tours
-            # passés → doublons ; il relit les entités du graphe).
-            extra_usages = []
-            for sub_agent, label, hist, phase_text in (
-                (relation_agent, "relations", message_history, "Felix relie les fiches…"),
-                (chronicle_agent, "événements", None, "Felix note les événements…"),
-            ):
-                try:
-                    yield ServerSentEvent(data=phase_text, event="phase")
-                    sub: dict = {}
-                    async for ev in stream_pass(sub_agent, hist, stream_text=False, holder=sub):
-                        yield ev
-                    extra_usages.append(sub["usage"])
-                except Exception:
-                    logger.exception("passe %s échouée (tour non bloqué)", label)
+            usages = [master["usage"]]
 
-            usages = [main["usage"], *extra_usages]
+            # Extracteurs MUETS, dispatchés UNIQUEMENT si le maître a signalé du contenu.
+            # Une salutation / une question n'écrit donc RIEN (hallu impossible par
+            # construction, tour conversationnel moins cher). Ordre : entités → relieur →
+            # chroniqueur (ce dernier SANS historique, sinon re-chronique → doublons).
+            if deps.extraction_requested:
+                for sub_agent, label, hist, phase_text in (
+                    (agent, "entités", message_history, "Felix met à jour la bible…"),
+                    (relation_agent, "relations", message_history, "Felix relie les fiches…"),
+                    (chronicle_agent, "événements", None, "Felix note les événements…"),
+                ):
+                    try:
+                        yield ServerSentEvent(data=phase_text, event="phase")
+                        sub: dict = {}
+                        async for ev in stream_pass(sub_agent, hist, stream_text=False, holder=sub):
+                            yield ev
+                        usages.append(sub["usage"])
+                    except Exception:
+                        logger.exception("passe %s échouée (tour non bloqué)", label)
+
+                # Check de cohérence (sur deps.check_candidates) — seulement si on a
+                # extrait. Best-effort, isolé pour ne jamais bloquer le `done`.
+                yield ServerSentEvent(data="Felix vérifie la cohérence…", event="phase")
+                try:
+                    async for alert in _consistency_alerts(driver, deps, choice.profile):
+                        yield alert
+                except Exception:
+                    logger.exception("consistency_check a échoué (tour non bloqué)")
+
             yield ServerSentEvent(
                 data=json.dumps(
                     {
@@ -181,17 +199,11 @@ async def atelier_chat(
                 event="usage",
             )
 
-            serialized = ModelMessagesTypeAdapter.dump_python(main["messages"], mode="json")
+            # L'historique threadé = le FIL DU MAÎTRE (la conversation), pas les
+            # tool-calls d'extraction : le graphe est la mémoire longue, relue à la
+            # demande. Plus léger, et la conversation reste cohérente d'un tour à l'autre.
+            serialized = ModelMessagesTypeAdapter.dump_python(master["messages"], mode="json")
             yield ServerSentEvent(data=json.dumps(serialized), event="history")
-
-            # Check de cohérence (sur deps.check_candidates seulement). Best-effort :
-            # isolé pour qu'une panne du juge n'empêche jamais le `done`.
-            yield ServerSentEvent(data="Felix vérifie la cohérence…", event="phase")
-            try:
-                async for alert in _consistency_alerts(driver, deps, choice.profile):
-                    yield alert
-            except Exception:
-                logger.exception("consistency_check a échoué (tour non bloqué)")
 
             yield ServerSentEvent(data="", event="done")
         except Exception as e:

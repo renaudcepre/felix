@@ -26,6 +26,34 @@
 
 **Pointeurs** : noyau `src/felix/core/` (graph.py `entity_timeline` + tie-break `find_node`, check.py `consistency_check` concatène la timeline + `CHECK_PROMPT` temporel, agent.py `CHRONICLE_SYSTEM_PROMPT` « mort = événement », profile.py `consistency_rules` rule 1 + `manages_events`, tools.py `add_event`/`find_non_event`, deps.py `event_seq_lock`) ; route **3 passes** `src/felix/api/routes/atelier.py` ; evals `evals/atelier/` (cas `check_death_then_act`/`check_act_then_death` A/B + `event_chrono` + `roue_de_sang`). Harness checker isolé `/tmp/check_temporal.py` (juge sur graphe fixe, 1 appel/cas — robuste aux transients) et `/tmp/compare_checker.py` (6 scénarios, non-régression faux positifs). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## Chef d'orchestre (maître) : une passe 0 qui DIRIGE la conversation et ROUTE l'extraction — 2026-06-09
+
+**Insight (utilisateur)** : l'hallu « salut → invente » n'est pas qu'un « Small est bête », c'est le **symptôme d'un chaînon manquant** — il n'y a **pas de maître qui dirige la conversation**. La route lançait les 3 passes (parler+extraire / relier / chroniquer) **aveuglément, à chaque tour** ; la passe 1 cumulait parler ET extraire, sans que personne ne décide *s'il faut* extraire. Mettre Large **masquait** le symptôme (un modèle assez malin s'auto-régule), sans réparer l'archi.
+
+**Fix archi** : une **passe 0 « maître »** (`build_master_agent`, `atelier/agent.py`) qui (1) MÈNE la conversation (texte streamé, persona + relance), (2) LIT la bible pour répondre aux questions (`find_entity`/`list_entities`), (3) appelle l'outil-signal `noter_le_passage(resume)` **uniquement** s'il y a du contenu à enregistrer. Le maître a un **jeu d'outils en LECTURE SEULE** (`MASTER_TOOLS`) — **aucun outil d'écriture** → il ne PEUT pas inventer d'entité : **l'hallu est impossible par construction**, indépendamment du modèle. La route (`routes/atelier.py`) ne dispatche les extracteurs (entités→relieur→chroniqueur, désormais MUETS, `stream_text=False`) + le juge **que si** `deps.extraction_requested` (posé par `noter_le_passage`, `core/deps.py`/`core/tools.py`). L'historique threadé = le **fil du maître** (la conversation), plus les tool-calls d'extraction (le graphe est la mémoire longue). Injection : `MasterAgentsDep` (`api/deps.py`) + `master_agents` au lifespan (`api/main.py`).
+
+**Métriques (eval-first, Mistral Small) — du test simple à l'e2e naturel :**
+- **Unit 59/59** (3 tests structurels `test_conductor.py` : le maître n'a aucun outil d'écriture ; flag par défaut faux).
+- **Routage** (`/tmp/probe_routing.py`, jeu étiqueté) : **0 faux positif** (hallu) — robuste sur Small (v1/v2) ET Large ; **recall ~70-80 %** sur tours BREFS isolés (sous-route les affirmations courtes — pire cas, history vide). Direction d'échec saine : rater du contenu est rattrapable, halluciner non.
+- **E2E NATUREL** (commité : `evals/atelier/conductor_e2e.py`, `just e2e-conductor`) : conversation mêlée (salutation/contenu/question). **0 hallucination / 5 tours sans contenu**, **recall 3/3** (en flux threadé, bien mieux que la sonde isolée), **0 placeholder** (Alice/Bob/Paris), question « qui est Nora ? » → **répond en lisant la bible, n'écrit rien**, réponses non vides. **✓ E2E CONDUCTOR OK.**
+- **Non-régression** : `just e2e-atelier` (Le Nadir) **toujours vert** — le maître route bien les tours de contenu, extracteurs intacts.
+- **Bonus coût** : un tour de bavardage/question ne paie plus 3 passes + juge, juste le maître.
+
+**Parké / résiduel** :
+- **Recall de routage** sur Small : sous-route les affirmations très brèves (history vide) ; le **tiering du seul maître** (un appel cheap sur un plus gros modèle) est le levier — mais **Mistral Large = 429 rate-limit** sur les sondes rapides (mesure Large non concluante ; à refaire avec des pauses).
+- L'e2e a re-révélé la **réification d'action en entité** par l'extracteur (« Castan envoie Veil… » comme entité) — **variance Small** (run A : 7 réifications ; run B : 0), **chantier séparé** ([[project_modeling_quality]] action→entité), pas une régression du maître ; reportée en métrique informative dans l'e2e.
+- Maître MVP : persona scénario, garde le bloc DOMAINE du profil (vocab d'extraction = bruit pour lui) — à alléger ; enrichissements futurs (mémoire, résumé bible injecté).
+
+## Sonde hallucination : « salut → invente » est BORNÉ MODÈLE (Small craque, Large clean) — 2026-06-09
+
+Sonde décisive (`/tmp/probe_halluc.py` : graphe VIDE, 4 messages sans aucun fait, juge laissé sur Small) :
+- **Mistral Small** : 3 salutations OK, mais « merci, c'est cool » → invente **Paris / Alice / Bob** + relations `LOCATED_AT` (5 cartes de création) — des **placeholders génériques classiques**. Bug reproduit net.
+- **Mistral Large** : **0 invention** sur les 4, et réponses nettement meilleures (« trouver le premier fil à tirer », relances plus fines).
+
+→ L'hallucination « salut → invente » est **bornée modèle** : Large respecte la règle 5 (« n'écris RIEN sans fait ») là où Small, sommé d'extraire sur base vide, fabrique un exemple par défaut. S'ajoute aux preuves Haiku/Sonnet (relieur/backstory/rename) : **on touche le plafond de Mistral Small** sur la qualité.
+
+**Décision tier OUVERTE (piège coût)** : Large ≈ **20× Small** (~$2/$6 par M) → pas « cents » mais **~quelques € la session**. Options : (a) Large partout (souverain FR, simple, ~€/session) ; (b) **gate d'intention structurel** sur Small (un pré-check « y a-t-il un fait à extraire ? » en amont → skip les passes d'extraction → reste à cents ET rend l'hallucination impossible par construction — cf. l'archi « tête conversationnelle vs extracteurs muets ») ; (c) tiering ([[project_model_tiering]] : gros modèle sur passe 1 / le gate seulement). NB archi : pas de modèle « maître » — les 3 passes sont séquencées en code ; la passe 1 (entités) est l'hybride qui à la fois PARLE et extrait, d'où le couplage conversation/extraction qui nourrit ce bug.
+
 ## Slugify retire l'article de tête → fin des doublons « le pêcheur »/« pêcheur » — 2026-06-09
 
 Fix **structurel** (model-independent : le doublon à l'article près avait persisté sur Haiku ET Sonnet). `slugify` (`src/felix/ingest/resolver.py`) retire désormais l'**article de tête** (`le/la/les/l'/un/une/des`, apostrophe droite ET typographique `’`) sur le texte normalisé → l'id s'aligne : « le pêcheur » et « pêcheur » → `pecheur` ; « l'équipe de Castan » et « équipe de Castan » → `equipe-de-castan`. Comme `add_entity` fait `entity_id = slugify(name)` puis `find_node` (slug exact), la 2e fiche est refusée (« existe déjà ») ou les MERGE concurrents collapsent sur le même id → **doublon tué à la création**.

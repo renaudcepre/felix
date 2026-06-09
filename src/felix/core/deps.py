@@ -40,6 +40,12 @@ class GenericDeps:
     check_candidates: set[str] = field(default_factory=set)
     # Profil de domaine optionnel : oriente describe_schema, le prompt et le check.
     profile: Profile | None = None
+    # Routage du chef d'orchestre (maître) : posé par l'outil-signal noter_le_passage
+    # quand le tour apporte du contenu à enregistrer. La route ne dispatche les
+    # extracteurs (entités/relieur/chroniqueur) + le juge QUE si ce flag est vrai —
+    # un bavardage/une question ne déclenche AUCUNE écriture (hallu impossible par
+    # construction, et tour conversationnel moins cher).
+    extraction_requested: bool = False
     # Sérialise l'allocation d'`ordre` d'add_event : un même run peut émettre
     # plusieurs add_event dans une seule réponse → pydantic-ai les exécute en
     # parallèle, et un max(ordre)+1 concurrent collisionnerait sur le même id.

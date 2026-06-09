@@ -40,6 +40,12 @@ evals-generic *args:
 e2e-atelier *args:
     uv run python evals/atelier/e2e.py {{ args }}
 
+# E2E « naturel » du chef d'orchestre (maître) — conversation mêlée (salutations,
+# contenu, questions) ; mesure 0 hallucination + recall + 0 placeholder. ≈25 appels
+# LLM ; wipe le graphe, ne pas lancer avec l'API.
+e2e-conductor *args:
+    uv run python evals/atelier/conductor_e2e.py {{ args }}
+
 # Historique des evals
 evals-history *args:
     uv run protest history --evals {{ args }}

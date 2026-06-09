@@ -16,6 +16,12 @@ def get_collection(request: Request) -> chromadb.Collection:
     return request.app.state.collection
 
 
+def get_master_agents(request: Request) -> dict[str, Agent]:
+    """Agents « maître » (passe 0) pré-construits par profil : mènent la conversation
+    et routent l'extraction (lecture seule + outil-signal)."""
+    return request.app.state.master_agents
+
+
 def get_atelier_agents(request: Request) -> dict[str, Agent]:
     """Agents du bot B pré-construits par profil (scenario/chantier/none)."""
     return request.app.state.atelier_agents
@@ -33,6 +39,7 @@ def get_chronicle_agents(request: Request) -> dict[str, Agent]:
 
 Neo4jDriver: TypeAlias = Annotated[AsyncDriver, Depends(get_driver)]
 Collection: TypeAlias = Annotated[chromadb.Collection, Depends(get_collection)]
+MasterAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_master_agents)]
 AtelierAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_atelier_agents)]
 RelationAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_relation_agents)]
 ChronicleAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_chronicle_agents)]
