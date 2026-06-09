@@ -22,6 +22,7 @@ from felix.core.tools import (
     add_relation,
     describe_schema,
     find_entity,
+    rename_entity,
     update_entity,
 )
 from felix.llm import build_chat_model
@@ -40,11 +41,14 @@ RÈGLES :
    sens correspond. Ne crée JAMAIS deux noms pour le même concept : si
    `date_achat` existe, n'invente pas `achete_en`.
 3. Une chose nouvelle → add_entity. Une information sur une chose connue →
-   update_entity. Les RELATIONS comptent autant que les entités : APRÈS avoir
-   créé ou identifié les entités d'un passage, RELIE-LES systématiquement avec
-   add_relation (qui agit sur qui, qui est où, qui possède quoi). Ne termine
-   jamais un passage sans avoir créé les relations entre ses entités, et
-   réutilise les types de relation canoniques fournis dans le bloc DOMAINE.
+   update_entity. Quand l'auteur DONNE un nom à une entité déjà suivie sans vrai
+   nom (« le pêcheur s'appelle Joseph »), ou dit que deux fiches sont la même chose,
+   utilise rename_entity — ne crée JAMAIS une 2e fiche pour la même entité. Les
+   RELATIONS comptent autant que les entités : APRÈS avoir créé ou identifié les
+   entités d'un passage, RELIE-LES systématiquement avec add_relation (qui agit sur
+   qui, qui est où, qui possède quoi). Ne termine jamais un passage sans avoir créé
+   les relations entre ses entités, et réutilise les types de relation canoniques
+   fournis dans le bloc DOMAINE.
 4. Ne REMPLACE une valeur déjà posée QUE sur correction explicite de l'auteur
    (« correction », « en fait », « plutôt ») : update_entity sur la MÊME clé.
    Sinon, un fait qui DIVERGE d'une valeur existante (autre source, témoignage…)
@@ -139,7 +143,8 @@ def create_core_agent(
     )
     # tools=None → noyau complet (5 outils). Un sous-agent peut restreindre
     # l'ensemble (ex. relieur : lecture seule + add_relation).
-    default = (describe_schema, find_entity, add_entity, update_entity, add_relation)
+    default = (describe_schema, find_entity, add_entity, update_entity, add_relation,
+               rename_entity)
     for tool in (tools if tools is not None else default):
         agent.tool(tool)
     return agent
