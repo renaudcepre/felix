@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 @import "./felix-atelier.css";
+@import "./felix-fiche.css";
 
 @font-face {
   font-family: 'Neuropol';
@@ -32,73 +33,3 @@
   --radius-xl: 0.75rem;
 }
 
-/* Aged paper texture */
-.aged-texture {
-  background-color: #f4f1ea;
-  background-image:
-    radial-gradient(ellipse at 20% 50%, rgba(210, 195, 170, 0.15) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(180, 165, 140, 0.1) 0%, transparent 50%);
-}
-
-.dark .aged-texture {
-  background-color: #101e22;
-  background-image:
-    radial-gradient(ellipse at 20% 50%, rgba(13, 185, 242, 0.03) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 20%, rgba(13, 185, 242, 0.02) 0%, transparent 50%);
-}
-
-/* Tape effect on cards */
-.tape-effect {
-  position: relative;
-}
-
-.tape-effect::before {
-  content: '';
-  position: absolute;
-  top: -6px;
-  left: 50%;
-  transform: translateX(-50%) rotate(-1deg);
-  width: 60px;
-  height: 18px;
-  background: rgba(210, 195, 140, 0.45);
-  border-radius: 1px;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.dark .tape-effect::before {
-  background: rgba(13, 185, 242, 0.15);
-}
-
-/* Handwritten note style */
-.handwritten-note {
-  font-family: 'Caveat', cursive;
-  color: #8b7355;
-  transform: rotate(-1deg);
-}
-
-.dark .handwritten-note {
-  color: #0db9f2;
-  opacity: 0.7;
-}
-
-/* Era badges */
-.era-1940s {
-  --badge-bg: theme('colors.amber.100');
-  --badge-text: theme('colors.amber.800');
-}
-
-.era-1970s {
-  --badge-bg: theme('colors.blue.100');
-  --badge-text: theme('colors.blue.800');
-}
-
-.dark .era-1940s {
-  --badge-bg: theme('colors.amber.900');
-  --badge-text: theme('colors.amber.200');
-}
-
-.dark .era-1970s {
-  --badge-bg: theme('colors.blue.900');
-  --badge-text: theme('colors.blue.200');
-}

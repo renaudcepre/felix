@@ -1,0 +1,217 @@
+/* ============================================================
+   FELIX — pages d'entités (liste + fiche), thème papier.
+   Porté du design system (resources/design-system/project/
+   felix.css + Fiche personnage.html). Scopé sous .felix-fiche
+   (tokens en valeurs littérales → indépendant du thème cyan).
+   ============================================================ */
+.felix-fiche {
+  --paper: #f3ede1;
+  --paper-2: #ece3d2;
+  --card: #fbf8f1;
+  --card-2: #f7f1e6;
+  --ink: #2a251e;
+  --ink-2: #6b6052;
+  --ink-3: #9a8e7b;
+  --line: #e2d8c4;
+  --line-2: #d6c9b0;
+  --gold: #a9772a;
+  --gold-deep: #8a5f1f;
+  --gold-soft: #f0e3c8;
+  --gold-line: #e3cd9b;
+  --terra: #b14a30;
+  --terra-soft: #f4ddd1;
+  --terra-line: #e6bda9;
+  --sage: #5e7355;
+  --sage-soft: #e2e8da;
+  --sage-line: #c5d2b8;
+  --serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+  --sans: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', 'SFMono-Regular', Menlo, monospace;
+  --r-sm: 7px;
+  --r-md: 11px;
+  --r-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(54, 42, 20, .06), 0 1px 1px rgba(54, 42, 20, .04);
+  --shadow-md: 0 2px 8px rgba(54, 42, 20, .07), 0 8px 24px rgba(54, 42, 20, .06);
+  --shadow-lg: 0 6px 18px rgba(54, 42, 20, .10), 0 18px 50px rgba(54, 42, 20, .10);
+
+  min-height: 100dvh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Grain papier (overlay subtil) */
+.felix-fiche::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: .035;
+  mix-blend-mode: multiply;
+  background-image: radial-gradient(circle at 50% 50%, #000 .6px, transparent .7px);
+  background-size: 3px 3px;
+}
+
+.felix-fiche ::selection { background: var(--gold-soft); color: var(--ink); }
+.felix-fiche button { font-family: inherit; cursor: pointer; }
+.felix-fiche a { color: inherit; text-decoration: none; }
+
+.felix-fiche *::-webkit-scrollbar { width: 11px; height: 11px; }
+.felix-fiche *::-webkit-scrollbar-thumb { background: #d9cdb4; border-radius: 100px; border: 3px solid var(--paper); }
+.felix-fiche *::-webkit-scrollbar-thumb:hover { background: #cbbd9d; }
+.felix-fiche *::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- Barre du haut ---- */
+.felix-fiche .fbar {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(243, 237, 225, .82);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.felix-fiche .fbar-left { display: flex; align-items: center; gap: 18px; }
+.felix-fiche .back-link {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--sans); font-weight: 600; font-size: 14px;
+  color: var(--ink-2); white-space: nowrap; transition: color .15s ease;
+}
+.felix-fiche .back-link:hover { color: var(--gold-deep); }
+.felix-fiche .fbar-brand { display: flex; align-items: center; gap: 9px; }
+.felix-fiche .felix-mark {
+  width: 26px; height: 26px; display: grid; place-items: center;
+  border-radius: 7px; background: var(--gold); color: #fdfaf2;
+}
+.felix-fiche .fbar-project { font-family: var(--serif); font-weight: 600; font-size: 16px; color: var(--ink); }
+.felix-fiche .fbar-nav { display: flex; align-items: center; gap: 4px; }
+.felix-fiche .fbar-link {
+  font-family: var(--sans); font-weight: 600; font-size: 13.5px;
+  color: var(--ink-2); padding: 6px 11px; border-radius: var(--r-sm);
+  transition: background .15s ease, color .15s ease;
+}
+.felix-fiche .fbar-link:hover { background: var(--card-2); color: var(--ink); }
+
+/* ---- Conteneur ---- */
+.felix-fiche .fwrap { max-width: 840px; margin: 0 auto; padding: 30px 24px 64px; }
+
+/* ---- Monogramme ---- */
+.felix-fiche .mono-avatar {
+  display: grid; place-items: center; flex: none;
+  border-radius: 50%;
+  background: var(--gold-soft); border: 1px solid var(--gold-line);
+  color: var(--gold-deep); font-family: var(--serif); font-weight: 600;
+}
+.felix-fiche .mono-avatar.neutral { background: var(--card-2); border-color: var(--line-2); color: var(--ink-2); }
+
+/* ---- En-tête entité ---- */
+.felix-fiche .ent-head { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
+.felix-fiche .ent-name { font-family: var(--serif); font-weight: 600; font-size: 34px; line-height: 1; margin: 0 0 9px; color: var(--ink); letter-spacing: -.01em; }
+.felix-fiche .ent-tags { display: flex; align-items: center; gap: 10px; }
+.felix-fiche .ent-ref { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: .04em; }
+
+/* ---- Badges ---- */
+.felix-fiche .badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--sans); font-weight: 600; font-size: 11.5px; letter-spacing: .02em;
+  padding: 3px 9px; border-radius: 100px;
+  border: 1px solid var(--gold-line); background: var(--gold-soft); color: var(--gold-deep);
+  white-space: nowrap;
+}
+.felix-fiche .badge.cap { text-transform: capitalize; }
+.felix-fiche .badge-rel { border-color: var(--line-2); background: var(--card-2); color: var(--ink-2); }
+
+/* ---- Cartes ---- */
+.felix-fiche .card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-lg); box-shadow: var(--shadow-md);
+  padding: 22px 28px 24px; margin-bottom: 22px;
+}
+.felix-fiche .card-title { font-family: var(--serif); font-weight: 600; font-size: 20px; margin: 0 0 16px; color: var(--ink); }
+
+/* ---- Propriétés (clé/valeur, lecture seule) ---- */
+.felix-fiche .prop-grid { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr; gap: 0; }
+.felix-fiche .prop-row { display: contents; }
+.felix-fiche .prop-key {
+  font-family: var(--sans); font-weight: 600; font-size: 12.5px; letter-spacing: .03em;
+  text-transform: uppercase; color: var(--ink-2);
+  padding: 12px 14px 12px 0; border-top: 1px solid var(--line);
+}
+.felix-fiche .prop-val {
+  font-family: var(--serif); font-size: 16px; line-height: 1.55; color: var(--ink);
+  padding: 12px 0; border-top: 1px solid var(--line); white-space: pre-wrap; word-break: break-word;
+}
+.felix-fiche .prop-row:first-child .prop-key,
+.felix-fiche .prop-row:first-child .prop-val { border-top: none; }
+
+/* ---- Relations ---- */
+.felix-fiche .rel-list { display: flex; flex-direction: column; }
+.felix-fiche .rel-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 0; border-top: 1px solid var(--line); transition: opacity .12s ease;
+}
+.felix-fiche .rel-row:first-child { border-top: none; }
+.felix-fiche a.rel-row:hover .rel-name { color: var(--gold-deep); }
+.felix-fiche .rel-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.felix-fiche .rel-name { font-family: var(--sans); font-weight: 600; font-size: 15px; color: var(--ink); transition: color .15s ease; }
+.felix-fiche .rel-dir { display: inline-grid; place-items: center; color: var(--ink-3); }
+.felix-fiche .rel-dir.in { transform: scaleX(-1); }
+.felix-fiche .rel-meta { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+
+/* ---- Chronologie ---- */
+.felix-fiche .chrono-list { display: flex; flex-direction: column; }
+.felix-fiche .chrono-row { display: flex; gap: 14px; padding: 11px 0; border-top: 1px solid var(--line); }
+.felix-fiche .chrono-row:first-child { border-top: none; }
+.felix-fiche .chrono-ord {
+  flex: none; font-family: var(--mono); font-size: 12px; font-weight: 500;
+  color: var(--gold-deep); padding-top: 2px; min-width: 2.2rem;
+}
+.felix-fiche .chrono-text { font-family: var(--serif); font-size: 16px; line-height: 1.55; color: var(--ink); }
+
+.felix-fiche .fiche-foot { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); text-align: center; margin: 26px 0 0; }
+
+/* ---- État vide ---- */
+.felix-fiche .empty { font-family: var(--serif); font-size: 15px; line-height: 1.6; color: var(--ink-2); }
+.felix-fiche .empty a { color: var(--gold-deep); text-decoration: underline; text-underline-offset: 2px; }
+
+/* ============ Liste d'entités ============ */
+.felix-fiche .list-head { margin-bottom: 20px; }
+.felix-fiche .list-title { font-family: var(--serif); font-weight: 600; font-size: 30px; line-height: 1; margin: 0 0 6px; color: var(--ink); letter-spacing: -.01em; }
+.felix-fiche .list-sub { font-family: var(--sans); font-size: 14px; color: var(--ink-2); }
+
+.felix-fiche .filter-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.felix-fiche .chip {
+  font-family: var(--sans); font-weight: 600; font-size: 13px; letter-spacing: .01em;
+  padding: 7px 14px; border-radius: 100px;
+  border: 1px solid var(--line-2); background: var(--card); color: var(--ink-2);
+  transition: border-color .14s ease, background .14s ease, color .14s ease;
+}
+.felix-fiche .chip:hover { border-color: var(--gold-line); background: var(--gold-soft); color: var(--gold-deep); }
+.felix-fiche .chip.active { border-color: var(--gold); background: var(--gold); color: #fdfaf2; }
+.felix-fiche .chip.cap { text-transform: capitalize; }
+
+.felix-fiche .ent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.felix-fiche .ent-card {
+  display: flex; align-items: flex-start; gap: 13px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-md); box-shadow: var(--shadow-sm);
+  padding: 15px 16px; transition: border-color .15s ease, box-shadow .15s ease, transform .06s ease;
+}
+.felix-fiche .ent-card:hover { border-color: var(--gold-line); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.felix-fiche .ent-card-body { min-width: 0; flex: 1; }
+.felix-fiche .ent-card-name { font-family: var(--serif); font-weight: 600; font-size: 17px; line-height: 1.2; color: var(--ink); margin-bottom: 6px; overflow-wrap: anywhere; }
+.felix-fiche .ent-card-preview { font-family: var(--serif); font-size: 13.5px; line-height: 1.45; color: var(--ink-2); margin-top: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.felix-fiche .ent-card-preview b { font-weight: 600; color: var(--ink); }
+
+@media (max-width: 680px) {
+  .felix-fiche .prop-grid { grid-template-columns: 1fr; }
+  .felix-fiche .prop-row:not(:first-child) .prop-key { border-top: 1px solid var(--line); }
+  .felix-fiche .prop-val { border-top: none; padding-top: 0; }
+}

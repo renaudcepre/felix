@@ -13,38 +13,21 @@ const preview = computed(() => {
   const [key, value] = entries[0]!
   return { key, value: String(value) }
 })
+
+const initial = computed(() => (props.entity.name?.[0] ?? '?').toUpperCase())
 </script>
 
 <template>
-  <NuxtLink :to="`/entities/${entity.id}`">
-    <UCard
-      class="tape-effect hover:shadow-lg transition-shadow cursor-pointer h-full"
-      :ui="{ body: 'p-4' }"
-    >
-      <div class="flex items-start gap-3">
-        <UAvatar
-          :text="(entity.name?.[0] ?? '?').toUpperCase()"
-          size="lg"
-          color="primary"
-        />
-        <div class="min-w-0 flex-1">
-          <p class="font-semibold truncate">
-            {{ entity.name }}
-          </p>
-          <UBadge
-            v-if="entity.entity_type"
-            color="info"
-            variant="subtle"
-            size="xs"
-            class="mt-0.5"
-          >
-            {{ entity.entity_type }}
-          </UBadge>
-          <p v-if="preview" class="text-xs text-muted mt-2 line-clamp-2">
-            <span class="font-medium">{{ preview.key }}</span> · {{ preview.value }}
-          </p>
-        </div>
-      </div>
-    </UCard>
+  <NuxtLink class="ent-card" :to="`/entities/${entity.id}`">
+    <span class="mono-avatar neutral" :style="{ width: '40px', height: '40px', fontSize: '17px' }">
+      {{ initial }}
+    </span>
+    <div class="ent-card-body">
+      <div class="ent-card-name">{{ entity.name }}</div>
+      <span v-if="entity.entity_type" class="badge badge-rel cap">{{ entity.entity_type }}</span>
+      <p v-if="preview" class="ent-card-preview">
+        <b>{{ preview.key }}</b> · {{ preview.value }}
+      </p>
+    </div>
   </NuxtLink>
 </template>
