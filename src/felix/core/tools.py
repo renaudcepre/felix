@@ -177,6 +177,23 @@ def plan_property_update(
     return to_set, blocked
 
 
+def check_update_target(node: dict | None, name: str) -> str | None:
+    """Vérifie que le nœud cible d'update_entity est une vraie entité (non-événement).
+
+    Retourne None si la mise à jour peut se faire, ou un message guidant
+    (chaîne, PAS une exception → l'agent rejoue sans boucle ModelRetry).
+    Un nœud ``entity_type='evenement'`` est TOUJOURS rejeté : ses données
+    appartiennent à la chronologie (add_event), jamais à update_entity.
+    Pur → testable sans Neo4j.
+    """
+    if node is None:
+        return f"« {name} » n'existe pas — utilise add_entity pour la créer."
+    if node.get("entity_type") == "evenement":
+        return (f"« {name} » est un événement, pas une entité — "
+                f"crée d'abord l'entité avec add_entity.")
+    return None
+
+
 async def update_entity(
     ctx: RunContext[GenericDeps], name: str, props: dict[str, str],
     is_correction: bool = False,
@@ -196,8 +213,12 @@ async def update_entity(
             (autorise alors le remplacement d'une valeur existante).
     """
     node = await find_node(ctx.deps.driver, name)
-    if not node:
-        return f"« {name} » n'existe pas — utilise add_entity pour la créer."
+    # Garde anti-événement : find_node peut résoudre sur un nœud evenement quand
+    # le name de l'événement contient le nom cherché (ex. « L'Aumônier dit… »).
+    guard = check_update_target(node, name)
+    if guard is not None:
+        return guard
+    assert node is not None  # check_update_target retourne None ssi node n'est pas None
     clean = {k: v for k, v in props.items() if k not in RESERVED_KEYS}
     to_set, blocked = plan_property_update(node, clean, is_correction=is_correction)
 
@@ -402,7 +423,7 @@ async def add_event(
     # sérialise les add_event concurrents d'un même run (sinon collision d'ordre/id).
     async with ctx.deps.event_seq_lock, ctx.deps.driver.session() as session:
         # Dédup : ne pas recréer un événement au resume identique (le chroniqueur
-        # appelle parfois add_event 2× pour la même action dans une seule réponse).
+        # appelle parfois add_event 2x pour la même action dans une seule réponse).
         dup = await session.run(
             "MATCH (e:GenEntity {entity_type: 'evenement'})"
             " WHERE toLower(e.resume) = toLower($r) RETURN e.id LIMIT 1",
