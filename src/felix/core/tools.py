@@ -513,23 +513,3 @@ async def add_event(
     )
     ctx.deps.touched_ids.add(event_id)
     return f"Événement #{ordre} enregistré : {text} (participants : {', '.join(linked) or '—'})."
-
-
-async def noter_le_passage(ctx: RunContext[GenericDeps], resume: str) -> str:
-    """Signale que CE message apporte du CONTENU à enregistrer dans la bible.
-
-    Outil-signal du chef d'orchestre (maître) : il ne touche PAS à la base, il pose
-    seulement un drapeau. La route lance ALORS les extracteurs (entités, relations,
-    événements) sur le message. N'appelle ceci QUE si le message introduit ou corrige
-    un fait du monde : nouveau personnage / lieu / objet, relation entre eux, événement
-    qui se passe, ou correction d'un fait existant.
-
-    N'appelle PAS pour une salutation, un remerciement, du bavardage, une hésitation
-    sans fait concret, ou une QUESTION sur ce qui existe déjà (lire n'est pas écrire).
-
-    Args:
-        resume: en une phrase, le contenu à enregistrer (ce qui justifie l'appel).
-    """
-    ctx.deps.extraction_requested = True
-    ctx.deps.write_log.append(f"contenu signalé pour extraction : {resume.strip()}")
-    return f"Contenu noté pour enregistrement : {resume.strip()}"

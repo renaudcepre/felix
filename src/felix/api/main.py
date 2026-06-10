@@ -20,6 +20,7 @@ from felix.atelier.agent import (
     ATELIER_CHOICES,
     build_atelier_agent,
     build_chronicle_agent,
+    build_gate_agent,
     build_master_agent,
     build_relation_agent,
 )
@@ -39,6 +40,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     app.state.driver = driver
     app.state.collection = collection
+    # Gate de routage : UN seul, stateless et indépendant du profil (décider si un
+    # message pose un fait ne dépend pas du domaine).
+    app.state.gate_agent = build_gate_agent()
     app.state.master_agents = {
         key: build_master_agent(choice) for key, choice in ATELIER_CHOICES.items()
     }

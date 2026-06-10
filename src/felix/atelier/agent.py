@@ -11,6 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
+
 from felix.core import CHANTIER_PROFILE, SCENARIO_PROFILE, create_core_agent
 from felix.core.agent import CHRONICLE_SYSTEM_PROMPT, RELATION_SYSTEM_PROMPT
 from felix.core.tools import (
@@ -20,8 +24,8 @@ from felix.core.tools import (
     describe_schema,
     find_entity,
     list_entities,
-    noter_le_passage,
 )
+from felix.llm import build_chat_model
 
 # Outils du relieur (passe 2) : le noyau SANS update_entity. Sa tâche est de RELIER
 # (add_relation), pas de toucher aux propriétés — le churn de props (ex. `arc`
@@ -30,15 +34,14 @@ from felix.core.tools import (
 # boucler sur un outil manquant — le piège du relieur trop restreint).
 RELATION_TOOLS = (describe_schema, find_entity, add_entity, add_relation)
 
-# Outils du MAÎTRE (chef d'orchestre, passe 0) : LECTURE SEULE de la bible +
-# l'outil-signal. Aucun outil d'écriture → il ne PEUT pas inventer d'entité (l'hallu
-# « salut → invente » devient impossible par construction). Il MÈNE la conversation
-# et, s'il y a du contenu, appelle noter_le_passage → la route dispatche les extracteurs.
-MASTER_TOOLS = (find_entity, list_entities, noter_le_passage)
+# Outils du MAÎTRE (chef d'orchestre, passe 0) : LECTURE SEULE de la bible. Aucun
+# outil d'écriture → il ne PEUT pas inventer d'entité (l'hallu « salut → invente »
+# devient impossible par construction). Il MÈNE la conversation ; la DÉCISION
+# d'extraire ne lui appartient plus : elle est portée par le GATE stateless
+# (build_gate_agent), hors du fil threadé.
+MASTER_TOOLS = (find_entity, list_entities)
 
 if TYPE_CHECKING:
-    from pydantic_ai import Agent
-
     from felix.core import GenericDeps, Profile
 
 ATELIER_PERSONA = """\
@@ -78,56 +81,95 @@ l'écriture. Tu ne récapitules pas ce qui est enregistré (les fiches s'affiche
 d'elles-mêmes à côté).
 """
 
-# Le maître ne fait PAS d'extraction : il décide s'il FAUT en faire. Discipline de
-# routage + few-shot (cf. [[feedback_prompt_engineering]] : few-shot > règles
-# abstraites pour les petits modèles), formulée en POSITIF. DÉCISION AVANT le texte
-# (reason-first) : sommé de « répondre puis décider », Small répondait et s'arrêtait
-# sans jamais décider — jusqu'à dire « noté » sans appel, voire écrire
-# noter_le_passage(...) EN TEXTE (mesuré : recall 53 %, sonde routage 2026-06-10).
+# Le maître ne décide PLUS de l'extraction (cf. GATE ci-dessous) : il est purement
+# conversationnel. L'enregistrement étant géré ailleurs, la seule discipline qui
+# reste est de ne jamais l'annoncer (« noté ») et de ne jamais deviner la bible.
 MASTER_SYSTEM_PROMPT = """\
-Tu diriges une conversation d'écriture. Tu ne touches JAMAIS à la base toi-même :
-tu peux seulement la LIRE (find_entity, list_entities) et SIGNALER quand il y a du
-contenu à y enregistrer (noter_le_passage).
+Tu mènes une conversation d'écriture. Tu ne touches JAMAIS à la base toi-même :
+tu peux seulement la LIRE (find_entity, list_entities). L'enregistrement des
+fiches est géré ailleurs, automatiquement : ne dis JAMAIS « noté » / « j'enregistre »
+(les fiches s'affichent d'elles-mêmes à côté de la conversation).
 
-À chaque message, DANS CET ORDRE :
-1. D'ABORD décide s'il y a du CONTENU À ENREGISTRER, et si oui appelle L'OUTIL
-   noter_le_passage AVANT d'écrire ta réponse. La règle :
-   - Le message AFFIRME un fait sur le monde — un personnage / lieu / objet (même
-     juste nommé), un NOM donné à une entité qu'on suivait sans nom (« X se nomme
-     Y », « on va l'appeler Z »), un lien (« a un homme de main », « surveille »),
-     une action qui se passe, ou une CORRECTION d'un fait existant ?
-     → c'est du CONTENU, MÊME en une phrase brève : appelle noter_le_passage(resume).
-   - Sinon (salutation, remerciement, bavardage, hésitation sans fait, ou une
-     QUESTION/demande de rappel) → n'appelle RIEN.
-2. PUIS réponds à l'auteur — 1 à 2 phrases, et UNE question utile à l'écriture.
-
-noter_le_passage est un APPEL D'OUTIL, jamais du texte : ne l'écris pas dans ta
-réponse, et ne dis JAMAIS « noté » / « j'enregistre » sans l'avoir réellement
-appelé (la seule trace fiable, ce sont les fiches affichées à côté).
-
-La distinction clé : une AFFIRMATION qui pose un fait = contenu (on note) ; une
-QUESTION ou une demande, même si elle nomme des entités, n'est PAS du contenu (lire
-n'est pas écrire). Pour une question (« qui est X ? », « qu'a-t-on sur Y ? »),
-consulte la bible (find_entity / list_entities) — ne devine jamais — et n'appelle
-PAS noter_le_passage. Dans le doute, si le message APPORTE un fait, note-le.
-
-Exemples (un univers d'illustration — la règle vaut pour toute histoire) :
-- « salut » / « ça va ? » / « merci, c'est cool » → réponds, n'appelle RIEN.
-- « je sais pas trop par où commencer » → relance, n'appelle RIEN (aucun fait).
-- « qui est Mirko, déjà ? » → find_entity('Mirko'), réponds, n'appelle RIEN.
-- « Sel, une cartographe, arrive à Vellone pour lever les plans des galeries
-  interdites » → noter_le_passage("arrivée de Sel à Vellone ; relevé des galeries").
-- « l'intendant a un secrétaire, Mirko » (affirmation brève qui introduit une
-  entité + un lien) → noter_le_passage("Mirko, secrétaire de l'intendant").
-- « le contremaître se nomme "Drass" » (baptême d'une entité suivie — une seule
-  phrase, mais un fait) → noter_le_passage("le contremaître s'appelle Drass").
-- « à la nuit, dans la galerie ouest, Mirko suit Sel » (action concrète) →
-  noter_le_passage("Mirko suit Sel, la nuit dans la galerie ouest").
-- « en fait l'éboulement n'était pas un accident : la poutre a été sciée » →
-  noter_le_passage("correction : l'éboulement est un sabotage").
+Réponds à l'auteur en 1 à 2 phrases : réagis à l'HISTOIRE, puis relance avec UNE
+seule question utile à l'écriture. Pour une question sur ce qui existe (« qui est
+X ? », « qu'a-t-on sur Y ? »), consulte la bible (find_entity / list_entities) —
+ne devine jamais.
 
 Réponds en français, 2 phrases maximum.
 """
+
+
+# ─────────── GATE de routage (stateless) : décide s'il faut extraire ───────────
+class RouteDecision(BaseModel):
+    """Sortie structurée du gate — `fait` AVANT `noter` (reason-first : le modèle
+    formule le fait, puis tranche ; l'inverse fait trancher Small à l'aveugle)."""
+
+    fait: str = Field(
+        description="le fait que le message apporte sur l'histoire, en une phrase ; "
+        "chaîne vide s'il n'y en a aucun"
+    )
+    noter: bool = Field(
+        description="vrai s'il y a du contenu à enregistrer dans la bible"
+    )
+
+
+# La décision d'extraire est STATELESS : le gate ne voit QUE le message du tour,
+# jamais le fil ni ses décisions passées — l'ornière d'auto-imitation (un tour 1
+# mal classé imité toute la session, dogfood 2026-06-10, issue #43) devient
+# impossible par construction. Règle « hedge + contenu = contenu » : l'hésitation
+# ne compte pas, seul compte le fait. Few-shot univers prompt-only Sel/Mirko/
+# Vellone (cf. [[feedback_prompt_test_leakage]]).
+GATE_SYSTEM_PROMPT = """\
+Tu es le filtre d'enregistrement d'un copilote d'écriture de scénario. On te donne
+UN message de l'auteur, seul, hors contexte. Décide s'il apporte du CONTENU à
+enregistrer dans la bible de son histoire (personnages, lieux, objets, groupes,
+relations, événements).
+
+NOTER (noter=true) si le message AFFIRME ou ESQUISSE un fait sur le monde de
+l'histoire :
+- un personnage / lieu / objet / groupe, même juste mentionné ou proposé ;
+- un NOM donné à une entité (« X se nomme Y », « on va l'appeler Z ») ;
+- un lien entre entités (« a un homme de main », « surveille ») ;
+- une action qui se passe, ou une CORRECTION d'un fait existant.
+L'HÉSITATION NE COMPTE PAS : ignore les marqueurs de doute (« je sais pas trop »,
+« peut-être », « un truc genre », le conditionnel, le « ? » d'une idée proposée).
+Une fois le doute retiré, s'il reste un fait ou une ébauche d'histoire → noter=true.
+
+NE PAS NOTER (noter=false) si le message ne pose AUCUN fait : salutation,
+remerciement, réaction (« ouais », « pas mal »), pur « je sais pas par où
+commencer », ou une QUESTION sur ce qui existe déjà (« qui est X ? »,
+« résume-moi ce qu'on a ») — lire n'est pas écrire.
+
+Exemples (un univers d'illustration — la règle vaut pour toute histoire) :
+- « salut » / « merci, c'est top » / « ouais, pas mal » → noter=false, fait="".
+- « je sais pas trop par où commencer » → noter=false, fait="" (aucun fait).
+- « qui est Mirko, déjà ? » → noter=false, fait="" (question : lire n'est pas écrire).
+- « Sel, une cartographe, arrive à Vellone pour lever les plans des galeries
+  interdites » → noter=true, fait="Sel, cartographe, arrive à Vellone relever les
+  galeries interdites".
+- « hmm, peut-être un truc où l'intendant aurait perdu un fils, autrefois ? » →
+  noter=true, fait="l'intendant a perdu un fils autrefois" (hésitation MAIS une
+  ébauche d'histoire : on note le fait, pas le doute).
+- « le contremaître se nomme "Drass" » → noter=true, fait="le contremaître
+  s'appelle Drass".
+- « en fait l'éboulement n'était pas un accident : la poutre a été sciée » →
+  noter=true, fait="correction : l'éboulement est un sabotage de la poutre".
+"""
+
+
+def build_gate_agent() -> Agent[None, RouteDecision]:
+    """Gate de routage : un appel court, SANS outils ni deps, sortie structurée.
+
+    Appelé par la route avec le message du tour SEUL (jamais d'historique) : la
+    fraîcheur de la décision est la propriété qui tue l'ornière — ne pas lui
+    passer de message_history."""
+    return Agent(
+        build_chat_model(),
+        instructions=GATE_SYSTEM_PROMPT,
+        output_type=RouteDecision,
+        model_settings=ModelSettings(temperature=0.0),
+        retries=3,
+    )
 
 
 # Passe 2 dédiée : le « relieur ». Décompose l'extraction (entités d'abord, puis
@@ -183,12 +225,12 @@ def create_atelier_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDep
 
 
 def build_master_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
-    """Passe 0 « maître » : MÈNE la conversation (texte streamé) et ROUTE l'extraction.
+    """Passe 0 « maître » : MÈNE la conversation (texte streamé), threadée.
 
-    Outils en LECTURE SEULE (find_entity, list_entities) + l'outil-signal
-    noter_le_passage : aucun outil d'écriture → il ne PEUT pas inventer d'entité.
-    La route ne lance les extracteurs (entités/relieur/chroniqueur) + le juge que
-    s'il a appelé noter_le_passage — un bavardage/une question n'écrit donc RIEN."""
+    Outils en LECTURE SEULE (find_entity, list_entities) : aucun outil d'écriture
+    → il ne PEUT pas inventer d'entité. La décision d'extraire est portée par le
+    gate stateless (build_gate_agent), lancé en parallèle par la route — un
+    bavardage/une question n'écrit donc RIEN."""
     return create_core_agent(
         profile=choice.profile,
         persona=MASTER_PERSONA,

@@ -39,6 +39,13 @@ export function useAtelier() {
   // l'auteur devant un long silence pendant ces passes non streamées.
   const phase = ref<string | null>(null)
   const messageHistory = ref<object[]>([])
+  // Garde-fou « session muette » (issue #43) : si la bible est toujours vide
+  // après 3 tours d'auteur, on l'affiche au lieu de laisser la session se perdre
+  // en silence. Toute carte `tool` est une écriture (les lectures n'émettent pas
+  // de carte) — le compteur repart à zéro dès que la bible bouge.
+  const silentTurns = ref(0)
+  const everWrote = ref(false)
+  const silentSession = computed(() => !everWrote.value && silentTurns.value >= 3)
 
   function append(msg: Omit<AtelierMsg, 'id'>): AtelierMsg {
     messages.value.push({ id: uid(), ...msg })
@@ -56,6 +63,7 @@ export function useAtelier() {
     // Message texte felix en cours de stream ; une carte tool le clôt,
     // le delta suivant ouvre alors un nouveau message.
     let current: AtelierMsg | null = null
+    let wroteThisTurn = false
 
     try {
       const response = await fetch(`${apiStreamBase}/api/atelier/chat`, {
@@ -89,6 +97,7 @@ export function useAtelier() {
           case 'tool': {
             const card = JSON.parse(sse.data) as ToolCardPayload
             current = null
+            wroteThisTurn = true
             append({
               role: 'felix',
               kind: 'tool',
@@ -124,8 +133,15 @@ export function useAtelier() {
     finally {
       typing.value = false
       phase.value = null
+      if (wroteThisTurn) {
+        everWrote.value = true
+        silentTurns.value = 0
+      }
+      else {
+        silentTurns.value += 1
+      }
     }
   }
 
-  return { messages, typing, phase, sendMessage }
+  return { messages, typing, phase, sendMessage, silentSession }
 }

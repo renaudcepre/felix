@@ -23,6 +23,7 @@ from sse_starlette import EventSourceResponse, ServerSentEvent
 from felix.api.deps import (
     AtelierAgentsDep,
     ChronicleAgentsDep,
+    GateAgentDep,
     MasterAgentsDep,
     Neo4jDriver,
     RelationAgentsDep,
@@ -95,6 +96,50 @@ async def _consistency_alerts(
         )
 
 
+async def _stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + historique + deps partagés
+    sub_agent: Agent, prompt: str, history: list | None, deps: GenericDeps,
+    *, stream_text: bool, holder: dict
+) -> AsyncGenerator[ServerSentEvent]:
+    """Joue une passe via `.iter()` : draine les cartes des tools EN LIVE (à
+    chaque node) et, si `stream_text`, streame le texte. Stocke `usage` +
+    `messages` dans `holder` (un générateur ne peut pas « return »). Factorisé
+    pour les 4 passes : maître (texte streamé) ; extracteurs (cartes live, pas
+    de texte → une seule bulle). `prompt` varie : message nu pour le maître et
+    le chroniqueur, message préfixé du working set pour entités/relieur."""
+    async with sub_agent.iter(
+        prompt, deps=deps, message_history=history
+    ) as run:
+        async for node in run:
+            for card in deps.ui_events:
+                yield ServerSentEvent(data=card.model_dump_json(), event="tool")
+            deps.ui_events.clear()
+            if stream_text and Agent.is_model_request_node(node):
+                async with node.stream(run.ctx) as request_stream:
+                    async for text in request_stream.stream_text(delta=True):
+                        yield ServerSentEvent(data=text, event="text")
+        for card in deps.ui_events:
+            yield ServerSentEvent(data=card.model_dump_json(), event="tool")
+        deps.ui_events.clear()
+        holder["usage"] = run.usage()
+        holder["messages"] = run.all_messages()
+
+
+async def _apply_gate_verdict(gate_task: asyncio.Task, deps: GenericDeps, usages: list) -> None:
+    """Attend le gate et pose `extraction_requested`. Best-effort FAIL-CLOSED : si le
+    gate crashe (transient LLM), on n'extrait pas ce tour — l'invariant produit n°1
+    reste « jamais d'écriture sans contenu », et le fait peut être redonné."""
+    try:
+        gate_run = await gate_task
+        usages.append(gate_run.usage())
+        if gate_run.output.noter:
+            deps.extraction_requested = True
+            deps.write_log.append(
+                f"contenu signalé pour extraction : {gate_run.output.fait.strip()}"
+            )
+    except Exception:
+        logger.exception("gate de routage échoué (tour sans extraction)")
+
+
 @router.get("/profiles")
 async def atelier_profiles() -> list[dict[str, str]]:
     """Modes proposés par le sélecteur de l'UI (clé + libellé)."""
@@ -104,6 +149,7 @@ async def atelier_profiles() -> list[dict[str, str]]:
 @router.post("/chat")
 async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances FastAPI
     body: ChatRequest,
+    gate_agent: GateAgentDep,
     master_agents: MasterAgentsDep,
     agents: AtelierAgentsDep,
     relation_agents: RelationAgentsDep,
@@ -126,48 +172,27 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
         # SSE `history` renvoyé au front (réseau + mémoire front), pas que l'input modèle.
         message_history = window_history_by_tokens(full, settings.history_token_budget)
 
-    async def stream_pass(
-        sub_agent: Agent, prompt: str, history: list | None,
-        *, stream_text: bool, holder: dict
-    ) -> AsyncGenerator[ServerSentEvent]:
-        """Joue une passe via `.iter()` : draine les cartes des tools EN LIVE (à
-        chaque node) et, si `stream_text`, streame le texte. Stocke `usage` +
-        `messages` dans `holder` (un générateur ne peut pas « return »). Factorisé
-        pour les 4 passes : maître (texte streamé) ; extracteurs (cartes live, pas
-        de texte → une seule bulle). `prompt` varie : message nu pour le maître et
-        le chroniqueur, message préfixé du working set pour entités/relieur."""
-        async with sub_agent.iter(
-            prompt, deps=deps, message_history=history
-        ) as run:
-            async for node in run:
-                for card in deps.ui_events:
-                    yield ServerSentEvent(data=card.model_dump_json(), event="tool")
-                deps.ui_events.clear()
-                if stream_text and Agent.is_model_request_node(node):
-                    async with node.stream(run.ctx) as request_stream:
-                        async for text in request_stream.stream_text(delta=True):
-                            yield ServerSentEvent(data=text, event="text")
-            for card in deps.ui_events:
-                yield ServerSentEvent(data=card.model_dump_json(), event="tool")
-            deps.ui_events.clear()
-            holder["usage"] = run.usage()
-            holder["messages"] = run.all_messages()
-
     async def event_generator() -> AsyncGenerator[ServerSentEvent]:
+        # GATE de routage STATELESS : décide si ce tour doit extraire, sur le message
+        # SEUL (jamais le fil → l'ornière d'auto-imitation est impossible par
+        # construction, issue #43). Lancé EN PARALLÈLE du maître : sa latence est
+        # masquée par le stream de la réponse, on l'attend juste avant le dispatch.
+        gate_task = asyncio.create_task(gate_agent.run(body.message))
         try:
-            # Passe 0 « maître » : MÈNE la conversation (texte streamé) et DÉCIDE s'il
-            # faut extraire. S'il appelle noter_le_passage, deps.extraction_requested
-            # passe à vrai → on dispatche les extracteurs ; sinon on s'arrête là.
+            # Passe 0 « maître » : MÈNE la conversation (texte streamé), threadée.
+            # La décision d'extraire ne lui appartient plus (cf. gate ci-dessus).
             yield ServerSentEvent(data="Felix répond…", event="phase")
             master: dict = {}
-            async for ev in stream_pass(
-                master_agent, body.message, message_history, stream_text=True, holder=master
+            async for ev in _stream_pass(
+                master_agent, body.message, message_history, deps,
+                stream_text=True, holder=master
             ):
                 yield ev
 
             usages = [master["usage"]]
+            await _apply_gate_verdict(gate_task, deps, usages)
 
-            # Extracteurs MUETS, dispatchés UNIQUEMENT si le maître a signalé du contenu.
+            # Extracteurs MUETS, dispatchés UNIQUEMENT si le gate a signalé du contenu.
             # Une salutation / une question n'écrit donc RIEN (hallu impossible par
             # construction, tour conversationnel moins cher). Ordre : entités → relieur →
             # chroniqueur (ce dernier SANS historique, sinon re-chronique → doublons).
@@ -192,8 +217,8 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
                     try:
                         yield ServerSentEvent(data=phase_text, event="phase")
                         sub: dict = {}
-                        async for ev in stream_pass(
-                            sub_agent, prompt, hist, stream_text=False, holder=sub
+                        async for ev in _stream_pass(
+                            sub_agent, prompt, hist, deps, stream_text=False, holder=sub
                         ):
                             yield ev
                         usages.append(sub["usage"])
@@ -228,6 +253,7 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
 
             yield ServerSentEvent(data="", event="done")
         except Exception as e:
+            gate_task.cancel()
             yield ServerSentEvent(data=str(e), event="error")
 
     return EventSourceResponse(event_generator())

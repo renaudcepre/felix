@@ -6,7 +6,7 @@ definePageMeta({ layout: false })
 useHead({ title: 'Felix — Atelier · Rivière basse' })
 
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
-const { messages, typing, phase, sendMessage } = useAtelier()
+const { messages, typing, phase, sendMessage, silentSession } = useAtelier()
 
 const draft = ref('')
 const scrollRef = ref<HTMLElement | null>(null)
@@ -118,6 +118,12 @@ function onKeydown(e: KeyboardEvent) {
 
     <div class="composer-wrap">
       <div class="composer-col">
+        <div v-if="silentSession" class="silent-banner">
+          <AtelierIcon name="felix" :size="15" />
+          <span>Felix n'a encore rien noté dans la bible. Si tu racontes déjà ton
+            histoire, pose les faits simplement (« Une botaniste arrive au
+            hameau… ») et les fiches apparaîtront à mesure.</span>
+        </div>
         <div class="composer">
           <textarea
             ref="taRef"
@@ -401,6 +407,8 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .composer-send:active { transform: translateY(1px); }
 .felix-atelier .composer-send:disabled { background: var(--line-2); color: var(--ink-3); cursor: default; }
 .felix-atelier .composer-hint { font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-align: center; margin-top: 9px; }
+.felix-atelier .silent-banner { display: flex; align-items: flex-start; gap: 9px; padding: 10px 13px; margin-bottom: 9px; border: 1px solid var(--gold-line); background: var(--gold-soft); border-radius: var(--r-md); font-family: var(--sans); font-size: 13px; line-height: 1.5; color: var(--gold-deep); }
+.felix-atelier .silent-banner svg { flex: none; margin-top: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .felix-atelier .msg { animation: none; }

@@ -16,9 +16,15 @@ def get_collection(request: Request) -> chromadb.Collection:
     return request.app.state.collection
 
 
+def get_gate_agent(request: Request) -> Agent:
+    """Gate de routage stateless (RouteDecision) : décide si le tour doit extraire.
+    Unique (pas par profil) — appelé avec le message SEUL, jamais d'historique."""
+    return request.app.state.gate_agent
+
+
 def get_master_agents(request: Request) -> dict[str, Agent]:
-    """Agents « maître » (passe 0) pré-construits par profil : mènent la conversation
-    et routent l'extraction (lecture seule + outil-signal)."""
+    """Agents « maître » (passe 0) pré-construits par profil : mènent la
+    conversation (lecture seule, purement conversationnels)."""
     return request.app.state.master_agents
 
 
@@ -39,6 +45,7 @@ def get_chronicle_agents(request: Request) -> dict[str, Agent]:
 
 Neo4jDriver: TypeAlias = Annotated[AsyncDriver, Depends(get_driver)]
 Collection: TypeAlias = Annotated[chromadb.Collection, Depends(get_collection)]
+GateAgentDep: TypeAlias = Annotated[Agent, Depends(get_gate_agent)]
 MasterAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_master_agents)]
 AtelierAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_atelier_agents)]
 RelationAgentsDep: TypeAlias = Annotated[dict[str, Agent], Depends(get_relation_agents)]
