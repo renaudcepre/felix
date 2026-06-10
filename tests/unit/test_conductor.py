@@ -35,7 +35,9 @@ WRITE_TOOLS = {"add_entity", "update_entity", "add_relation", "add_event", "rena
 TEST_UNIVERSES = ("Nora", "Castan", "Port-Vendres", "Veil",
                   "Vada", "Tilio", "Sorne",
                   "Adator", "Alikazeth",
-                  "Ottra", "Vels", "Velsgarde", "Doran")
+                  "Ottra", "Vels", "Velsgarde", "Doran",
+                  # A/B tiering du maître (#62/#49) : noms des tours-pièges.
+                  "Hector", "Brise", "Talou", "Vorn", "Roche-Pâle")
 
 
 @conductor_suite.test()

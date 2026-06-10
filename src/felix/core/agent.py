@@ -28,6 +28,8 @@ from felix.core.tools import (
 from felix.llm import build_chat_model
 
 if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
     from felix.core.profile import Profile
 
 SYSTEM_PROMPT = """\
@@ -129,6 +131,7 @@ def create_core_agent(
     persona: str = "",
     tools: Sequence[Callable] | None = None,
     system_prompt: str = SYSTEM_PROMPT,
+    model: Model | None = None,
 ) -> Agent[GenericDeps, str]:
     instructions = system_prompt
     if persona:
@@ -136,8 +139,11 @@ def create_core_agent(
     if profile is not None:
         instructions = instructions.rstrip() + "\n\n" + profile.render_prompt_block()
 
+    # model=None → modèle de chat par défaut (prod). L'override per-agent est la
+    # plomberie du tiering par feature (#49) : on peut monter UNE passe (ex. le
+    # maître) sur un tier supérieur sans toucher les autres.
     agent = Agent(
-        build_chat_model(),
+        model or build_chat_model(),
         instructions=instructions,
         deps_type=GenericDeps,
         output_type=str,

@@ -42,6 +42,8 @@ RELATION_TOOLS = (describe_schema, find_entity, add_entity, add_relation)
 MASTER_TOOLS = (find_entity, list_entities)
 
 if TYPE_CHECKING:
+    from pydantic_ai.models import Model
+
     from felix.core import GenericDeps, Profile
 
 ATELIER_PERSONA = """\
@@ -72,30 +74,43 @@ brièvement chaque écriture. Pour répondre à une question sur le contenu de l
 base, consulte-le d'abord (list_entities, find_entity) — ne devine jamais.
 """
 
-# ─────────── MAÎTRE (passe 0) : mène la conversation ET route l'extraction ───────────
+# ─────────── MAÎTRE (passe 0) : BLOC-NOTES, pas interviewer ───────────
+# Retour utilisateur (2026-06-10) : « relance avec UNE question » à chaque tour est
+# insupportable — l'auteur veut un BLOC-NOTES qui écoute et RÉAGIT, pas un coach qui
+# mène l'entretien. Le même réflexe « avoir l'air engagé » faisait aussi CONFABULER
+# du concret sur base vide. A/B de persona mesuré : interviewer 12/12 relance vs
+# bloc-notes 0/12 relance + 0 confabulation (voix « réagit sobrement, jamais de
+# question » choisie par l'utilisateur). Cf. [[project_master_blocnotes]], JOURNAL
+# « Maître → bloc-notes », harness `just ab-blocnotes`.
 MASTER_PERSONA = """\
-Tu es Felix, copilote d'écriture de scénario. Tu MÈNES la conversation avec
-l'auteur pendant qu'il raconte son histoire : ton chaleureux et sobre, tu réagis à
-l'HISTOIRE en une phrase, puis tu relances avec UNE seule question utile à
-l'écriture. Tu ne récapitules pas ce qui est enregistré (les fiches s'affichent
-d'elles-mêmes à côté).
+Tu es Felix, le bloc-notes vivant de l'auteur. Il déroule son histoire ; tu
+l'accompagnes en retrait. À chaque tour, tu RÉAGIS en une phrase courte et sincère
+à ce qu'il vient de dire — sans jamais ajouter un détail qu'il n'a pas donné — puis
+tu t'arrêtes. Tu ne le questionnes pas, tu ne le diriges pas : tu reçois.
 """
 
-# Le maître ne décide PLUS de l'extraction (cf. GATE ci-dessous) : il est purement
-# conversationnel. L'enregistrement étant géré ailleurs, la seule discipline qui
-# reste est de ne jamais l'annoncer (« noté ») et de ne jamais deviner la bible.
+# Le maître ne décide PLUS de l'extraction (cf. GATE ci-dessous) et n'écrit JAMAIS
+# (lecture seule). En mode bloc-notes, la discipline : réagir brièvement à l'HISTOIRE,
+# ne pas questionner, ne rien inventer, ne pas annoncer l'enregistrement, ne pas
+# deviner la bible.
 MASTER_SYSTEM_PROMPT = """\
-Tu mènes une conversation d'écriture. Tu ne touches JAMAIS à la base toi-même :
-tu peux seulement la LIRE (find_entity, list_entities). L'enregistrement des
-fiches est géré ailleurs, automatiquement : ne dis JAMAIS « noté » / « j'enregistre »
-(les fiches s'affichent d'elles-mêmes à côté de la conversation).
+Tu es un bloc-notes d'écriture, pas un interlocuteur qui mène l'entretien.
+L'auteur déroule son histoire ; tu la reçois.
 
-Réponds à l'auteur en 1 à 2 phrases : réagis à l'HISTOIRE, puis relance avec UNE
-seule question utile à l'écriture. Pour une question sur ce qui existe (« qui est
-X ? », « qu'a-t-on sur Y ? »), consulte la bible (find_entity / list_entities) —
-ne devine jamais.
+- RÉAGIS en UNE phrase courte à ce qu'il vient de dire — un mot d'intérêt sincère
+  sur l'HISTOIRE elle-même, accroché à ce qu'elle a de CONCRET. Évite les mots
+  passe-partout (« intéressant », « pas mal »). Puis tu t'arrêtes.
+- Ne pose PAS de question. Tu ne relances pas, tu ne demandes ni « et ensuite »,
+  ni « pourquoi », ni « comment ». (Seule exception : si l'auteur cale ou te le
+  demande explicitement — alors une seule, sobre.)
+- N'INVENTE jamais un détail qu'il n'a pas donné : pas de portrait, pas de décor,
+  pas de passé brodé. Tu réagis à ce qui est dit, tu n'ajoutes aucun fait.
+- Ne dis pas « noté » / « j'enregistre » / « c'est noté » : les fiches s'affichent
+  d'elles-mêmes à côté. Réagis à l'HISTOIRE, pas à l'acte d'enregistrer.
+- Pour une question sur ce qui existe déjà, consulte la bible (find_entity /
+  list_entities) — ne devine jamais.
 
-Réponds en français, 2 phrases maximum.
+Réponds en français, une phrase, très bref.
 """
 
 
@@ -224,18 +239,25 @@ def create_atelier_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDep
     return build_atelier_agent(ATELIER_CHOICES[profile_key])
 
 
-def build_master_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
+def build_master_agent(
+    choice: AgentChoice, model: Model | None = None
+) -> Agent[GenericDeps, str]:
     """Passe 0 « maître » : MÈNE la conversation (texte streamé), threadée.
 
     Outils en LECTURE SEULE (find_entity, list_entities) : aucun outil d'écriture
     → il ne PEUT pas inventer d'entité. La décision d'extraire est portée par le
     gate stateless (build_gate_agent), lancé en parallèle par la route — un
-    bavardage/une question n'écrit donc RIEN."""
+    bavardage/une question n'écrit donc RIEN.
+
+    model=None → modèle de chat par défaut. L'override sert l'A/B tiering (#49) :
+    le maître est la VOIX du produit (1 appel/tour) et le seul à faire du jugement
+    sémantique conversationnel — premier candidat à monter en tier (cf. bug #62)."""
     return create_core_agent(
         profile=choice.profile,
         persona=MASTER_PERSONA,
         system_prompt=MASTER_SYSTEM_PROMPT,
         tools=MASTER_TOOLS,
+        model=model,
     )
 
 

@@ -53,6 +53,19 @@ e2e-conductor *args:
 e2e-edits *args:
     uv run python -m evals.atelier.user_edits_e2e {{ args }}
 
+# A/B tiering du MAÎTRE (#49/#62) — rejoue les tours-pièges (apposition,
+# subordonnée…) sur small/medium/large, mesure le taux de relance redondante
+# (« castor Hector → comment s'appelle-t-il ? »). LECTURE SEULE : ne wipe PAS.
+# Réglages : FLX_AB_REPS (défaut 4), FLX_AB_MODELS (CSV de noms Mistral).
+ab-master *args:
+    uv run python -m evals.atelier.master_ab {{ args }}
+
+# A/B de PERSONA du maître — interviewer (actuel) vs BLOC-NOTES — mesure taux de
+# relance (« ? ») + taux de confabulation, small, base vide. LECTURE SEULE sauf
+# FLX_AB_WIPE=1. Réglages : FLX_AB_REPS (défaut 6), FLX_AB_JUDGE.
+ab-blocnotes *args:
+    uv run python -m evals.atelier.master_blocnotes_ab {{ args }}
+
 # Historique des evals
 evals-history *args:
     uv run protest history --evals {{ args }}
