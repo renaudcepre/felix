@@ -161,9 +161,14 @@ class Profile:
         spec = next((s for s in self.relation_vocabulary if s.name == rel_type), None)
         if spec is None:
             allowed = ", ".join(s.name for s in self.relation_vocabulary)
+            # Sortie LÉGALE au trou de vocab : sans elle, le modèle se rabat sur
+            # le type « le plus proche » et fabrique du canon faux avec assurance
+            # (« Lancelot WITNESSES dépression », #64). Mieux vaut zéro arête.
             return (
                 f"« {rel_type} » n'est pas une relation du domaine « {self.name} ». "
-                f"Utilise l'un de ces types EXACTS : {allowed}."
+                f"Utilise l'un de ces types EXACTS : {allowed}. Si AUCUN ne "
+                f"correspond au lien réel, n'écris PAS de relation : cette "
+                f"information est une propriété de fiche, pas une arête."
             )
 
         if same_node and not spec.allow_self:
@@ -273,6 +278,19 @@ SCENARIO_PROFILE = Profile(
         RelationSpec("CREATES", "crée, fabrique, écrit, forge",
                      subjects=("personnage", "groupe"), objects=("objet", "evenement"),
                      examples="fabrique, rédige, écrit, construit, dessine"),
+        RelationSpec("COMMANDS", "donne des ordres à / dirige (lien hiérarchique)",
+                     subjects=("personnage", "groupe"), objects=("personnage", "groupe"),
+                     examples="ordonne à, commande, dirige, est le chef de, "
+                              "donne l'ordre de"),
+        RelationSpec("TRANSPORTS", "transporte / convoie / livre",
+                     subjects=("personnage", "groupe", "objet"),
+                     objects=("objet", "personnage"),
+                     examples="transporte, convoie, livre, fait passer, "
+                              "embarque une cargaison"),
+        RelationSpec("LOVES", "lien amoureux ou intime",
+                     subjects=("personnage",), objects=("personnage",),
+                     examples="aime, est l'amant ou la maîtresse de, est en couple "
+                              "avec, est marié à"),
         RelationSpec("WITNESSES", "découvre / observe / examine un objet ou un fait",
                      subjects=("personnage",), objects=("objet", "evenement"),
                      examples="trouve, lit, observe, examine, remarque un objet/indice"),

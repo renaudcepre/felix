@@ -128,6 +128,17 @@ async def add_entity(
                 f"s'enregistre pas comme entité (il est tenu à part dans la chronologie). "
                 f"Garde « {name} » pour une vraie entité (personnage, lieu, objet).")
 
+    # Garde anti-sur-entification (#64) : un état interne n'est pas une chose du
+    # monde — en nœud, toute relation vers lui devient un non-sens (« Ossian
+    # KNOWS dépression »). Le modèle s'auto-étiquette (« maladie », « état ») :
+    # on attrape ces types-là au write, la consigne prompt seule ne tient pas.
+    if entity_type.strip().lower() in {
+        "etat", "état", "maladie", "sentiment", "emotion", "émotion", "humeur",
+    }:
+        return (f"« {entity_type} » n'est pas un type d'entité : un état interne se "
+                f"pose en PROPRIÉTÉ de la fiche concernée (update_entity, ex. clé "
+                f"`etat`), jamais en entité ni en relation.")
+
     entity_id = slugify(name)
     if not entity_id:
         return f"Nom invalide : « {name} »."
@@ -336,10 +347,11 @@ async def add_relation(
     Args:
         from_name: Nom de l'entité source.
         to_name: Nom de l'entité cible.
-        rel_type: Type de la relation. RÉUTILISE un type CANONIQUE du domaine
+        rel_type: Type de la relation. TOUJOURS un type CANONIQUE du domaine
             (CAPITALES anglaises, ex: LOCATED_AT, FIGHTS, CREATES) listé dans le
-            bloc DOMAINE / describe_schema. N'invente un nouveau type que si
-            aucun canonique ne convient.
+            bloc DOMAINE / describe_schema. Si aucun type ne correspond au lien
+            réel, n'écris pas de relation : l'information ira dans une propriété
+            de fiche, pas dans une arête.
         props: Propriétés factuelles de la relation (ex: date).
     """
     # Résolution HORS événements : une relation entre entités ne doit jamais avoir

@@ -26,8 +26,10 @@ from evals.atelier.evaluators import (
     graph_has_entities,
     graph_has_events,
     involves_only_entities,
+    no_entity_matching,
     no_tool_cards,
     rel_vocab_coverage,
+    relation_typed,
     relations_present,
     relations_skip_events,
 )
@@ -373,6 +375,67 @@ atelier_cases = ForEach(
                 involves_only_entities,
                 # Aucune relation entité↔event (relieur qui relie des actions).
                 relations_skip_events,
+            ],
+        ),
+        # --- trous de vocab relations (#48) : le lien doit recevoir son type
+        # PROPRE, pas un repli en-vocabulaire (KNOWS/WITNESSES forcé — le bug
+        # « Lancelot WITNESSES dépression » de #64). relation_typed vérifie le
+        # rel_type, contrairement à relations_present. ---
+        EvalCase(
+            name="vocab_loves",
+            inputs={
+                "message": "Tessa était la maîtresse du forgeron Hadrin ; leur "
+                           "liaison secrète dure depuis des années.",
+                "seed": [],
+            },
+            # Sonde du TYPE uniquement : pas de graph_char_count ici — la forme de
+            # surface titre+nom (« capitaine Ressac » vs « Ressac ») fait flaker le
+            # compte, et la résolution est un chantier à part (#57/#64).
+            evaluators=[
+                relation_typed(a="tessa", b="hadrin", rel_type="LOVES"),
+            ],
+        ),
+        EvalCase(
+            name="vocab_commands",
+            inputs={
+                "message": "La capitaine Ressac ordonne à son éclaireur Joun de "
+                           "fouiller l'épave avant la nuit.",
+                "seed": [],
+            },
+            evaluators=[
+                relation_typed(a="ressac", b="joun", rel_type="COMMANDS"),
+            ],
+        ),
+        EvalCase(
+            name="vocab_transports",
+            inputs={
+                "message": "Le passeur Wendel transporte une cargaison de "
+                           "lanternes interdites cachée à bord de sa barge.",
+                "seed": [],
+            },
+            evaluators=[
+                relation_typed(a="wendel", b="lanternes", rel_type="TRANSPORTS"),
+            ],
+        ),
+        # --- sur-entification d'un état interne (#64) : une maladie n'est PAS
+        # une entité — elle finit en PROPRIÉTÉ du personnage. Sinon le relieur
+        # n'a aucun type qui colle et force un non-sens (WITNESSES/KNOWS). ---
+        EvalCase(
+            name="etat_interne_prop",
+            inputs={
+                # Condition réelle du bug (#64) : l'état est donné PUIS corrigé au
+                # tour suivant — c'est au tour de correction que l'entité-maladie
+                # naissait (« dépression de synthèse [maladie] » + KNOWS forcé).
+                "beats": [
+                    "Ossian souffre d'une dépression depuis l'hiver dernier.",
+                    "Une dépression de synthèse je voulais dire, pardon.",
+                ],
+                "seed": [],
+            },
+            evaluators=[
+                graph_char_count(n=1),
+                char_props(name="Ossian", has="depression"),
+                no_entity_matching(names="depression"),
             ],
         ),
     ]

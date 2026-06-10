@@ -53,7 +53,10 @@ RÈGLES :
    entités d'un passage, RELIE-LES systématiquement avec add_relation (qui agit sur
    qui, qui est où, qui possède quoi). Ne termine jamais un passage sans avoir créé
    les relations entre ses entités, et réutilise les types de relation canoniques
-   fournis dans le bloc DOMAINE.
+   fournis dans le bloc DOMAINE. Un ÉTAT INTERNE ou durable (maladie, sentiment,
+   humeur) n'est PAS une entité : c'est une propriété de la fiche concernée
+   (« Edran souffre de la fièvre grise » → update_entity sur Edran, clé `etat`),
+   jamais un add_entity.
 4. Ne REMPLACE une valeur déjà posée QUE sur correction explicite de l'auteur
    (« correction », « en fait », « plutôt ») : update_entity sur la MÊME clé.
    Sinon, un fait qui DIVERGE d'une valeur existante (autre source, témoignage…)
@@ -78,8 +81,10 @@ RÈGLES :
 1. Appelle describe_schema pour voir les entités existantes et les types de
    relation déjà utilisés.
 2. PRIORITÉ ABSOLUE : crée avec add_relation toutes les relations qui lient les
-   entités du passage, en RÉUTILISANT les types de relation canoniques (CAPITALES
-   anglaises) du bloc DOMAINE. N'invente un type que si vraiment aucun ne convient.
+   entités du passage, avec un type pris dans le bloc DOMAINE — TOUJOURS en
+   CAPITALES anglaises. Si AUCUN type du domaine ne correspond au lien réel, ce
+   lien ne s'écrit pas : passe au suivant (l'information appartient aux fiches,
+   pas au graphe). Ne te rabats jamais sur le type « le plus proche ».
 3. Si une entité à relier manque vraiment dans la base, tu peux la créer
    (add_entity) AVANT de la relier — mais ne refais pas le travail d'entités déjà
    fait : concentre-toi sur les LIENS.

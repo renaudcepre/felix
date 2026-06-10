@@ -202,6 +202,7 @@ def relations_present(ctx: EvalContext, pairs: str = "", min_recall: float = 1.0
 CANONICAL_RELS = {
     "located_at", "member_of", "owns", "knows", "allied_with", "fights",
     "kills", "creates", "targets", "causes", "part_of", "witnesses",
+    "commands", "transports", "loves",
     "involves", "next",
 }
 
@@ -367,6 +368,7 @@ def involves_only_entities(ctx: EvalContext) -> InvolvesTargetResult:
 ENTITY_ONLY_RELS = {
     "fights", "knows", "owns", "creates", "kills",
     "member_of", "allied_with", "targets", "witnesses",
+    "commands", "transports", "loves",
 }
 
 
@@ -445,6 +447,66 @@ def char_props(ctx: EvalContext, name: str = "", has: str = "", hasnt: str = "")
     if present:
         detail += f"interdit présent : {', '.join(present)}."
     return PropResult(props_ok=not missing and not present, props_detail=detail.strip())
+
+
+@dataclass
+class RelTypedResult:
+    rel_typed_ok: Annotated[bool, Verdict]
+    rel_typed_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def relation_typed(ctx: EvalContext, a: str = "", b: str = "", rel_type: str = "") -> RelTypedResult:
+    """Une relation du TYPE attendu doit lier a et b (ids souples, sens ignoré —
+    la direction est un chantier à part). Contrairement à relations_present, le
+    rel_type compte : c'est la sonde des trous de vocab (#48) — sans le type, un
+    KNOWS forcé passerait pour un succès."""
+    ta, tb, tt = normalize(a), normalize(b), normalize(rel_type)
+
+    def touch(x: str, k: str) -> bool:
+        return bool(k) and (x in k or k in x)
+
+    hits = [
+        (normalize(str(r.get("from", ""))), normalize(str(r.get("to", ""))))
+        for r in ctx.output.relations
+        if normalize(str(r.get("rel_type", ""))) == tt
+    ]
+    ok = any((touch(ta, f) and touch(tb, t)) or (touch(tb, f) and touch(ta, t)) for f, t in hits)
+    # En échec, lister ce qui touche `a` aide à voir le type de repli choisi.
+    others = sorted({
+        str(r.get("rel_type", ""))
+        for r in ctx.output.relations
+        if touch(ta, normalize(str(r.get("from", "")))) or touch(ta, normalize(str(r.get("to", ""))))
+    })
+    return RelTypedResult(
+        rel_typed_ok=ok,
+        rel_typed_detail="" if ok else
+        f"pas de {rel_type} entre {a} et {b} (relations touchant {a} : {', '.join(others) or '—'})",
+    )
+
+
+@dataclass
+class NoEntityResult:
+    no_entity_ok: Annotated[bool, Verdict]
+    no_entity_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def no_entity_matching(ctx: EvalContext, names: str = "") -> NoEntityResult:
+    """AUCUNE entité dont le nom/id contient un des termes (CSV) : sonde de la
+    sur-entification (#64) — un état interne (maladie, sentiment) doit finir en
+    PROPRIÉTÉ du personnage, jamais en nœud (sinon toute relation vers lui est
+    fausse par construction)."""
+    terms = [normalize(t.strip()) for t in names.split(",") if t.strip()]
+    bad = [
+        f"{e.get('name')} [{e.get('entity_type')}]"
+        for e in ctx.output.entities
+        if any(
+            t in normalize(str(e.get("name", ""))) or t in normalize(str(e.get("id", "")))
+            for t in terms
+        )
+    ]
+    return NoEntityResult(no_entity_ok=not bad, no_entity_detail="; ".join(bad))
 
 
 @dataclass
