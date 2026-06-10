@@ -11,7 +11,12 @@ from __future__ import annotations
 from felix.core.agent import SYSTEM_PROMPT, create_core_agent
 from felix.core.check import CheckVerdict, consistency_check
 from felix.core.deps import GenericDeps
-from felix.core.graph import all_entities, all_relations
+from felix.core.graph import (
+    all_entities,
+    all_relations,
+    recent_entities,
+    render_recent_block,
+)
 from felix.core.models import ToolCard
 from felix.core.profile import CHANTIER_PROFILE, SCENARIO_PROFILE, EntityType, Profile
 
@@ -28,4 +33,6 @@ __all__ = [
     "all_relations",
     "consistency_check",
     "create_core_agent",
+    "recent_entities",
+    "render_recent_block",
 ]

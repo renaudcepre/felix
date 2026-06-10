@@ -176,6 +176,25 @@ atelier_cases = ForEach(
                 cards_for_subjects(subjects="Marc"),
             ],
         ),
+        # Baptême différé (bug Adator, dogfood 2026-06-10) : une entité suivie SANS
+        # vrai nom (« un mage noir ») reçoit son nom DEUX TOURS plus tard. Attendu :
+        # rename_entity sur la fiche existante → UN seul personnage, nommé Alikazeth.
+        # Échec historique : fiche neuve « Alikazeth » + « Mage Noir » orpheline (la
+        # passe 1 ne relit pas la base ; le working set injecté doit la lui montrer).
+        EvalCase(
+            name="bapteme_differe",
+            inputs={
+                "beats": [
+                    "Un mage noir a pris le pouvoir dans la ville d'Adator, par la ruse.",
+                    "Le mage noir se nomme « Alikazeth ».",
+                ],
+                "seed": [],
+            },
+            evaluators=[
+                graph_char_count(n=1),
+                entity_unique(names="Alikazeth"),
+            ],
+        ),
         # --- pas d'écriture ---
         EvalCase(
             name="no_write_greeting",

@@ -16,6 +16,7 @@ from felix.core.graph import (
     find_node,
     find_non_event,
     fmt_props,
+    touch_entities,
 )
 from felix.core.models import ToolCard
 from felix.ingest.resolver import slugify
@@ -81,6 +82,9 @@ async def find_entity(ctx: RunContext[GenericDeps], name: str) -> str:
     node = await find_node(ctx.deps.driver, name)
     if not node:
         return f"Aucune entité ne correspond à « {name} »."
+    # Une lecture RÉSOLUE compte dans le working set : l'entité qu'on consulte fait
+    # partie de l'histoire en cours (cf. recent_entities).
+    await touch_entities(ctx.deps.driver, [node["id"]])
     relations = await all_relations(ctx.deps.driver)
     rel_lines = [
         f"- {r['from']} —[{r['rel_type']}]→ {r['to']}"
@@ -145,6 +149,7 @@ async def add_entity(
         f"création de {entity_id} (type {entity_type}) : {fmt_props(clean, skip_reserved=False)}"
     )
     ctx.deps.touched_ids.add(entity_id)
+    await touch_entities(ctx.deps.driver, [entity_id])
     return f"Entité créée : {name} (id: {entity_id}, type: {entity_type})."
 
 
@@ -219,6 +224,7 @@ async def update_entity(
                      added=fmt_props(to_set, skip_reserved=False))
         )
         ctx.deps.touched_ids.add(node["id"])
+        await touch_entities(ctx.deps.driver, [node["id"]])
         # Un ÉCRASEMENT (correction) peut masquer une contradiction → candidat au check.
         # Une prop purement additive, non (rien à contredire).
         if replaced:
@@ -308,6 +314,7 @@ async def rename_entity(
                 "MATCH (e:GenEntity {id: $id}) SET e.name = $name", id=node["id"], name=new_name,
             )
         ctx.deps.touched_ids.add(node["id"])
+        await touch_entities(ctx.deps.driver, [node["id"]])
         return f"« {node['name']} » est désormais « {new_name} »."
 
     target = await find_node(ctx.deps.driver, new_id)
@@ -319,6 +326,7 @@ async def rename_entity(
         )
         ctx.deps.write_log.append(f"fusion {node['id']} → {target['id']}")
         ctx.deps.touched_ids.add(target["id"])
+        await touch_entities(ctx.deps.driver, [target["id"]])
         ctx.deps.check_candidates.add(target["id"])
         return (f"« {node['name']} » et « {target['name']} » étaient la même entité — "
                 f"fusionnées dans « {target['name']} » (relations et événements conservés).")
@@ -335,6 +343,7 @@ async def rename_entity(
     )
     ctx.deps.write_log.append(f"renommage {node['id']} → {new_id} ({new_name})")
     ctx.deps.touched_ids.add(new_id)
+    await touch_entities(ctx.deps.driver, [new_id])
     return f"« {node['name']} » renommé « {new_name} »."
 
 
@@ -395,6 +404,7 @@ async def add_relation(
     ctx.deps.write_log.append(f"relation {a['id']} —[{rel_type}]→ {b['id']}{extra}")
     ctx.deps.touched_ids.add(a["id"])
     ctx.deps.touched_ids.add(b["id"])
+    await touch_entities(ctx.deps.driver, [a["id"], b["id"]])
     # Les deux extrémités d'une nouvelle relation sont candidates au check
     # (relation = là où vivent les contradictions spatiales/relationnelles).
     ctx.deps.check_candidates.add(a["id"])
@@ -489,6 +499,10 @@ async def add_event(
         # L'entité IMPLIQUÉE dans un événement est candidate au check (timeline →
         # check temporel « mort puis agit »). Le nœud événement lui-même, non.
         ctx.deps.check_candidates.add(node["id"])
+
+    # Les participants/lieu entrent dans le working set (pas le nœud événement,
+    # de toute façon exclu de recent_entities).
+    await touch_entities(ctx.deps.driver, seen_ids - {event_id})
 
     ctx.deps.ui_events.append(
         ToolCard(tool="people", title="Événement", subject=text,

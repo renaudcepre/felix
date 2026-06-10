@@ -15,9 +15,64 @@ from typing import TYPE_CHECKING
 from felix.ingest.resolver import slugify
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from neo4j import AsyncDriver
 
 RESERVED_KEYS = {"id", "name", "entity_type"}
+
+
+async def touch_entities(driver: AsyncDriver, ids: Iterable[str]) -> None:
+    """Tamponne `last_touched` (ms epoch, horloge Neo4j) sur les entités données.
+
+    Posé EN CODE par les tools à chaque écriture ET lecture résolue (jamais par le
+    LLM) : c'est la matière du « working set » (cf. recent_entities) injecté aux
+    extracteurs pour qu'ils VOIENT la base avant d'écrire."""
+    id_list = [i for i in ids if i]
+    if not id_list:
+        return
+    async with driver.session() as session:
+        await session.run(
+            "MATCH (e:GenEntity) WHERE e.id IN $ids SET e.last_touched = timestamp()",
+            ids=id_list,
+        )
+
+
+async def recent_entities(driver: AsyncDriver, limit: int) -> list[dict]:
+    """Les entités (non-événement) les plus récemment touchées, récentes d'abord.
+
+    C'est la BORNE anti « toute la base dans le prompt » : à 400 entités, seules
+    les N actives de l'histoire en cours remontent — les fiches d'un autre pan du
+    monde, jamais touchées, restent derrière. `coalesce` car les nœuds d'avant le
+    tampon n'ont pas `last_touched` (et Neo4j trie les null en PREMIER en DESC)."""
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:GenEntity) WHERE e.entity_type <> 'evenement'
+            RETURN e.name AS name, e.entity_type AS entity_type
+            ORDER BY coalesce(e.last_touched, 0) DESC, e.id
+            LIMIT $limit
+            """,
+            limit=limit,
+        )
+        return [dict(r) for r in await result.data()]
+
+
+def render_recent_block(rows: list[dict]) -> str:
+    """Bloc « entités déjà en base » préfixé au prompt des extracteurs (pur, testable).
+
+    L'ordre reçu est préservé (la récence EST l'information). Balisé comme contexte
+    pour que l'extracteur ne le confonde pas avec du contenu d'auteur à extraire.
+    Rend "" sur base vide → le prompt reste nu, aucun cas dégénéré."""
+    if not rows:
+        return ""
+    listing = ", ".join(f"{r['name']} [{r['entity_type']}]" for r in rows)
+    return (
+        "[CONTEXTE, pas du récit — entités DÉJÀ en base (récentes d'abord) : "
+        f"{listing}. Si le message nomme ou renomme l'une d'elles "
+        "(« le mage noir se nomme X ») utilise rename_entity, et pour un fait "
+        "nouveau sur l'une d'elles update_entity — ne crée JAMAIS de doublon.]"
+    )
 
 
 async def find_node(driver: AsyncDriver, ref: str) -> dict | None:

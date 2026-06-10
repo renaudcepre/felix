@@ -248,8 +248,10 @@ SCENARIO_PROFILE = Profile(
     # l'exclut), mais reste listé pour la cohérence conceptuelle du domaine.
     relation_vocabulary=(
         RelationSpec("LOCATED_AT", "se trouve / se déroule dans un lieu",
-                     subjects=("personnage", "objet", "evenement"), objects=("lieu",),
-                     examples="est à, vit à, se trouve dans, se déroule à"),
+                     subjects=("personnage", "objet", "evenement", "groupe"),
+                     objects=("lieu",),
+                     examples="est à, vit à, se trouve dans, se déroule à, "
+                              "le groupe vit à"),
         RelationSpec("MEMBER_OF", "appartient à un groupe / une organisation",
                      subjects=("personnage",), objects=("groupe",),
                      examples="est membre du FLN, appartient à la police, est dans le gang"),

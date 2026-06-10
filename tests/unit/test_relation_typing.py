@@ -68,6 +68,14 @@ def test_located_at_place_ok() -> None:
 
 
 @relation_typing_suite.test()
+def test_located_at_group_ok() -> None:
+    """« il y a des orques à Adator » — un groupe vit/opère quelque part. Trou vu en
+    sonde (session Adator) : sujet groupe refusé, reliquat d'AVANT le type groupe
+    (ajouté pour MEMBER_OF sans étendre LOCATED_AT)."""
+    assert P.validate_relation("LOCATED_AT", "groupe", "lieu", same_node=False) is None
+
+
+@relation_typing_suite.test()
 def test_knows_ok() -> None:
     assert P.validate_relation("KNOWS", "personnage", "personnage", same_node=False) is None
 

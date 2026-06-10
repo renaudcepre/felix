@@ -24,7 +24,15 @@ from felix.atelier.agent import (
     create_relation_agent,
 )
 from felix.atelier.deps import AtelierDeps
-from felix.core import SCENARIO_PROFILE, all_entities, all_relations, consistency_check
+from felix.config import settings
+from felix.core import (
+    SCENARIO_PROFILE,
+    all_entities,
+    all_relations,
+    consistency_check,
+    recent_entities,
+    render_recent_block,
+)
 from felix.graph.driver import get_driver, setup_constraints
 from felix.ingest.resolver import slugify
 
@@ -105,8 +113,15 @@ async def run_atelier_case(
         for beat in beats:
             prev = history  # historique d'AVANT ce beat (Option B, partagé)
             deps = AtelierDeps(driver=driver, profile=SCENARIO_PROFILE)
-            result = await agent.run(beat, deps=deps, message_history=prev)
-            rel_result = await relation_agent.run(beat, deps=deps, message_history=prev)
+            # Même injection que la route : working set borné (entités récemment
+            # touchées) préfixé au prompt des passes entités/relieur — sans elle le
+            # harness ne testerait pas le mécanisme anti-doublon (baptême différé).
+            block = render_recent_block(
+                await recent_entities(driver, settings.recent_entities_limit)
+            )
+            extract_beat = f"{block}\n\n{beat}" if block else beat
+            result = await agent.run(extract_beat, deps=deps, message_history=prev)
+            rel_result = await relation_agent.run(extract_beat, deps=deps, message_history=prev)
             # Chroniqueur SANS historique : il ne chronique que le beat courant (sinon
             # re-chronique les tours passés → doublons) ; entités relues du graphe.
             chr_result = await chronicle_agent.run(beat, deps=deps, message_history=None)

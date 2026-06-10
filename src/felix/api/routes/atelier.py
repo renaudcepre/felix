@@ -31,7 +31,12 @@ from felix.api.history import window_history_by_tokens
 from felix.api.models import ChatRequest
 from felix.atelier.agent import ATELIER_CHOICES, DEFAULT_PROFILE
 from felix.config import settings
-from felix.core import GenericDeps, consistency_check
+from felix.core import (
+    GenericDeps,
+    consistency_check,
+    recent_entities,
+    render_recent_block,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -122,15 +127,17 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
         message_history = window_history_by_tokens(full, settings.history_token_budget)
 
     async def stream_pass(
-        sub_agent: Agent, history: list | None, *, stream_text: bool, holder: dict
+        sub_agent: Agent, prompt: str, history: list | None,
+        *, stream_text: bool, holder: dict
     ) -> AsyncGenerator[ServerSentEvent]:
         """Joue une passe via `.iter()` : draine les cartes des tools EN LIVE (à
         chaque node) et, si `stream_text`, streame le texte. Stocke `usage` +
         `messages` dans `holder` (un générateur ne peut pas « return »). Factorisé
-        pour les 3 passes : entités (texte streamé) ; relieur/chroniqueur (cartes
-        live, pas de texte → une seule bulle). `deps`/`body.message` capturés."""
+        pour les 4 passes : maître (texte streamé) ; extracteurs (cartes live, pas
+        de texte → une seule bulle). `prompt` varie : message nu pour le maître et
+        le chroniqueur, message préfixé du working set pour entités/relieur."""
         async with sub_agent.iter(
-            body.message, deps=deps, message_history=history
+            prompt, deps=deps, message_history=history
         ) as run:
             async for node in run:
                 for card in deps.ui_events:
@@ -154,7 +161,7 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
             yield ServerSentEvent(data="Felix répond…", event="phase")
             master: dict = {}
             async for ev in stream_pass(
-                master_agent, message_history, stream_text=True, holder=master
+                master_agent, body.message, message_history, stream_text=True, holder=master
             ):
                 yield ev
 
@@ -165,15 +172,29 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
             # construction, tour conversationnel moins cher). Ordre : entités → relieur →
             # chroniqueur (ce dernier SANS historique, sinon re-chronique → doublons).
             if deps.extraction_requested:
-                for sub_agent, label, hist, phase_text in (
-                    (agent, "entités", message_history, "Felix met à jour la bible…"),
-                    (relation_agent, "relations", message_history, "Felix relie les fiches…"),
-                    (chronicle_agent, "événements", None, "Felix note les événements…"),
+                # Working set injecté EN CODE en tête du prompt des passes entités/
+                # relieur : les N entités récemment actives (borné, pas toute la base).
+                # Sans lui, l'extracteur ne relit pas la base avant d'écrire et crée
+                # un doublon au baptême (« le mage noir se nomme X » → fiche X neuve,
+                # bug Adator). Le chroniqueur garde le message nu (il ne crée pas).
+                block = render_recent_block(
+                    await recent_entities(driver, settings.recent_entities_limit)
+                )
+                extract_prompt = f"{block}\n\n{body.message}" if block else body.message
+                for sub_agent, label, prompt, hist, phase_text in (
+                    (agent, "entités", extract_prompt, message_history,
+                     "Felix met à jour la bible…"),
+                    (relation_agent, "relations", extract_prompt, message_history,
+                     "Felix relie les fiches…"),
+                    (chronicle_agent, "événements", body.message, None,
+                     "Felix note les événements…"),
                 ):
                     try:
                         yield ServerSentEvent(data=phase_text, event="phase")
                         sub: dict = {}
-                        async for ev in stream_pass(sub_agent, hist, stream_text=False, holder=sub):
+                        async for ev in stream_pass(
+                            sub_agent, prompt, hist, stream_text=False, holder=sub
+                        ):
                             yield ev
                         usages.append(sub["usage"])
                     except Exception:

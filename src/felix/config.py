@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # mémoire longue au-delà). Borne le coût/tour à l'échelle ; cf. felix.api.history.
     history_token_budget: int = 8000
 
+    # Borne du « working set » injecté aux extracteurs : les N entités les plus
+    # récemment touchées, jamais toute la base. Cf. felix.core.graph.recent_entities.
+    recent_entities_limit: int = 30
+
     segmenter_max_tokens: int = 2500
     segmenter_overlap_ratio: float = 0.20
     segmenter_threshold: float = 0.45
