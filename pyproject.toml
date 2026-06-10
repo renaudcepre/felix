@@ -18,12 +18,9 @@ dependencies = [
     "pydantic-settings>=2.0",
     "chromadb>=1.0",
     "neo4j>=5.0",
-    "rich>=14.3.3",
     "fastapi[standard]>=0.115",
     "rapidfuzz>=3.0",
     "sentence-transformers>=3.0",
-    "torch>=2.10",
-    "typer>=0.24.1",
 ]
 
 [project.scripts]
@@ -69,9 +66,6 @@ ignore = [
     "PLR0913",  # Many arguments in parametrized tests
     "S604",     # shell=True in tests
 ]
-"scripts/**" = [
-    "T201",     # print allowed in scripts
-]
 "evals/**" = [
     "T201",      # print allowed in eval scripts
     "PLR2004",   # magic values in comparisons
@@ -93,6 +87,8 @@ dev = [
     "mypy>=1.10",
     "ruff>=0.11",
     "protest",
+    "rich>=14.3.3",
+    "typer>=0.24.1",
 ]
 
 [tool.uv.sources]

@@ -1,7 +1,7 @@
 import type { AtelierMsg } from '~/types/atelier'
 import { parseSSEStream } from '~/utils/parseSSE'
 
-// Carte tool émise par le backend (event SSE `tool`) — cf. felix/atelier/models.py
+// Carte tool émise par le backend (event SSE `tool`) — cf. felix/core/models.py
 interface ToolCardPayload {
   kind: 'tool'
   tool: 'fiche' | 'people'

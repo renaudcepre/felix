@@ -836,17 +836,16 @@ dependencies = [
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
     { name = "rapidfuzz" },
-    { name = "rich" },
     { name = "sentence-transformers" },
-    { name = "torch" },
-    { name = "typer" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "mypy" },
     { name = "protest" },
+    { name = "rich" },
     { name = "ruff" },
+    { name = "typer" },
 ]
 
 [package.metadata]
@@ -859,17 +858,16 @@ requires-dist = [
     { name = "pydantic-ai" },
     { name = "pydantic-settings", specifier = ">=2.0" },
     { name = "rapidfuzz", specifier = ">=3.0" },
-    { name = "rich", specifier = ">=14.3.3" },
     { name = "sentence-transformers", specifier = ">=3.0" },
-    { name = "torch", specifier = ">=2.10" },
-    { name = "typer", specifier = ">=0.24.1" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "mypy", specifier = ">=1.10" },
     { name = "protest", git = "ssh://git@github.com/renaudcepre/protest.git?tag=protest-v0.2.0" },
+    { name = "rich", specifier = ">=14.3.3" },
     { name = "ruff", specifier = ">=0.11" },
+    { name = "typer", specifier = ">=0.24.1" },
 ]
 
 [[package]]

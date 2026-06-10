@@ -3,7 +3,7 @@ export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@nuxt/eslint', '@nuxt/fonts'],
   ssr: false,
 
-  // Polices de l'atelier (papier) — en plus de celles du thème cyan existant.
+  // Polices de l'atelier (thème papier).
   fonts: {
     families: [
       { name: 'Newsreader', provider: 'google' },

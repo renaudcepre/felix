@@ -52,9 +52,6 @@ class Settings(BaseSettings):
     user_edits_limit: int = 12
     user_edits_ttl_minutes: int = 240
 
-    segmenter_max_tokens: int = 2500
-    segmenter_overlap_ratio: float = 0.20
-    segmenter_threshold: float = 0.45
     segmenter_embedding_model: str = "BAAI/bge-m3"
 
     neo4j_uri: str = "bolt://localhost:7687"
@@ -65,5 +62,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()  # type: ignore[call-arg]
-
-SCENE_FILE_EXTENSIONS = (".txt", ".md", ".markdown", ".rst", ".text", ".fountain")
