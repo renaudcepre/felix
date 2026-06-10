@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import httpx
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.mistral import MistralProvider
@@ -12,6 +13,9 @@ from felix.config import settings
 
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
+
+# 90 s pour les LLM locaux lents ; évite les gels silencieux de 15 min
+_HTTP_TIMEOUT = httpx.Timeout(90.0, connect=10.0)
 
 
 def build_model(
@@ -26,6 +30,8 @@ def build_model(
     if name.startswith("mistral-") and url and "mistral" not in url:
         url = None
 
+    http_client = httpx.AsyncClient(timeout=_HTTP_TIMEOUT)
+
     if url:
         is_together = "together" in url
         is_openrouter = "openrouter" in url
@@ -37,11 +43,11 @@ def build_model(
             key = api_key or settings.llm_api_key or "lm-studio"
         return OpenAIModel(
             name,
-            provider=OpenAIProvider(base_url=url, api_key=key),
+            provider=OpenAIProvider(base_url=url, api_key=key, http_client=http_client),
         )
     return MistralModel(
         name,
-        provider=MistralProvider(api_key=settings.llm_api_key),
+        provider=MistralProvider(api_key=settings.llm_api_key, http_client=http_client),
     )
 
 
