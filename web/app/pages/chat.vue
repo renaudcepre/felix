@@ -6,9 +6,24 @@ definePageMeta({ layout: false })
 useHead({ title: 'Felix — Atelier · Rivière basse' })
 
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
-const { messages, typing, phase, sendMessage, silentSession } = useAtelier()
+const { messages, typing, phase, sendMessage, silentSession, newConversation } = useAtelier()
 
 const draft = ref('')
+
+// « Nouvelle conversation » : confirmation à double-clic (comme le 🗑 des cartes,
+// #61) — repartir vierge efface le fil persisté, on évite le clic accidentel.
+const confirmNew = ref(false)
+let confirmNewTimer: ReturnType<typeof setTimeout> | null = null
+function clickNewConversation() {
+  if (!confirmNew.value) {
+    confirmNew.value = true
+    confirmNewTimer = setTimeout(() => { confirmNew.value = false }, 3500)
+    return
+  }
+  if (confirmNewTimer) clearTimeout(confirmNewTimer)
+  confirmNew.value = false
+  newConversation()
+}
 const scrollRef = ref<HTMLElement | null>(null)
 const taRef = ref<HTMLTextAreaElement | null>(null)
 
@@ -90,6 +105,9 @@ function onKeydown(e: KeyboardEvent) {
       </div>
       <div class="tb-right">
         <span class="tb-save"><span class="save-dot" />Enregistré</span>
+        <button class="btn btn-ghost" :class="{ confirming: confirmNew }" @click="clickNewConversation">
+          <AtelierIcon name="plus" :size="16" />{{ confirmNew ? 'Confirmer ?' : 'Nouvelle conversation' }}
+        </button>
         <NuxtLink class="btn btn-outline" to="/entities?type=personnage"><AtelierIcon name="people" :size="16" />Personnages</NuxtLink>
       </div>
     </header>
@@ -242,6 +260,7 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .btn-outline:hover { border-color: var(--gold-line); background: var(--gold-soft); }
 .felix-atelier .btn-ghost { color: var(--ink-2); }
 .felix-atelier .btn-ghost:hover { background: var(--card-2); color: var(--ink); }
+.felix-atelier .btn.confirming { color: var(--terra); border-color: var(--terra-line); background: var(--terra-soft); }
 
 /* Monogramme */
 .felix-atelier .mono-avatar {

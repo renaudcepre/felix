@@ -29,26 +29,114 @@ const WELCOME: Omit<AtelierMsg, 'id'> = {
   body: 'Bonjour. Raconte-moi ton histoire : décris tes personnages au fil de l\'eau, et je tiendrai leurs fiches à jour dans la bible.',
 }
 
+const STORAGE_KEY = 'felix.atelier.conversation.v1'
+
+// État SINGLETON (hors de useAtelier) : il survit au démontage/remontage de la
+// page. Avant, useAtelier() recréait des refs neuves à chaque appel → quitter
+// /chat et revenir repartait de zéro. Ici on le persiste aussi en localStorage
+// pour survivre au reload (F5). La bible (Neo4j) gardait déjà l'univers ; ce
+// qu'on garde ici, c'est le FIL de conversation + l'historique threadé au LLM
+// (messageHistory) sans quoi Felix perdrait le contexte en reprenant.
+// Hypothèse assumée : app local-first MONO-utilisateur (pas de fuite inter-requêtes).
+let _seq = 0
+const uid = () => ++_seq
+
+const messages = ref<AtelierMsg[]>([])
+const typing = ref(false)
+// Activité en cours côté backend (passes relieur/chroniqueur, check de
+// cohérence) — affichée près de l'indicateur de frappe pour ne pas laisser
+// l'auteur devant un long silence pendant ces passes non streamées.
+const phase = ref<string | null>(null)
+const messageHistory = ref<object[]>([])
+// Garde-fou « session muette » (issue #43) : si la bible est toujours vide après
+// 3 tours d'auteur, on l'affiche au lieu de laisser la session se perdre en
+// silence. Toute carte `tool` est une écriture (les lectures n'émettent pas de
+// carte) — le compteur repart à zéro dès que la bible bouge.
+const silentTurns = ref(0)
+const everWrote = ref(false)
+const silentSession = computed(() => !everWrote.value && silentTurns.value >= 3)
+
+let initialized = false
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+
+function persist() {
+  if (!import.meta.client) return
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      seq: _seq,
+      messages: messages.value,
+      messageHistory: messageHistory.value,
+      silentTurns: silentTurns.value,
+      everWrote: everWrote.value,
+    }))
+  }
+  catch { /* quota / mode privé : on dégrade silencieusement vers le non-persisté */ }
+}
+
+function schedulePersist() {
+  if (!import.meta.client) return
+  if (persistTimer) clearTimeout(persistTimer)
+  // Débounce : le stream pousse beaucoup de deltas texte, inutile d'écrire à chaque.
+  persistTimer = setTimeout(persist, 300)
+}
+
+function freshWelcome() {
+  _seq = 0
+  messages.value = [{ id: uid(), ...WELCOME }]
+  messageHistory.value = []
+  silentTurns.value = 0
+  everWrote.value = false
+}
+
+function hydrate(): boolean {
+  if (!import.meta.client) return false
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return false
+  try {
+    const s = JSON.parse(raw) as {
+      seq?: number
+      messages?: AtelierMsg[]
+      messageHistory?: object[]
+      silentTurns?: number
+      everWrote?: boolean
+    }
+    if (!Array.isArray(s.messages) || s.messages.length === 0) return false
+    messages.value = s.messages
+    messageHistory.value = Array.isArray(s.messageHistory) ? s.messageHistory : []
+    silentTurns.value = s.silentTurns ?? 0
+    everWrote.value = s.everWrote ?? false
+    _seq = s.seq ?? messages.value.reduce((m, x) => Math.max(m, x.id), 0)
+    return true
+  }
+  catch {
+    return false
+  }
+}
+
+function ensureInit() {
+  if (initialized) return
+  initialized = true
+  if (!hydrate()) freshWelcome()
+  // Persiste à chaque évolution du fil : texte streamé, cartes, édits (#61),
+  // nouvel historique threadé. Scope DÉTACHÉ (effectScope(true)) sinon le watch,
+  // créé pendant le setup de la 1ʳᵉ page, serait tué à son démontage → la
+  // persistance des édits s'arrêterait après la 1ʳᵉ navigation.
+  if (import.meta.client) {
+    effectScope(true).run(() => {
+      watch([messages, messageHistory], schedulePersist, { deep: true })
+    })
+  }
+}
+
+// Repartir d'une conversation vierge (et oublier la persistée).
+function newConversation() {
+  freshWelcome()
+  persist()
+}
+
 export function useAtelier() {
   const { apiStreamBase } = useRuntimeConfig().public
-
-  let _id = 0
-  const uid = () => ++_id
-
-  const messages = ref<AtelierMsg[]>([{ id: uid(), ...WELCOME }])
-  const typing = ref(false)
-  // Activité en cours côté backend (passes relieur/chroniqueur, check de
-  // cohérence) — affichée près de l'indicateur de frappe pour ne pas laisser
-  // l'auteur devant un long silence pendant ces passes non streamées.
-  const phase = ref<string | null>(null)
-  const messageHistory = ref<object[]>([])
-  // Garde-fou « session muette » (issue #43) : si la bible est toujours vide
-  // après 3 tours d'auteur, on l'affiche au lieu de laisser la session se perdre
-  // en silence. Toute carte `tool` est une écriture (les lectures n'émettent pas
-  // de carte) — le compteur repart à zéro dès que la bible bouge.
-  const silentTurns = ref(0)
-  const everWrote = ref(false)
-  const silentSession = computed(() => !everWrote.value && silentTurns.value >= 3)
+  ensureInit()
 
   function append(msg: Omit<AtelierMsg, 'id'>): AtelierMsg {
     messages.value.push({ id: uid(), ...msg })
@@ -145,8 +233,9 @@ export function useAtelier() {
       else {
         silentTurns.value += 1
       }
+      persist()
     }
   }
 
-  return { messages, typing, phase, sendMessage, silentSession }
+  return { messages, typing, phase, sendMessage, silentSession, newConversation }
 }
