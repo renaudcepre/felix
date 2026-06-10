@@ -34,7 +34,8 @@ WRITE_TOOLS = {"add_entity", "update_entity", "add_relation", "add_event", "rena
 # mesure plus rien — le modèle récite au lieu de généraliser.
 TEST_UNIVERSES = ("Nora", "Castan", "Port-Vendres", "Veil",
                   "Vada", "Tilio", "Sorne",
-                  "Adator", "Alikazeth")
+                  "Adator", "Alikazeth",
+                  "Ottra", "Vels", "Velsgarde", "Doran")
 
 
 @conductor_suite.test()

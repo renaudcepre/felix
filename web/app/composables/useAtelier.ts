@@ -9,6 +9,9 @@ interface ToolCardPayload {
   subject: string
   field: string
   added: string
+  // cible de la carte (#61) : id de fiche/événement, ou référence de relation
+  entity_id: string | null
+  relation: { from_id: string, to_id: string, rel_type: string } | null
 }
 
 // Alerte d'incohérence émise par le backend (event SSE `alert`) — cf. la route
@@ -106,6 +109,8 @@ export function useAtelier() {
               subject: card.subject,
               field: card.field,
               added: card.added,
+              entityId: card.entity_id ?? undefined,
+              relation: card.relation ?? undefined,
             })
             break
           }

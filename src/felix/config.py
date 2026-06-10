@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # récemment touchées, jamais toute la base. Cf. felix.core.graph.recent_entities.
     recent_entities_limit: int = 30
 
+    # Human-in-the-loop (#61) : actions manuelles de l'auteur (suppression/correction
+    # depuis l'UI) injectées au LLM. Borne du bloc + TTL des tombstones :UserEdit —
+    # passé le TTL, la consigne « ne recrée pas » s'éteint (l'auteur peut réintroduire).
+    user_edits_limit: int = 12
+    user_edits_ttl_minutes: int = 240
+
     segmenter_max_tokens: int = 2500
     segmenter_overlap_ratio: float = 0.20
     segmenter_threshold: float = 0.45

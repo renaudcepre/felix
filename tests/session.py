@@ -6,6 +6,7 @@ from tests.unit.test_modeling_quality import modeling_quality_suite
 from tests.unit.test_recent_entities import recent_entities_suite
 from tests.unit.test_relation_typing import relation_typing_suite
 from tests.unit.test_resolver import resolver_suite
+from tests.unit.test_user_edits import user_edits_suite
 from tests.unit.test_vectorstore import vectorstore_suite
 
 session = ProTestSession(concurrency=4, history=True)
@@ -17,3 +18,4 @@ session.add_suite(modeling_quality_suite)
 session.add_suite(history_window_suite)
 session.add_suite(conductor_suite)
 session.add_suite(recent_entities_suite)
+session.add_suite(user_edits_suite)

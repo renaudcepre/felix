@@ -14,11 +14,19 @@ from felix.core.deps import GenericDeps
 from felix.core.graph import (
     all_entities,
     all_relations,
+    merge_entity_into,
     recent_entities,
+    rename_or_merge,
     render_recent_block,
 )
-from felix.core.models import ToolCard
+from felix.core.models import RelationRef, ToolCard
 from felix.core.profile import CHANTIER_PROFILE, SCENARIO_PROFILE, EntityType, Profile
+from felix.core.user_edits import (
+    consume_unnotified_edits,
+    recent_user_edits,
+    record_user_edit,
+    render_user_edits_block,
+)
 
 __all__ = [
     "CHANTIER_PROFILE",
@@ -28,11 +36,18 @@ __all__ = [
     "EntityType",
     "GenericDeps",
     "Profile",
+    "RelationRef",
     "ToolCard",
     "all_entities",
     "all_relations",
     "consistency_check",
+    "consume_unnotified_edits",
     "create_core_agent",
+    "merge_entity_into",
     "recent_entities",
+    "recent_user_edits",
+    "record_user_edit",
+    "rename_or_merge",
     "render_recent_block",
+    "render_user_edits_block",
 ]

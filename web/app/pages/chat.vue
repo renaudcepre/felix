@@ -51,6 +51,12 @@ function setAlertStatus(msg: AtelierMsg, status: string) {
   patch(msg.id, x => ({ ...x, status: status as AtelierMsg['status'] }))
 }
 
+// #61 : l'auteur a corrigé/supprimé la cible d'une carte (l'appel API a déjà
+// réussi dans AtelierMessage) — on reflète l'état sur le message.
+function applyEdit(msg: AtelierMsg, changes: Partial<AtelierMsg>) {
+  patch(msg.id, x => ({ ...x, ...changes }))
+}
+
 function resolveAlert(msg: AtelierMsg, res: ResolveOption) {
   patch(msg.id, x => ({ ...x, status: 'resolved', resolution: res.label }))
   void sendMessage(res.label)
@@ -100,6 +106,7 @@ function onKeydown(e: KeyboardEvent) {
           @free="freeChoice"
           @resolve="resolveAlert"
           @status="setAlertStatus"
+          @edited="applyEdit"
         />
 
         <div v-if="typing" class="msg msg-felix">
@@ -341,6 +348,20 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .tool-added { display: flex; gap: 10px; padding: 9px 11px; background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 6px; }
 .felix-atelier .tool-plus { font-family: var(--mono); font-size: 11px; color: var(--sage); flex: none; margin-top: 2px; }
 .felix-atelier .tool-text { font-family: var(--serif); font-size: 15px; line-height: 1.5; color: var(--ink); }
+
+/* Actions ✎/🗑 des cartes (#61) — l'auteur corrige Felix sans quitter le fil */
+.felix-atelier .tool-act { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 6px; border: 1px solid transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12px; font-weight: 600; transition: color .14s ease, background .14s ease, border-color .14s ease; }
+.felix-atelier .tool-act:hover:not(:disabled) { color: var(--gold-deep); background: #fff; border-color: var(--gold-line); }
+.felix-atelier .tool-act:disabled { opacity: .5; }
+.felix-atelier .tool-act.danger:hover:not(:disabled) { color: #a4452f; border-color: #e3b8ab; }
+.felix-atelier .tool-act.confirming { color: #a4452f; background: #fbeeea; border-color: #e3b8ab; }
+.felix-atelier .tool-edited-tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); }
+.felix-atelier .tool-card.is-removed { opacity: .55; }
+.felix-atelier .tool-card.is-removed .tool-subj,
+.felix-atelier .tool-card.is-removed .tool-text { text-decoration: line-through; text-decoration-color: var(--ink-3); }
+.felix-atelier .tool-edit-input { flex: 1; min-width: 0; padding: 5px 9px; border: 1px solid var(--gold-line); border-radius: 6px; background: #fff; font-family: var(--sans); font-weight: 600; font-size: 14px; color: var(--ink); outline: none; }
+.felix-atelier .tool-edit-input:focus { border-color: var(--gold); }
+.felix-atelier .tool-error { margin: 8px 0 0; font-family: var(--sans); font-size: 12.5px; color: #a4452f; }
 
 /* Choix multiple */
 .felix-atelier .choice-card { max-width: 580px; border: 1px solid var(--line-2); background: var(--card); border-radius: var(--r-md); padding: 16px; box-shadow: var(--shadow-sm); }

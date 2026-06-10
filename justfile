@@ -46,6 +46,13 @@ e2e-atelier *args:
 e2e-conductor *args:
     uv run python evals/atelier/conductor_e2e.py {{ args }}
 
+# E2E human-in-the-loop (#61) — DELETE/PATCH d'entités via l'API pendant une
+# conversation ; asserte 0 résurrection + rename respecté. ≈10 appels LLM ;
+# wipe le graphe, ne pas lancer avec l'API.
+# (-m : le script importe play_turn depuis evals.atelier.e2e)
+e2e-edits *args:
+    uv run python -m evals.atelier.user_edits_e2e {{ args }}
+
 # Historique des evals
 evals-history *args:
     uv run protest history --evals {{ args }}

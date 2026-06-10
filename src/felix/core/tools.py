@@ -16,9 +16,10 @@ from felix.core.graph import (
     find_node,
     find_non_event,
     fmt_props,
+    rename_or_merge,
     touch_entities,
 )
-from felix.core.models import ToolCard
+from felix.core.models import RelationRef, ToolCard
 from felix.ingest.resolver import slugify
 
 
@@ -143,7 +144,7 @@ async def add_entity(
         )
     ctx.deps.ui_events.append(
         ToolCard(title="Entité créée", subject=name, field=entity_type,
-                 added=fmt_props(clean, skip_reserved=False))
+                 added=fmt_props(clean, skip_reserved=False), entity_id=entity_id)
     )
     ctx.deps.write_log.append(
         f"création de {entity_id} (type {entity_type}) : {fmt_props(clean, skip_reserved=False)}"
@@ -221,7 +222,7 @@ async def update_entity(
         ctx.deps.ui_events.append(
             ToolCard(title="Entité mise à jour", subject=node["name"],
                      field=node.get("entity_type", "?"),
-                     added=fmt_props(to_set, skip_reserved=False))
+                     added=fmt_props(to_set, skip_reserved=False), entity_id=node["id"])
         )
         ctx.deps.touched_ids.add(node["id"])
         await touch_entities(ctx.deps.driver, [node["id"]])
@@ -247,45 +248,6 @@ async def update_entity(
     return f"{node['name']} mis à jour : {fmt_props(to_set, skip_reserved=False)}.{suffix}"
 
 
-async def _merge_entity_into(driver, src_id: str, dst_id: str) -> None:
-    """Fusionne le nœud `src_id` DANS `dst_id` : relations ET événements rebranchés sur
-    dst, propriétés manquantes recopiées (dst garde les siennes), puis src supprimé.
-    Sans APOC — le modèle :REL { rel_type } se rebranche en Cypher pur. Les arêtes
-    suivent le NŒUD (pas la valeur d'id), donc INVOLVES/NEXT des événements suivent."""
-    async with driver.session() as session:
-        # Relations SORTANTES de src → dst (éviter une boucle sur dst).
-        await session.run(
-            "MATCH (f:GenEntity {id:$src})-[r:REL]->(o) WHERE o.id <> $dst "
-            "MATCH (t:GenEntity {id:$dst}) "
-            "MERGE (t)-[nr:REL {rel_type: r.rel_type}]->(o) SET nr += properties(r)",
-            src=src_id, dst=dst_id,
-        )
-        # Relations ENTRANTES vers src → dst (inclut les INVOLVES/LOCATED_AT d'événements).
-        await session.run(
-            "MATCH (s)-[r:REL]->(f:GenEntity {id:$src}) WHERE s.id <> $dst "
-            "MATCH (t:GenEntity {id:$dst}) "
-            "MERGE (s)-[nr:REL {rel_type: r.rel_type}]->(t) SET nr += properties(r)",
-            src=src_id, dst=dst_id,
-        )
-        # Props : dst garde les siennes, on complète avec celles que src a en plus.
-        result = await session.run(
-            "MATCH (f:GenEntity {id:$src}), (t:GenEntity {id:$dst}) "
-            "RETURN properties(f) AS fp, properties(t) AS tp",
-            src=src_id, dst=dst_id,
-        )
-        record = await result.single()
-        if record:
-            missing = {
-                k: v for k, v in record["fp"].items()
-                if k not in record["tp"] and k not in RESERVED_KEYS
-            }
-            if missing:
-                await session.run(
-                    "MATCH (t:GenEntity {id:$dst}) SET t += $props", dst=dst_id, props=missing,
-                )
-        await session.run("MATCH (f:GenEntity {id:$src}) DETACH DELETE f", src=src_id)
-
-
 async def rename_entity(
     ctx: RunContext[GenericDeps], current_name: str, new_name: str
 ) -> str:
@@ -301,50 +263,44 @@ async def rename_entity(
         current_name: Nom ou id de l'entité existante (y compris un nom provisoire).
         new_name: Le nom à lui donner.
     """
+    # La mécanique (migration d'id, fusion sur collision) vit au niveau driver
+    # (graph.rename_or_merge) : la route PATCH de l'API (#61) DOIT avoir le même
+    # effet qu'ici. Le tool ne garde que le narratif (cartes, write_log, working set).
     node = await find_node(ctx.deps.driver, current_name)
     if not node:
         return f"« {current_name} » n'existe pas — rien à renommer."
-    new_id = slugify(new_name)
-    if not new_id:
+    out = await rename_or_merge(ctx.deps.driver, current_name, new_name)
+
+    if out.status == "invalid":
         return f"Nom invalide : « {new_name} »."
 
-    if new_id == node["id"]:  # même id (casse/espaces) : on rafraîchit juste le nom
-        async with ctx.deps.driver.session() as session:
-            await session.run(
-                "MATCH (e:GenEntity {id: $id}) SET e.name = $name", id=node["id"], name=new_name,
-            )
-        ctx.deps.touched_ids.add(node["id"])
-        await touch_entities(ctx.deps.driver, [node["id"]])
-        return f"« {node['name']} » est désormais « {new_name} »."
+    if out.status == "refreshed":
+        ctx.deps.touched_ids.add(out.final_id)
+        await touch_entities(ctx.deps.driver, [out.final_id])
+        return f"« {out.old_name} » est désormais « {new_name} »."
 
-    target = await find_node(ctx.deps.driver, new_id)
-    if target and target["id"] != node["id"]:  # collision → FUSION dans le nom canonique
-        await _merge_entity_into(ctx.deps.driver, node["id"], target["id"])
+    if out.status == "merged":
         ctx.deps.ui_events.append(
-            ToolCard(title="Fiches fusionnées", subject=node["name"],
-                     field=target["name"], added="relations et événements conservés")
+            ToolCard(title="Fiches fusionnées", subject=out.old_name,
+                     field=out.new_name, added="relations et événements conservés",
+                     entity_id=out.final_id)
         )
-        ctx.deps.write_log.append(f"fusion {node['id']} → {target['id']}")
-        ctx.deps.touched_ids.add(target["id"])
-        await touch_entities(ctx.deps.driver, [target["id"]])
-        ctx.deps.check_candidates.add(target["id"])
-        return (f"« {node['name']} » et « {target['name']} » étaient la même entité — "
-                f"fusionnées dans « {target['name']} » (relations et événements conservés).")
+        ctx.deps.write_log.append(f"fusion {node['id']} → {out.final_id}")
+        ctx.deps.touched_ids.add(out.final_id)
+        await touch_entities(ctx.deps.driver, [out.final_id])
+        ctx.deps.check_candidates.add(out.final_id)
+        return (f"« {out.old_name} » et « {out.new_name} » étaient la même entité — "
+                f"fusionnées dans « {out.new_name} » (relations et événements conservés).")
 
-    # Renommage simple : migrer id + name. Les arêtes suivent le NŒUD, pas l'id.
-    async with ctx.deps.driver.session() as session:
-        await session.run(
-            "MATCH (e:GenEntity {id: $old}) SET e.id = $new, e.name = $name",
-            old=node["id"], new=new_id, name=new_name,
-        )
     ctx.deps.ui_events.append(
-        ToolCard(title="Entité renommée", subject=node["name"],
-                 field=node.get("entity_type", "?"), added=f"→ {new_name}")
+        ToolCard(title="Entité renommée", subject=out.old_name,
+                 field=node.get("entity_type", "?"), added=f"→ {new_name}",
+                 entity_id=out.final_id)
     )
-    ctx.deps.write_log.append(f"renommage {node['id']} → {new_id} ({new_name})")
-    ctx.deps.touched_ids.add(new_id)
-    await touch_entities(ctx.deps.driver, [new_id])
-    return f"« {node['name']} » renommé « {new_name} »."
+    ctx.deps.write_log.append(f"renommage {node['id']} → {out.final_id} ({new_name})")
+    ctx.deps.touched_ids.add(out.final_id)
+    await touch_entities(ctx.deps.driver, [out.final_id])
+    return f"« {out.old_name} » renommé « {new_name} »."
 
 
 async def add_relation(
@@ -398,7 +354,8 @@ async def add_relation(
         )
     ctx.deps.ui_events.append(
         ToolCard(tool="people", title="Relation ajoutée", subject=a["name"],
-                 field=rel_type, added=b["name"])
+                 field=rel_type, added=b["name"],
+                 relation=RelationRef(from_id=a["id"], to_id=b["id"], rel_type=rel_type))
     )
     extra = f" ({fmt_props(props, skip_reserved=False)})" if props else ""
     ctx.deps.write_log.append(f"relation {a['id']} —[{rel_type}]→ {b['id']}{extra}")
@@ -506,7 +463,7 @@ async def add_event(
 
     ctx.deps.ui_events.append(
         ToolCard(tool="people", title="Événement", subject=text,
-                 field=f"#{ordre}", added=", ".join(linked) or "—")
+                 field=f"#{ordre}", added=", ".join(linked) or "—", entity_id=event_id)
     )
     ctx.deps.write_log.append(
         f"événement #{ordre} : {text} (participants : {', '.join(linked) or '—'})"

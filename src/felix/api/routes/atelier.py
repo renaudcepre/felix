@@ -35,8 +35,11 @@ from felix.config import settings
 from felix.core import (
     GenericDeps,
     consistency_check,
+    consume_unnotified_edits,
     recent_entities,
+    recent_user_edits,
     render_recent_block,
+    render_user_edits_block,
 )
 
 if TYPE_CHECKING:
@@ -124,6 +127,15 @@ async def _stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + histor
         holder["messages"] = run.all_messages()
 
 
+async def _master_prompt(driver: AsyncDriver, message: str) -> str:
+    """Préfixe le message du maître des actions manuelles PAS ENCORE annoncées
+    (#61). Une fois suffit : le fil threadé retient — répéter le bloc chaque tour
+    ne ferait que gonfler l'historique. Les extracteurs, eux, stateless, reçoivent
+    le bloc COMPLET à chaque tour d'extraction (cf. event_generator)."""
+    block = render_user_edits_block(await consume_unnotified_edits(driver))
+    return f"{block}\n\n{message}" if block else message
+
+
 async def _apply_gate_verdict(gate_task: asyncio.Task, deps: GenericDeps, usages: list) -> None:
     """Attend le gate et pose `extraction_requested`. Best-effort FAIL-CLOSED : si le
     gate crashe (transient LLM), on n'extrait pas ce tour — l'invariant produit n°1
@@ -184,8 +196,8 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
             yield ServerSentEvent(data="Felix répond…", event="phase")
             master: dict = {}
             async for ev in _stream_pass(
-                master_agent, body.message, message_history, deps,
-                stream_text=True, holder=master
+                master_agent, await _master_prompt(driver, body.message),
+                message_history, deps, stream_text=True, holder=master
             ):
                 yield ev
 
@@ -205,7 +217,15 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
                 block = render_recent_block(
                     await recent_entities(driver, settings.recent_entities_limit)
                 )
-                extract_prompt = f"{block}\n\n{body.message}" if block else body.message
+                # Décisions manuelles de l'auteur (#61) : injectées à CHAQUE tour
+                # d'extraction tant que le tombstone vit (TTL) — c'est la garantie
+                # qu'une fiche supprimée depuis l'UI ne renaît pas via l'historique.
+                edits_block = render_user_edits_block(await recent_user_edits(
+                    driver, settings.user_edits_limit, settings.user_edits_ttl_minutes
+                ))
+                extract_prompt = "\n\n".join(
+                    part for part in (edits_block, block, body.message) if part
+                )
                 for sub_agent, label, prompt, hist, phase_text in (
                     (agent, "entités", extract_prompt, message_history,
                      "Felix met à jour la bible…"),

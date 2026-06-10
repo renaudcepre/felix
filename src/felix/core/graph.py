@@ -10,6 +10,7 @@ personnage ni ce qu'est une date — ils lisent et écrivent des entités libres
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from felix.ingest.resolver import slugify
@@ -138,7 +139,7 @@ async def entity_events(driver: AsyncDriver, ref: str) -> list[dict]:
             """
             MATCH (ev:GenEntity {entity_type: 'evenement'})
                   -[:REL {rel_type: 'INVOLVES'}]->(t:GenEntity {id: $id})
-            RETURN ev.ordre AS ordre, ev.resume AS resume
+            RETURN ev.id AS id, ev.ordre AS ordre, ev.resume AS resume
             ORDER BY ev.ordre
             """,
             id=subject["id"],
@@ -167,6 +168,128 @@ async def entity_timeline(driver: AsyncDriver, ref: str) -> str:
     ]
     lines.extend(f"  #{r['ordre']} : {r['resume']}" for r in rows)
     return "\n".join(lines)
+
+
+async def merge_entity_into(driver: AsyncDriver, src_id: str, dst_id: str) -> None:
+    """Fusionne le nœud `src_id` DANS `dst_id` : relations ET événements rebranchés sur
+    dst, propriétés manquantes recopiées (dst garde les siennes), puis src supprimé.
+    Sans APOC — le modèle :REL { rel_type } se rebranche en Cypher pur. Les arêtes
+    suivent le NŒUD (pas la valeur d'id), donc INVOLVES/NEXT des événements suivent."""
+    async with driver.session() as session:
+        # Relations SORTANTES de src → dst (éviter une boucle sur dst).
+        await session.run(
+            "MATCH (f:GenEntity {id:$src})-[r:REL]->(o) WHERE o.id <> $dst "
+            "MATCH (t:GenEntity {id:$dst}) "
+            "MERGE (t)-[nr:REL {rel_type: r.rel_type}]->(o) SET nr += properties(r)",
+            src=src_id, dst=dst_id,
+        )
+        # Relations ENTRANTES vers src → dst (inclut les INVOLVES/LOCATED_AT d'événements).
+        await session.run(
+            "MATCH (s)-[r:REL]->(f:GenEntity {id:$src}) WHERE s.id <> $dst "
+            "MATCH (t:GenEntity {id:$dst}) "
+            "MERGE (s)-[nr:REL {rel_type: r.rel_type}]->(t) SET nr += properties(r)",
+            src=src_id, dst=dst_id,
+        )
+        # Props : dst garde les siennes, on complète avec celles que src a en plus.
+        result = await session.run(
+            "MATCH (f:GenEntity {id:$src}), (t:GenEntity {id:$dst}) "
+            "RETURN properties(f) AS fp, properties(t) AS tp",
+            src=src_id, dst=dst_id,
+        )
+        record = await result.single()
+        if record:
+            missing = {
+                k: v for k, v in record["fp"].items()
+                if k not in record["tp"] and k not in RESERVED_KEYS
+            }
+            if missing:
+                await session.run(
+                    "MATCH (t:GenEntity {id:$dst}) SET t += $props", dst=dst_id, props=missing,
+                )
+        await session.run("MATCH (f:GenEntity {id:$src}) DETACH DELETE f", src=src_id)
+
+
+async def delete_entity(driver: AsyncDriver, entity_id: str) -> None:
+    """Supprime une entité et toutes ses arêtes. Si c'est un ÉVÉNEMENT, la chaîne
+    chronologique est RECOUSUE d'abord (p —NEXT→ e —NEXT→ n devient p —NEXT→ n) :
+    sans ça, la timeline se casse en deux au premier maillon supprimé."""
+    async with driver.session() as session:
+        await session.run(
+            """
+            MATCH (p:GenEntity)-[:REL {rel_type: 'NEXT'}]->(e:GenEntity {id: $id})
+                  -[:REL {rel_type: 'NEXT'}]->(n:GenEntity)
+            MERGE (p)-[:REL {rel_type: 'NEXT'}]->(n)
+            """,
+            id=entity_id,
+        )
+        await session.run(
+            "MATCH (e:GenEntity {id: $id}) DETACH DELETE e", id=entity_id,
+        )
+
+
+async def delete_relation(
+    driver: AsyncDriver, from_id: str, to_id: str, rel_type: str
+) -> bool:
+    """Supprime UNE relation orientée (from —[rel_type]→ to). Rend False si elle
+    n'existait pas (la clé vient du front — elle peut être périmée)."""
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (a:GenEntity {id: $a})-[r:REL {rel_type: $t}]->(b:GenEntity {id: $b})
+            DELETE r RETURN count(r) AS n
+            """,
+            a=from_id, b=to_id, t=rel_type,
+        )
+        record = await result.single()
+        return bool(record and record["n"])
+
+
+@dataclass
+class RenameOutcome:
+    """Résultat d'un renommage driver-level — partagé par le tool `rename_entity`
+    et la route PATCH de l'API (#61) : éditer un nom depuis l'UI DOIT avoir le
+    même effet que le tool (id migré, relations/événements conservés, fusion sur
+    collision). `final_id` n'a de sens que pour refreshed/merged/renamed."""
+
+    status: str  # 'not_found' | 'invalid' | 'refreshed' | 'merged' | 'renamed'
+    old_name: str = ""
+    new_name: str = ""
+    final_id: str = ""
+
+
+async def rename_or_merge(driver: AsyncDriver, current_ref: str, new_name: str) -> RenameOutcome:
+    """Renomme l'entité désignée par `current_ref` — ou la FUSIONNE si `new_name`
+    désigne déjà une AUTRE entité (le nom canonique gagne)."""
+    node = await find_node(driver, current_ref)
+    if not node:
+        return RenameOutcome("not_found")
+    new_id = slugify(new_name)
+    if not new_id:
+        return RenameOutcome("invalid", old_name=node["name"])
+
+    if new_id == node["id"]:  # même id (casse/espaces) : on rafraîchit juste le nom
+        async with driver.session() as session:
+            await session.run(
+                "MATCH (e:GenEntity {id: $id}) SET e.name = $name",
+                id=node["id"], name=new_name,
+            )
+        return RenameOutcome("refreshed", old_name=node["name"],
+                             new_name=new_name, final_id=node["id"])
+
+    target = await find_node(driver, new_id)
+    if target and target["id"] != node["id"]:  # collision → FUSION dans le nom canonique
+        await merge_entity_into(driver, node["id"], target["id"])
+        return RenameOutcome("merged", old_name=node["name"],
+                             new_name=target["name"], final_id=target["id"])
+
+    # Renommage simple : migrer id + name. Les arêtes suivent le NŒUD, pas l'id.
+    async with driver.session() as session:
+        await session.run(
+            "MATCH (e:GenEntity {id: $old}) SET e.id = $new, e.name = $name",
+            old=node["id"], new=new_id, name=new_name,
+        )
+    return RenameOutcome("renamed", old_name=node["name"],
+                         new_name=new_name, final_id=new_id)
 
 
 async def all_entities(driver: AsyncDriver) -> list[dict]:

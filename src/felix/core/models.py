@@ -8,6 +8,14 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
+class RelationRef(BaseModel):
+    """Référence complète d'une relation orientée — la clé de sa suppression."""
+
+    from_id: str
+    to_id: str
+    rel_type: str
+
+
 class ToolCard(BaseModel):
     """Carte « tool » du fil atelier — alignée sur AtelierMsg côté front."""
 
@@ -17,3 +25,8 @@ class ToolCard(BaseModel):
     subject: str
     field: str
     added: str
+    # Cible de la carte, pour les actions ✎/🗑 du front (#61). `entity_id` pour
+    # une fiche (ou un événement), `relation` pour une arête. None : pas d'action
+    # possible sur cette carte (ex. fusion — la source n'existe plus).
+    entity_id: str | None = None
+    relation: RelationRef | None = None

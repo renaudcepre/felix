@@ -39,8 +39,19 @@ class EntityRelationOut(BaseModel):
 
 
 class EntityEventOut(BaseModel):
+    # `id` = clé de suppression d'un événement depuis la fiche (#61).
+    id: str
     ordre: int
     resume: str
+
+
+class EntityPatch(BaseModel):
+    """Correction manuelle d'une fiche par l'auteur (#61) — champs tous optionnels,
+    on n'applique que ce qui est fourni."""
+
+    name: str | None = None
+    props: dict[str, str] = {}
+    remove_props: list[str] = []
 
 
 class EntityDetail(BaseModel):

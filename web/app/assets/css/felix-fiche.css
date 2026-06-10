@@ -113,6 +113,7 @@
 
 /* ---- En-tête entité ---- */
 .felix-fiche .ent-head { display: flex; align-items: center; gap: 18px; margin-bottom: 24px; }
+.felix-fiche .ent-head-main { flex: 1; min-width: 0; }
 .felix-fiche .ent-name { font-family: var(--serif); font-weight: 600; font-size: 34px; line-height: 1; margin: 0 0 9px; color: var(--ink); letter-spacing: -.01em; }
 .felix-fiche .ent-tags { display: flex; align-items: center; gap: 10px; }
 .felix-fiche .ent-ref { font-family: var(--mono); font-size: 12px; color: var(--ink-3); letter-spacing: .04em; }
@@ -136,8 +137,8 @@
 }
 .felix-fiche .card-title { font-family: var(--serif); font-weight: 600; font-size: 20px; margin: 0 0 16px; color: var(--ink); }
 
-/* ---- Propriétés (clé/valeur, lecture seule) ---- */
-.felix-fiche .prop-grid { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr; gap: 0; }
+/* ---- Propriétés (clé/valeur + actions de correction #61) ---- */
+.felix-fiche .prop-grid { display: grid; grid-template-columns: minmax(7rem, 11rem) 1fr auto; gap: 0; }
 .felix-fiche .prop-row { display: contents; }
 .felix-fiche .prop-key {
   font-family: var(--sans); font-weight: 600; font-size: 12.5px; letter-spacing: .03em;
@@ -148,8 +149,13 @@
   font-family: var(--serif); font-size: 16px; line-height: 1.55; color: var(--ink);
   padding: 12px 0; border-top: 1px solid var(--line); white-space: pre-wrap; word-break: break-word;
 }
+.felix-fiche .prop-actions {
+  display: flex; align-items: center; gap: 4px; justify-content: flex-end;
+  padding: 12px 0 12px 10px; border-top: 1px solid var(--line);
+}
 .felix-fiche .prop-row:first-child .prop-key,
-.felix-fiche .prop-row:first-child .prop-val { border-top: none; }
+.felix-fiche .prop-row:first-child .prop-val,
+.felix-fiche .prop-row:first-child .prop-actions { border-top: none; }
 
 /* ---- Relations ---- */
 .felix-fiche .rel-list { display: flex; flex-direction: column; }
@@ -158,7 +164,8 @@
   padding: 11px 0; border-top: 1px solid var(--line); transition: opacity .12s ease;
 }
 .felix-fiche .rel-row:first-child { border-top: none; }
-.felix-fiche a.rel-row:hover .rel-name { color: var(--gold-deep); }
+.felix-fiche a.rel-row:hover .rel-name,
+.felix-fiche a.rel-link:hover .rel-name { color: var(--gold-deep); }
 .felix-fiche .rel-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .felix-fiche .rel-name { font-family: var(--sans); font-weight: 600; font-size: 15px; color: var(--ink); transition: color .15s ease; }
 .felix-fiche .rel-dir { display: inline-grid; place-items: center; color: var(--ink-3); }
@@ -175,7 +182,37 @@
 }
 .felix-fiche .chrono-text { font-family: var(--serif); font-size: 16px; line-height: 1.55; color: var(--ink); }
 
+.felix-fiche .chrono-spacer { flex: 1; }
+
 .felix-fiche .fiche-foot { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); text-align: center; margin: 26px 0 0; }
+
+/* ---- Édition manuelle (#61) : boutons d'action de ligne + inputs inline ---- */
+.felix-fiche .row-act {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px;
+  border-radius: 6px; border: 1px solid transparent; color: var(--ink-3);
+  font-family: var(--sans); font-size: 12px; font-weight: 600; white-space: nowrap;
+  transition: color .14s ease, background .14s ease, border-color .14s ease;
+}
+.felix-fiche .row-act:hover:not(:disabled) { color: var(--gold-deep); background: var(--gold-soft); border-color: var(--gold-line); }
+.felix-fiche .row-act:disabled { opacity: .5; }
+.felix-fiche .row-act.danger:hover:not(:disabled) { color: #a4452f; background: #fbeeea; border-color: #e3b8ab; }
+.felix-fiche .row-act.confirming { color: #a4452f; background: #fbeeea; border-color: #e3b8ab; }
+.felix-fiche .ent-delete { align-self: flex-start; }
+.felix-fiche .ent-name .row-act { vertical-align: middle; margin-left: 6px; }
+.felix-fiche .name-edit-row { display: flex; align-items: center; gap: 6px; margin: 0 0 9px; }
+.felix-fiche .name-edit-input {
+  font-family: var(--serif); font-weight: 600; font-size: 26px; color: var(--ink);
+  padding: 4px 12px; border: 1px solid var(--gold-line); border-radius: 8px;
+  background: #fff; outline: none; min-width: 0; max-width: 24rem;
+}
+.felix-fiche .name-edit-input:focus { border-color: var(--gold); }
+.felix-fiche .prop-edit-input {
+  width: 100%; font-family: var(--serif); font-size: 15px; color: var(--ink);
+  padding: 5px 10px; border: 1px solid var(--gold-line); border-radius: 6px;
+  background: #fff; outline: none;
+}
+.felix-fiche .prop-edit-input:focus { border-color: var(--gold); }
+.felix-fiche .action-error { font-family: var(--sans); font-size: 13px; color: #a4452f; margin: -10px 0 16px; }
 
 /* ---- État vide ---- */
 .felix-fiche .empty { font-family: var(--serif); font-size: 15px; line-height: 1.6; color: var(--ink-2); }
