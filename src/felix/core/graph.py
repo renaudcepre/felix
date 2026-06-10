@@ -69,9 +69,9 @@ def render_recent_block(rows: list[dict]) -> str:
     listing = ", ".join(f"{r['name']} [{r['entity_type']}]" for r in rows)
     return (
         "[CONTEXTE, pas du récit — entités DÉJÀ en base (récentes d'abord) : "
-        f"{listing}. Si le message nomme ou renomme l'une d'elles "
-        "(« le mage noir se nomme X ») utilise rename_entity, et pour un fait "
-        "nouveau sur l'une d'elles update_entity — ne crée JAMAIS de doublon.]"
+        f"{listing}. Si le message donne un NOM à l'une d'elles ou dit que deux "
+        "d'entre elles sont la même chose, utilise rename_entity ; pour un fait "
+        "nouveau sur l'une d'elles, update_entity — ne crée JAMAIS de doublon.]"
     )
 
 
