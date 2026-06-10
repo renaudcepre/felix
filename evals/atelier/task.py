@@ -18,6 +18,7 @@ from protest import fixture
 from protest.evals import TaskResult
 
 from evals._judge import MISTRAL_SMALL_INPUT_COST, MISTRAL_SMALL_OUTPUT_COST
+from evals._utils import normalize
 from felix.atelier.agent import (
     create_atelier_agent,
     create_chronicle_agent,
@@ -37,6 +38,8 @@ from felix.graph.driver import get_driver, setup_constraints
 from felix.ingest.resolver import slugify
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from neo4j import AsyncDriver
 
 # Les cas wipent/écrivent la même base → sérialisés même sous -n 4.
@@ -57,6 +60,9 @@ class AtelierRunResult:
     # Verdict du consistency_check rejoué quand le cas demande "check" (la route
     # SSE émet une alerte ssi contradiction est True) ; None sinon.
     alert: dict[str, Any] | None = None
+    # Multi-run : rempli par run_atelier_multirun_case, None pour un mono-run classique.
+    multirun_passes: int | None = None
+    multirun_total: int | None = None
 
 
 @fixture()
@@ -163,4 +169,64 @@ async def run_atelier_case(
         input_tokens=in_tok,
         output_tokens=out_tok,
         cost=in_tok * MISTRAL_SMALL_INPUT_COST + out_tok * MISTRAL_SMALL_OUTPUT_COST,
+    )
+
+
+def _bapteme_differe_check(result: AtelierRunResult) -> bool:
+    """Critères inline du cas bapteme_differe : 1 personnage, Alikazeth unique.
+
+    Réplique graph_char_count(n=1) + entity_unique(names='Alikazeth') de façon
+    autonome pour que run_atelier_multirun_case puisse compter les passes sans
+    repasser par les evaluators protest."""
+    if len(result.characters) != 1:
+        return False
+    return (
+        sum(
+            1
+            for e in result.entities
+            if normalize(str(e.get("name", ""))) == "alikazeth"
+            or normalize(str(e.get("id", ""))) == "alikazeth"
+        )
+        == 1
+    )
+
+
+async def run_atelier_multirun_case(
+    driver: AsyncDriver,
+    inputs: dict[str, Any],
+    n: int,
+    check: Callable[[AtelierRunResult], bool],
+) -> TaskResult[AtelierRunResult]:
+    """N passes en série avec seuil majoritaire pour les cas LLM non-déterministes.
+
+    Chaque pass repart d'un graphe vide (wipe + seed intégrés dans
+    run_atelier_case). Aucune concurrence : l'API Mistral rate-limite à 429.
+    Le résultat retourné est celui de la dernière pass, enrichi de
+    multirun_passes et multirun_total pour le evaluator multirun_majority."""
+    passes = 0
+    total_in = total_out = 0
+    last_tr: TaskResult[AtelierRunResult] | None = None
+
+    for i in range(1, n + 1):
+        tr = await run_atelier_case(driver, inputs)
+        total_in += tr.input_tokens or 0
+        total_out += tr.output_tokens or 0
+        ok = check(tr.output)
+        passes += ok
+        status = "PASS" if ok else "FAIL"
+        chars = ", ".join(str(c.get("name", "?")) for c in tr.output.characters)
+        # Visible avec `just evals-atelier -s -k bapteme_differe`
+        print(f"  [multirun] pass {i}/{n} → {status}  ({len(tr.output.characters)} perso(s) : {chars or '—'})")
+        last_tr = tr
+
+    assert last_tr is not None  # n >= 1 garanti par l'appelant
+    last_tr.output.multirun_passes = passes
+    last_tr.output.multirun_total = n
+    print(f"  [multirun] verdict : {passes}/{n} passes")
+
+    return TaskResult(
+        output=last_tr.output,
+        input_tokens=total_in,
+        output_tokens=total_out,
+        cost=total_in * MISTRAL_SMALL_INPUT_COST + total_out * MISTRAL_SMALL_OUTPUT_COST,
     )

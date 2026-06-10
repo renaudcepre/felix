@@ -159,7 +159,7 @@ def entity_unique(ctx: EvalContext, names: str = "") -> UniqueResult:
             if normalize(str(e.get("name", ""))) == t or normalize(str(e.get("id", ""))) == t
         )
         if n != 1:
-            problems.append(f"{t}×{n}")
+            problems.append(f"{t}x{n}")
     return UniqueResult(unique_ok=not problems, unique_detail=", ".join(problems))
 
 
@@ -445,6 +445,37 @@ def char_props(ctx: EvalContext, name: str = "", has: str = "", hasnt: str = "")
     if present:
         detail += f"interdit présent : {', '.join(present)}."
     return PropResult(props_ok=not missing and not present, props_detail=detail.strip())
+
+
+@dataclass
+class MultirunResult:
+    passes: Annotated[float, Metric]
+    majority_ok: Annotated[bool, Verdict]
+    majority_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def multirun_majority(
+    ctx: EvalContext, threshold: int = 2, total: int = 3
+) -> MultirunResult:
+    """Seuil majoritaire pour les cas LLM intrinsèquement flaky.
+
+    Vert si ≥ threshold passes réelles sur total. Attendu sur un résultat
+    produit par run_atelier_multirun_case (champs multirun_passes/total remplis)."""
+    n_passes = ctx.output.multirun_passes
+    n_total = ctx.output.multirun_total
+    if n_passes is None or n_total is None:
+        return MultirunResult(
+            passes=0.0,
+            majority_ok=False,
+            majority_detail="champs multirun absents — utiliser run_atelier_multirun_case",
+        )
+    ok = n_passes >= threshold
+    return MultirunResult(
+        passes=float(n_passes),
+        majority_ok=ok,
+        majority_detail=f"{n_passes}/{n_total} passes (seuil {threshold}/{total})",
+    )
 
 
 @dataclass

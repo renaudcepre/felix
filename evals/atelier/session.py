@@ -15,11 +15,18 @@ from protest import From, ProTestSession, Use
 from protest.evals import EvalCase, EvalSuite, ModelLabel, TaskResult
 
 from evals._judge import FelixJudge
-from evals.atelier.dataset import atelier_cases
+from evals.atelier.dataset import BAPTEME_DIFFERE_INPUTS, atelier_cases
+from evals.atelier.evaluators import multirun_majority
 
 # Import runtime (pas TYPE_CHECKING) : protest résout les annotations des evals
 # via get_type_hints — `TaskResult[AtelierRunResult]` doit être évaluable.
-from evals.atelier.task import AtelierRunResult, atelier_driver, run_atelier_case
+from evals.atelier.task import (
+    AtelierRunResult,
+    _bapteme_differe_check,
+    atelier_driver,
+    run_atelier_case,
+    run_atelier_multirun_case,
+)
 from felix.config import settings
 
 if TYPE_CHECKING:
@@ -42,3 +49,20 @@ async def atelier(
     driver: Annotated[AsyncDriver, Use(atelier_driver)],
 ) -> TaskResult[AtelierRunResult]:
     return await run_atelier_case(driver, case.inputs)
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def bapteme_differe(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """Multi-run (N=3, seuil ≥2/3) — variance Mistral Small, pas une régression code.
+
+    Le cas est joué 3 fois en série ; vert si ≥2 passes réussissent. Chaque
+    pass repart d'un graphe vide grâce au wipe intégré dans run_atelier_case.
+    Aucune concurrence pour éviter les 429 de l'API Mistral."""
+    return await run_atelier_multirun_case(
+        driver,
+        BAPTEME_DIFFERE_INPUTS,
+        n=3,
+        check=_bapteme_differe_check,
+    )

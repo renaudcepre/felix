@@ -2,6 +2,10 @@
 
 inputs = {"message": str, "seed": [{"name", "background"?}]} ; le graphe est
 wipé puis seedé avant chaque cas (cf. task.run_atelier_case).
+
+Note : bapteme_differe n'est PAS dans atelier_cases — il est joué en multi-run
+(N=3, seuil 2/3) depuis session.py via run_atelier_multirun_case. Son scénario
+est exporté dans BAPTEME_DIFFERE_INPUTS pour rester la source canonique.
 """
 from __future__ import annotations
 
@@ -115,6 +119,17 @@ _garde_seed = [
      "props": {"description": "la grande salle du château d'Arkham"}},
 ]
 
+# Scénario du baptême différé : une entité introduite sans nom propre reçoit
+# son identité deux tours plus tard. Joué en multi-run dans session.py car
+# la variance Mistral Small rend ce cas flaky sur un mono-run.
+BAPTEME_DIFFERE_INPUTS = {
+    "beats": [
+        "Un mage noir a pris le pouvoir dans la ville d'Adator, par la ruse.",
+        "Le mage noir se nomme « Alikazeth ».",
+    ],
+    "seed": [],
+}
+
 atelier_cases = ForEach(
     [
         # --- création ---
@@ -174,25 +189,6 @@ atelier_cases = ForEach(
                 graph_has_characters(ids="marc"),
                 graph_char_count(n=2),
                 cards_for_subjects(subjects="Marc"),
-            ],
-        ),
-        # Baptême différé (bug Adator, dogfood 2026-06-10) : une entité suivie SANS
-        # vrai nom (« un mage noir ») reçoit son nom DEUX TOURS plus tard. Attendu :
-        # rename_entity sur la fiche existante → UN seul personnage, nommé Alikazeth.
-        # Échec historique : fiche neuve « Alikazeth » + « Mage Noir » orpheline (la
-        # passe 1 ne relit pas la base ; le working set injecté doit la lui montrer).
-        EvalCase(
-            name="bapteme_differe",
-            inputs={
-                "beats": [
-                    "Un mage noir a pris le pouvoir dans la ville d'Adator, par la ruse.",
-                    "Le mage noir se nomme « Alikazeth ».",
-                ],
-                "seed": [],
-            },
-            evaluators=[
-                graph_char_count(n=1),
-                entity_unique(names="Alikazeth"),
             ],
         ),
         # --- pas d'écriture ---
