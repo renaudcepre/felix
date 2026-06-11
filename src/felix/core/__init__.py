@@ -9,6 +9,11 @@ Surface publique du noyau (le bot B et les evals importent d'ici).
 from __future__ import annotations
 
 from felix.core.agent import SYSTEM_PROMPT, create_core_agent
+from felix.core.alerts import (
+    consume_unnotified_alerts,
+    record_alert,
+    render_alerts_block,
+)
 from felix.core.check import CheckVerdict, consistency_check
 from felix.core.deps import GenericDeps
 from felix.core.graph import (
@@ -60,6 +65,7 @@ __all__ = [
     "all_relations",
     "archive_conversation",
     "consistency_check",
+    "consume_unnotified_alerts",
     "consume_unnotified_edits",
     "conversation_messages",
     "create_core_agent",
@@ -71,10 +77,12 @@ __all__ = [
     "merge_entity_into",
     "recent_entities",
     "recent_user_edits",
+    "record_alert",
     "record_message",
     "record_user_edit",
     "rel_label",
     "rename_or_merge",
+    "render_alerts_block",
     "render_recent_block",
     "render_user_edits_block",
     "save_llm_history",

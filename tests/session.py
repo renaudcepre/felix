@@ -1,5 +1,6 @@
 from protest import ProTestSession
 
+from tests.unit.test_alerts import alerts_suite
 from tests.unit.test_backoff import backoff_suite
 from tests.unit.test_conductor import conductor_suite
 from tests.unit.test_history_window import history_window_suite
@@ -16,6 +17,7 @@ from tests.unit.test_vectorstore import vectorstore_suite
 
 session = ProTestSession(concurrency=4, history=True)
 
+session.add_suite(alerts_suite)
 session.add_suite(backoff_suite)
 session.add_suite(resolver_suite)
 session.add_suite(vectorstore_suite)

@@ -33,6 +33,7 @@ CYPHER_MODULES = [
     SRC / "core" / "tools.py",
     SRC / "core" / "projects.py",
     SRC / "core" / "user_edits.py",
+    SRC / "core" / "alerts.py",     # méta-nœud :Alert (#50-a)
     SRC / "core" / "messages.py",  # brique #63 — :Message / :Thread
     SRC / "api" / "routes" / "entities.py",
 ]
@@ -127,6 +128,26 @@ def test_message_queries_are_project_scoped() -> None:
     assert not missing, (
         "Requêtes :Message/:Thread SANS filtre project (contamination possible) :\n"
         + "\n".join(missing)
+    )
+
+
+@project_scoping_suite.test()
+def test_alert_queries_are_project_scoped() -> None:
+    """Les alertes :Alert sont scopées : une alerte de l'histoire A ne doit pas
+    s'injecter dans les prompts de l'histoire B.
+
+    L'assert path.exists() met la suite en rouge tant que alerts.py n'existe
+    pas : c'est l'état RED voulu de l'eval-first."""
+    path = SRC / "core" / "alerts.py"
+    assert path.exists(), f"module attendu manquant : {path}"
+
+    queries = _cypher_strings(path, ":Alert")
+    assert queries, "aucune requête :Alert trouvée — le scan est cassé"
+
+    missing = [where for where, q in queries if "project" not in q]
+    assert not missing, (
+        "Requêtes :Alert SANS filtre project (contamination inter-histoires "
+        "possible) :\n" + "\n".join(missing)
     )
 
 

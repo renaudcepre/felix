@@ -36,13 +36,16 @@ from felix.core import (
     GenericDeps,
     archive_conversation,
     consistency_check,
+    consume_unnotified_alerts,
     consume_unnotified_edits,
     conversation_messages,
     link_produced,
     load_llm_history,
     recent_entities,
     recent_user_edits,
+    record_alert,
     record_message,
+    render_alerts_block,
     render_recent_block,
     render_user_edits_block,
     save_llm_history,
@@ -105,6 +108,9 @@ async def _consistency_alerts(
             }),
             event="alert",
         )
+        # Persist pour le tour suivant (#50-a) : le maître recevra ce bloc
+        # au prochain appel via consume_unnotified_alerts dans _master_prompt.
+        await record_alert(driver, alert_body, project=deps.project_id)
 
 
 async def _stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + historique + deps partagés
@@ -136,14 +142,23 @@ async def _stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + histor
 
 
 async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str:
-    """Préfixe le message du maître des actions manuelles PAS ENCORE annoncées
-    (#61). Une fois suffit : le fil threadé retient — répéter le bloc chaque tour
-    ne ferait que gonfler l'historique. Les extracteurs, eux, stateless, reçoivent
-    le bloc COMPLET à chaque tour d'extraction (cf. event_generator)."""
-    block = render_user_edits_block(
+    """Préfixe le message du maître de deux blocs « une fois » consommés :
+
+    1. Décisions manuelles PAS ENCORE annoncées (#61) — tombstones :UserEdit.
+    2. Alertes de cohérence PAS ENCORE annoncées (#50-a) — méta-nœuds :Alert.
+
+    Les deux sont injectés UNE SEULE FOIS : le fil threadé du maître retient ensuite
+    (répéter ne ferait que gonfler l'historique). Ordre : user_edits → alerts →
+    message (les alertes portent sur le récit récent, après les décisions de bible).
+    """
+    edits_block = render_user_edits_block(
         await consume_unnotified_edits(driver, project=project)
     )
-    return f"{block}\n\n{message}" if block else message
+    alerts_block = render_alerts_block(
+        await consume_unnotified_alerts(driver, project=project)
+    )
+    parts = [p for p in (edits_block, alerts_block, message) if p]
+    return "\n\n".join(parts)
 
 
 async def _apply_gate_verdict(gate_task: asyncio.Task, deps: GenericDeps, usages: list) -> None:
