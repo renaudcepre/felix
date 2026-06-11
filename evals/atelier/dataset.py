@@ -522,3 +522,29 @@ FLASHBACK_CREATION_INPUTS = {
         {"name": "Imra", "entity_type": "personnage", "props": {"role": "cheffe de plateforme"}},
     ],
 }
+
+# ─── #69 : jamais dériver — une année de naissance reste VERBATIM ────────────────────
+# Dogfood 2026-06-11 : « je suis né en 1991 » → la passe 1 a écrit age='32 ans'
+# (arithmétique d'année d'entraînement, fausse). Reproduit en probe 2/2 avec
+# « né en 1989 » → age='34 ans en 2023' (l'année VERBATIM disparaît !) — alors
+# que « né en 1962 » ne déclenche PAS : la dérivation dépend de la saillance de
+# l'année dans le prior du modèle, d'où le choix de 1989 ici.
+# Noms Romeck/Carstier : frais, absents de tous les prompts (partagés avec la
+# sonde gate tools/check_gate_meta.py — même chantier #69).
+NAISSANCE_VERBATIM_INPUTS = {
+    "message": "Mon héros s'appelle Romeck, le veilleur du port de Carstier. Il est né en 1989.",
+    "seed": [],
+}
+
+# ─── #69 : correction sèche d'une valeur → appliquée sur la MÊME clé ─────────────────
+# Dogfood 2026-06-11 : « non j'ai 34 ans » n'a déclenché aucune écriture, l'auteur
+# a dû insister. Tour 1 pose l'âge, tour 2 le corrige sec : la fiche finale doit
+# porter 67 et plus aucune trace de 71 (update sur la même clé, pas une 2e clé).
+# Nom Lioba : frais, absent de tous les prompts.
+CORRECTION_SECHE_INPUTS = {
+    "beats": [
+        "Lioba, la doyenne de la halle aux grains, a 71 ans.",
+        "non, Lioba a 67 ans.",
+    ],
+    "seed": [],
+}

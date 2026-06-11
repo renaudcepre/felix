@@ -19,9 +19,11 @@ from evals.atelier.dataset import (
     BAPTEME_DIFFERE_INPUTS,
     CHECK_ACT_THEN_DEATH_INPUTS,
     CHECK_DEATH_THEN_ACT_INPUTS,
+    CORRECTION_SECHE_INPUTS,
     FLASHBACK_CORRECTION_INPUTS,
     FLASHBACK_CREATION_INPUTS,
     GABARIT_AMBIANCE_INPUTS,
+    NAISSANCE_VERBATIM_INPUTS,
     SUBORDONNEE_CONTEXTE_INPUTS,
     SUBORDONNEE_FICHE_INPUTS,
     SUJET_APPOSITION_CONTEXTE_INPUTS,
@@ -37,9 +39,11 @@ from evals.atelier.task import (
     _bapteme_differe_check,
     _check_act_then_death,
     _check_death_then_act,
+    _correction_seche_check,
     _flashback_correction_check,
     _flashback_creation_check,
     _gabarit_ambiance_check,
+    _naissance_verbatim_check,
     _subordonnee_contexte_check,
     _subordonnee_fiche_check,
     _sujet_apposition_check,
@@ -242,4 +246,40 @@ async def flashback_creation(
         FLASHBACK_CREATION_INPUTS,
         n=3,
         check=_flashback_creation_check,
+    )
+
+
+# ─────────────────── #69 : jamais dériver, toujours citer ────────────────────────────
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def naissance_verbatim(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#69 : « Romeck est né en 1962 » → l'année VERBATIM en fiche, aucun âge dérivé.
+
+    Dogfood 2026-06-11 : « né en 1991 » → age='32 ans' calculé (faux). Vert si
+    '1962' est dans une prop, aucun « NN ans » nulle part, aucune clé `age`,
+    seuil ≥2/3."""
+    return await run_atelier_multirun_case(
+        driver,
+        NAISSANCE_VERBATIM_INPUTS,
+        n=3,
+        check=_naissance_verbatim_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def correction_seche(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#69 : « non, Lioba a 67 ans » → la correction atterrit sur la même clé.
+
+    Dogfood 2026-06-11 : « non j'ai 34 ans » → aucune écriture, l'auteur a dû
+    insister. Vert si la fiche finale porte 67 et plus aucun 71, seuil ≥2/3."""
+    return await run_atelier_multirun_case(
+        driver,
+        CORRECTION_SECHE_INPUTS,
+        n=3,
+        check=_correction_seche_check,
     )

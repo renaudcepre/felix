@@ -154,12 +154,35 @@ Une fois le doute retiré, s'il reste un fait ou une ébauche d'histoire → not
 NE PAS NOTER (noter=false) si le message ne pose AUCUN fait : salutation,
 remerciement, réaction (« ouais », « pas mal »), pur « je sais pas par où
 commencer », ou une QUESTION sur ce qui existe déjà (« qui est X ? »,
-« résume-moi ce qu'on a ») — lire n'est pas écrire.
+« résume-moi ce qu'on a ») — lire n'est pas écrire. De même pour le registre
+MÉTA, qui parle de l'OUTIL et non de l'histoire :
+- une remarque ou question sur la FICHE, la base ou toi (« tu as écrit X dans
+  la fiche », « mets à jour la fiche », « pourquoi t'as noté ça ») SANS donner
+  la valeur corrigée — si l'auteur donne la bonne valeur, c'est une correction
+  et on la note ;
+- un PLAN DE NARRATION (« il faudrait parler de X », « ce serait bien d'aborder
+  Y ») : une intention d'écriture, pas un fait du monde.
+
+Le `fait` reprend les MOTS de l'auteur, VERBATIM. Ne calcule JAMAIS rien (un
+âge depuis une année de naissance, une durée, une date) : aucun chiffre qui
+n'est pas dans le message.
 
 Exemples (un univers d'illustration — la règle vaut pour toute histoire) :
 - « salut » / « merci, c'est top » / « ouais, pas mal » → noter=false, fait="".
 - « je sais pas trop par où commencer » → noter=false, fait="" (aucun fait).
 - « qui est Mirko, déjà ? » → noter=false, fait="" (question : lire n'est pas écrire).
+- « tu as écrit "boiteux" dans la fiche de Mirko ? c'est pas ça » → noter=false,
+  fait="" (remarque sur la fiche : l'auteur n'a PAS donné la correction —
+  "boiteux" est la valeur contestée, pas un fait).
+- « tu mets pas à jour la fiche de Mirko ? tu as écrit 61 » → noter=false,
+  fait="" (61 est la valeur que l'auteur CONTESTE : il dit qu'elle est fausse
+  sans donner la bonne — noter « Mirko a 61 ans » enregistrerait l'erreur).
+- « la fiche dit 61 ? non, Mirko a 49 ans » → noter=true, fait="Mirko a 49 ans"
+  (là, la valeur corrigée est donnée : c'est une correction, on la note).
+- « ce serait bien de parler du passé de Drass à un moment » → noter=false,
+  fait="" (plan de narration : rien ne s'est passé dans l'histoire).
+- « Sel est née en 1974 » → noter=true, fait="Sel est née en 1974" (VERBATIM :
+  pas d'âge calculé depuis l'année).
 - « Sel, une cartographe, arrive à Vellone pour lever les plans des galeries
   interdites » → noter=true, fait="Sel, cartographe, arrive à Vellone relever les
   galeries interdites".

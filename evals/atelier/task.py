@@ -11,6 +11,7 @@ pas lancer cette session en même temps que la session legacy.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +28,7 @@ from felix.atelier.agent import (
 from felix.atelier.deps import AtelierDeps
 from felix.config import settings
 from felix.core import (
+    DEFAULT_PROJECT,
     SCENARIO_PROFILE,
     all_entities,
     all_relations,
@@ -81,7 +83,11 @@ async def _seed_entities(driver: AsyncDriver, seed: list[dict[str, Any]]) -> Non
     """Seed d'entités :GenEntity — même monde que le bot B promu (plus de :Character).
 
     Compat : {'name', 'background'?} = personnage. Forme étendue {'name',
-    'entity_type', 'props'} pour seeder un lieu/objet (cas du check)."""
+    'entity_type', 'props'} pour seeder un lieu/objet (cas du check).
+
+    ⚠ `project` obligatoire depuis #60 : les lecteurs (all_entities,
+    recent_entities) sont scopés strictement — un seed sans project est
+    INVISIBLE (doublons, char_count=0 ; cassé silencieusement du 2026-06-11)."""
     async with driver.session() as session:
         for e in seed:
             etype = e.get("entity_type", "personnage")
@@ -89,9 +95,10 @@ async def _seed_entities(driver: AsyncDriver, seed: list[dict[str, Any]]) -> Non
             if e.get("background"):
                 props.setdefault("background", e["background"])
             await session.run(
-                "MERGE (x:GenEntity {id: $id})"
+                "MERGE (x:GenEntity {id: $id, project: $project})"
                 " SET x.name = $name, x.entity_type = $type, x += $props",
                 id=slugify(e["name"]), name=e["name"], type=etype, props=props,
+                project=DEFAULT_PROJECT,
             )
 
 
@@ -326,6 +333,67 @@ def _flashback_creation_check(result: AtelierRunResult) -> bool:
     if arrive is None or tempete is None:
         return False
     return int(tempete.get("ordre", 999)) < int(arrive.get("ordre", 0))
+
+
+_AGE_EN_ANNEES_RE = re.compile(r"\b\d{1,3}\s*ans\b")
+# Props techniques exclues des blobs de valeurs (last_touched = epoch ms : ses
+# chiffres déclencheraient les recherches de substrings numériques).
+_TECH_KEYS = _ENTITY_META_KEYS | {"last_touched"}
+
+
+def _props_blob(result: AtelierRunResult) -> str:
+    """Concatène toutes les valeurs de props utiles du graphe (hors clés techniques)."""
+    return " ".join(
+        str(v)
+        for e in result.entities
+        for k, v in e.items()
+        if k.lower() not in _TECH_KEYS
+    )
+
+
+def _naissance_verbatim_check(result: AtelierRunResult) -> bool:
+    """#69 : « né en 1989 » → l'année verbatim en fiche, AUCUN âge dérivé.
+
+    L'auteur n'a donné aucun âge : tout « NN ans » dans le graphe est forcément
+    un calcul du modèle (probe 2/2 : age='34 ans en 2023', l'année verbatim
+    perdue). La clé choisie (`age`, `naissance`…) est libre — c'est la VALEUR
+    qui doit être verbatim. Vert si :
+    - la fiche Romeck existe et porte '1989' dans une de SES props ;
+    - aucun motif « NN ans » nulle part dans le graphe."""
+    romeck = next(
+        (c for c in result.characters
+         if "romeck" in normalize(str(c.get("name", "")))),
+        None,
+    )
+    if romeck is None:
+        return False
+    own_blob = " ".join(
+        str(v) for k, v in romeck.items() if k.lower() not in _TECH_KEYS
+    )
+    if "1989" not in own_blob:
+        return False
+    return not _AGE_EN_ANNEES_RE.search(_props_blob(result))
+
+
+def _correction_seche_check(result: AtelierRunResult) -> bool:
+    """#69 : « non, Lioba a 67 ans » → la correction atterrit, sur la MÊME clé.
+
+    Dogfood : « non j'ai 34 ans » n'avait déclenché aucune écriture. Vert si la
+    FICHE de Lioba porte 67 et plus aucune trace de 71 (update remplace la
+    valeur, pas de clé doublon ni de valeur fantôme). Volontairement borné à la
+    fiche : le chroniqueur crée parfois un event parasite « Lioba a 71 ans »
+    (état chroniqué = famille #46, hors du périmètre de CE cas)."""
+    lioba = next(
+        (c for c in result.characters
+         if "lioba" in normalize(str(c.get("name", "")))),
+        None,
+    )
+    if lioba is None:
+        return False
+    own_blob = " ".join(
+        str(v) for k, v in lioba.items() if k.lower() not in _TECH_KEYS
+    )
+    return bool(re.search(r"\b67\b", own_blob)) and not re.search(r"\b71\b", own_blob)
 
 
 def _bapteme_differe_check(result: AtelierRunResult) -> bool:
