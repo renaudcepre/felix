@@ -1,19 +1,5 @@
 # Journal de developpement — Felix
 
-## 2026-06-11 — test(evals): deux cas contextualisés #56/#57 (sujet_apposition_contexte + subordonnee_contexte)
-
-**Chantier.** Eval-first pour reproduire le bug dogfood Araïko : le working set du tour 1 « noie » le nouveau personnage introduit au tour 2 (sujet en apposition ou mentionné en subordonnée). Deux cas multi-run N=3, seuil 2/3, même pattern que les cas existants.
-
-**Mesures.** Les deux cas sont VERTS à froid :
-- `sujet_apposition_contexte` (Karev/Torvast au tour 1, Ylden au tour 2) : **3/3**
-- `subordonnee_contexte` (Nara/Erkon au tour 1, Paya/Gorn au tour 2) : **3/3**
-
-**Décision.** Tout vert → pas touché au SYSTEM_PROMPT (loi du repo : pas de fix sans test rouge). Les deux cas rejoignent les trois existants (gabarit_ambiance, subordonnee_fiche, sujet_apposition) comme non-régression.
-
-**Pivot / enseignement.** Le bug Araïko était peut-être déjà couvert par le fix antérieur (working set + gate stateless). Les cas contextualisés prouvent que l'agent gère le working set sans rater le personnage du tour courant — au moins sur les deux structures syntaxiques testées.
-
-**Gates.** Unit 100/100 ; ruff zéro nouvelle erreur (les 30 erreurs existantes sont antérieures, aucune dans mes fichiers) ; pas de modification de SYSTEM_PROMPT donc pas d'evals-atelier complet requis.
-
 ## ▶ HANDOFF (reprendre ici) — relations TYPÉES (vocab dur + domaine/portée) FAIT ; reste quick-wins (1)(2) + qualité de modélisation — 2026-06-09
 
 **État (2026-06-09)** : **le front est passé 100 % schemaless ET 100 % papier** (deux sections ci-dessous). `/atelier → /chat`, nouvelles pages `/entities` (liste par type + fiche générique props/relations/chronologie), **tout le legacy `:Character` supprimé** (front + API + repos + ingest + agent + cli, ~85 fichiers), puis **redesign papier** des pages d'entités (`felix-fiche.css`, design system) + retrait du shell cyan résiduel (layout/navbar/settings) → toutes pages `layout:false`. Surface vérifiée end-to-end (imports, ruff sans import mort, curl entities, route SSE atelier vivante, typecheck/lint/build front verts). Moteur `core/`/`atelier/` **non touché**. **⚠ Bug visible révélé** : le bot B **invente des entités à partir de rien** (un simple « salur » a fait écrire détective/assistant/indice/bibliothèque dans le graphe) — pas un exemple recopié (rien de tel dans le code), vraie hallucination ; viole ses règles « n'écris rien si salutation / n'invente aucun fait ». **C'est le chantier `project_modeling_quality`, désormais visible grâce aux pages d'entités — prioritaire.** Les **quick-wins moteur (1)(2)(3) ci-dessous restent aussi en attente**.
@@ -39,6 +25,14 @@
 - Profil cible démo : `MAINTENANCE_PROFILE` (~40 lignes : `piece`/`outil`/`machine`/`procedure`/`panne` ; vocab `PART_OF`/`REQUIRES`/`REPLACES`/`CAUSES` ; `manages_events=False` sauf si journal d'interventions). Zéro changement moteur (l'archi est déjà « branche-un-profil » : `AgentChoice` = profil + persona ; `CHANTIER_PROFILE` le prouve déjà).
 
 **Pointeurs** : noyau `src/felix/core/` (graph.py `entity_timeline` + tie-break `find_node`, check.py `consistency_check` concatène la timeline + `CHECK_PROMPT` temporel, agent.py `CHRONICLE_SYSTEM_PROMPT` « mort = événement », profile.py `consistency_rules` rule 1 + `manages_events`, tools.py `add_event`/`find_non_event`, deps.py `event_seq_lock`) ; route **3 passes** `src/felix/api/routes/atelier.py` ; evals `evals/atelier/` (cas `check_death_then_act`/`check_act_then_death` A/B + `event_chrono` + `roue_de_sang`). Harness checker isolé `/tmp/check_temporal.py` (juge sur graphe fixe, 1 appel/cas — robuste aux transients) et `/tmp/compare_checker.py` (6 scénarios, non-régression faux positifs). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
+
+## 2026-06-11 — fix(core): refus TERMINAUX + mémoire de tour `refused_names` (#59 fermée, délégation Sonnet)
+
+**Le bug (traces Logfire, dogfood 2026-06-10) : les gardes au write se contournaient EN SÉRIE.** `add_entity(bataille, type=evenement)` refusé ✓, mais le message listait « personnage, lieu, objet » → Small retentait en `groupe` → accepté : la bataille devenait un GROUPE en base, puis se faisait relier n'importe comment. Même trou sur la garde anti-état (#64). Chaque garde marchait ; leur composition échouait — **les messages de refus pédagogiques servaient de guide de contournement**. Le volet FIGHTS de l'issue était déjà mort par construction depuis #68 (plus de vocab narratif fermé à rabattre).
+
+**Fix (garde symbolique > consigne, la leçon #48/#64 appliquée une fois de plus).** (1) `GenericDeps.refused_names` : tout nom refusé pour raison SÉMANTIQUE entre (en slug) dans un set porté par le deps du tour — toute re-création du même nom sous N'IMPORTE quel type est refusée EN CODE ; le set vit un tour (deps recréé chaque tour : un refus ne hante jamais la session) et vaut pour les 3 passes (le relieur en backfill est couvert). (2) Les gardes extraites en fonction PURE `check_add_entity_guards` (testable sans Neo4j) et les messages rendus TERMINAUX : plus aucune liste de types alternatifs, « n'enregistre pas cet élément, sous aucun autre type ».
+
+**Qualification (TDD, délégation Sonnet revue intégralement).** 13 tests rouges→verts (`test_refusal_terminal.py` : re-tentative bloquée avec/sans article, message sans alternatives, chemin nominal intact, anti-leakage Cendral/Brulvie) ; sonde LLM `tools/check_refusal_cascade.py` **3/3** (beat « bataille » → zéro entité bataille tout type confondu, l'événement chroniqué bien là) ; non-régression `bapteme_differe` 2/3 (seuil) — refused_names ne bloque pas les baptêmes légitimes ; unit **113/113** ; **e2e-atelier 5/5** (Le Nadir, zéro tour en erreur — add_entity est sur le chemin de toutes les passes) ; ruff zéro nouvelle erreur.
 
 ## 2026-06-11 — evals(#56/#57) + fix(llm): non-reproduction instrumentée, et deux vrais bugs d'infra tués en chemin
 

@@ -6,9 +6,14 @@ modèle tient le cap, pas par du code. Ne pas les diluer.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from pydantic_ai import RunContext
 
 from felix.core.deps import GenericDeps
+
+if TYPE_CHECKING:
+    from felix.core.profile import Profile
 from felix.core.graph import (
     NARRATIVE_REL,
     REL_RESERVED_KEYS,
@@ -110,6 +115,64 @@ async def find_entity(ctx: RunContext[GenericDeps], name: str) -> str:
     )
 
 
+def check_add_entity_guards(
+    name: str,
+    entity_type: str,
+    refused_names: set[str],
+    profile: Profile | None,
+) -> tuple[str | None, bool]:
+    """Gardes sémantiques pures de add_entity — testables sans Neo4j.
+
+    Retourne (message_de_refus | None, ajouter_au_refused_names).
+
+    Trois cas de refus, dans cet ordre :
+    1. Garde mémoire de tour : le slug du nom est déjà dans refused_names →
+       refus terminal court, False (déjà enregistré, rien à ajouter).
+    2. Garde type réservé : entity_type='evenement' sur un profil manages_events →
+       refus terminal, True (ajouter le slug pour bloquer toute re-tentative).
+    3. Garde anti-sur-entification (#64) : entity_type dans {état, maladie, …} →
+       refus guidant (pointe update_entity), True.
+
+    Garde symbolique > consigne (leçons #48/#64 : la consigne seule ne tient pas
+    sur Small). Les messages de refus sont TERMINAUX — ils ne listent plus de types
+    alternatifs pour ne plus servir de guide de contournement.
+    """
+    slug = slugify(name)
+    etype_low = entity_type.strip().lower()
+
+    # 1. Garde mémoire : nom déjà refusé ce tour, quel que soit le type proposé.
+    if slug in refused_names:
+        return (
+            f"« {name} » a déjà été refusé ce tour — n'enregistre pas cet élément"
+            f" sous aucun type.",
+            False,
+        )
+
+    # 2. Garde type réservé : evenement
+    if (profile is not None and profile.manages_events
+            and etype_low in {"evenement", "événement", "évènement", "event"}):
+        return (
+            f"« {entity_type} » est un type réservé : un événement appartient à la "
+            f"chronologie (add_event), pas au graphe d'entités. N'enregistre pas "
+            f"« {name} » comme entité ce tour-ci, sous aucun autre type.",
+            True,
+        )
+
+    # 3. Garde anti-sur-entification (#64)
+    if etype_low in {
+        "etat", "état", "maladie", "sentiment", "emotion", "émotion", "humeur",
+    }:
+        return (
+            f"« {entity_type} » n'est pas un type d'entité : un état interne se "
+            f"pose en PROPRIÉTÉ de la fiche concernée (update_entity, ex. clé "
+            f"`etat`), jamais en entité ni en relation. Ne crée pas d'entité pour "
+            f"cet état, sous aucun type.",
+            True,
+        )
+
+    return None, False
+
+
 async def add_entity(
     ctx: RunContext[GenericDeps],
     name: str,
@@ -128,27 +191,15 @@ async def add_entity(
         props: Propriétés factuelles données par l'utilisateur. RÉUTILISER les
             noms de propriétés existants du schéma quand le sens correspond.
     """
-    # Garde de coordination : quand le domaine gère une chronologie (manages_events),
-    # le type 'evenement' est RÉSERVÉ à add_event (ordre/NEXT). Le créer ici en
-    # entité plate produirait un node hors-chaîne. Refus best-effort (retour normal,
-    # pas d'erreur d'outil → l'agent passe à autre chose, pas de boucle).
-    prof = ctx.deps.profile
-    if (prof is not None and prof.manages_events
-            and entity_type.strip().lower() in {"evenement", "événement", "évènement", "event"}):
-        return (f"« {entity_type} » est un type réservé : une action/un événement ne "
-                f"s'enregistre pas comme entité (il est tenu à part dans la chronologie). "
-                f"Garde « {name} » pour une vraie entité (personnage, lieu, objet).")
-
-    # Garde anti-sur-entification (#64) : un état interne n'est pas une chose du
-    # monde — en nœud, toute relation vers lui devient un non-sens (« Ossian
-    # KNOWS dépression »). Le modèle s'auto-étiquette (« maladie », « état ») :
-    # on attrape ces types-là au write, la consigne prompt seule ne tient pas.
-    if entity_type.strip().lower() in {
-        "etat", "état", "maladie", "sentiment", "emotion", "émotion", "humeur",
-    }:
-        return (f"« {entity_type} » n'est pas un type d'entité : un état interne se "
-                f"pose en PROPRIÉTÉ de la fiche concernée (update_entity, ex. clé "
-                f"`etat`), jamais en entité ni en relation.")
+    # Gardes sémantiques : type réservé, état interne, re-tentative mémorisée.
+    # Refus best-effort (retour normal, pas d'exception → pas de boucle ModelRetry).
+    msg, add_to_refused = check_add_entity_guards(
+        name, entity_type, ctx.deps.refused_names, ctx.deps.profile
+    )
+    if msg is not None:
+        if add_to_refused:
+            ctx.deps.refused_names.add(slugify(name))
+        return msg
 
     entity_id = slugify(name)
     if not entity_id:

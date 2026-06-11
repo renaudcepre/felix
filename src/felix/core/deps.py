@@ -52,6 +52,12 @@ class GenericDeps:
     # QUE si ce flag est vrai — un bavardage/une question ne déclenche AUCUNE
     # écriture (hallu impossible par construction, et tour conversationnel moins cher).
     extraction_requested: bool = False
+    # Noms refusés par une garde SÉMANTIQUE ce tour (slugs normalisés).
+    # Toute re-création du même nom sous un autre type est bloquée en code :
+    # garde symbolique > consigne (leçon #48/#64 : la consigne seule ne tient
+    # pas sur Small). Un refus mémorisé vaut pour les trois passes du tour
+    # (entités + relieur + chroniqueur partagent la même instance de deps).
+    refused_names: set[str] = field(default_factory=set)
     # Sérialise l'allocation d'`ordre` d'add_event : un même run peut émettre
     # plusieurs add_event dans une seule réponse → pydantic-ai les exécute en
     # parallèle, et un max(ordre)+1 concurrent collisionnerait sur le même id.
