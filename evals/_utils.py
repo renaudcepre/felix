@@ -14,9 +14,12 @@ def normalize(text: str) -> str:
 def is_transient_error(exc: Exception) -> bool:
     """Retourne True si l'exception est un transient récupérable.
 
-    Transients : 5xx serveur (500/502/503/504), 429 rate-limit, timeout réseau.
-    NON-transients : 400 (erreur de requête), ValueError, AssertionError, etc.
-    Un 400 n'est jamais retenté : c'est une erreur de contenu, pas d'infra."""
+    Transients : 5xx serveur (500/502/503/504), 429 rate-limit, timeout réseau,
+    et le 400 `invalid_function_call` (tool call MALFORMÉ par le modèle — le
+    JSON des arguments dans le champ nom, vécu 2026-06-11 : pure variance de
+    Small, re-émettre redonne presque toujours un appel valide).
+    NON-transients : les autres 400 (erreur de contenu/prompt — les retenter
+    masquerait un vrai bug), ValueError, AssertionError, etc."""
     # Timeouts Python natifs (inclut asyncio.TimeoutError en Python 3.11+)
     if isinstance(exc, TimeoutError):
         return True
@@ -27,7 +30,10 @@ def is_transient_error(exc: Exception) -> bool:
     msg = str(exc).lower()
     return any(
         pattern in msg
-        for pattern in ("429", "rate", "timeout", "500", "502", "503", "504")
+        for pattern in (
+            "429", "rate", "timeout", "500", "502", "503", "504",
+            "invalid_function_call",
+        )
     )
 
 

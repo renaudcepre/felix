@@ -3,6 +3,7 @@ from protest import ProTestSession
 from tests.unit.test_backoff import backoff_suite
 from tests.unit.test_conductor import conductor_suite
 from tests.unit.test_history_window import history_window_suite
+from tests.unit.test_llm_timeout import llm_timeout_suite
 from tests.unit.test_modeling_quality import modeling_quality_suite
 from tests.unit.test_project_scoping import project_scoping_suite
 from tests.unit.test_recent_entities import recent_entities_suite
@@ -25,3 +26,4 @@ session.add_suite(recent_entities_suite)
 session.add_suite(user_edits_suite)
 session.add_suite(update_event_guard_suite)
 session.add_suite(project_scoping_suite)
+session.add_suite(llm_timeout_suite)

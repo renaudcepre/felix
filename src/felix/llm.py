@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import httpx
+from mistralai import Mistral
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.mistral import MistralProvider
@@ -16,6 +17,13 @@ if TYPE_CHECKING:
 
 # 90 s pour les LLM locaux lents ; évite les gels silencieux de 15 min
 _HTTP_TIMEOUT = httpx.Timeout(90.0, connect=10.0)
+# ⚠ Pour Mistral, le timeout du client httpx ne suffit PAS : le SDK mistralai
+# pose `timeout=None` PAR REQUÊTE quand timeout_ms n'est pas configuré, et en
+# httpx le timeout par requête ÉCRASE celui du client (vécu : 904 s d'attente
+# sur un 504 du gateway Kong, x-kong-upstream-latency=900001). Le timeout doit
+# passer par le canal que le SDK honore : timeout_ms. Gardé > 90 s du client
+# httpx pour rester le seul à s'appliquer côté Mistral.
+_MISTRAL_TIMEOUT_MS = 90_000
 
 
 def build_model(
@@ -45,9 +53,17 @@ def build_model(
             name,
             provider=OpenAIProvider(base_url=url, api_key=key, http_client=http_client),
         )
+    # Client SDK construit NOUS-MÊMES pour porter timeout_ms (cf. commentaire
+    # _MISTRAL_TIMEOUT_MS) — MistralProvider(api_key=…) ne l'expose pas.
     return MistralModel(
         name,
-        provider=MistralProvider(api_key=settings.llm_api_key, http_client=http_client),
+        provider=MistralProvider(
+            mistral_client=Mistral(
+                api_key=settings.llm_api_key,
+                async_client=http_client,
+                timeout_ms=_MISTRAL_TIMEOUT_MS,
+            )
+        ),
     )
 
 

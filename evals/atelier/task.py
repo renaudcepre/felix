@@ -196,6 +196,86 @@ def _check_act_then_death(result: AtelierRunResult) -> bool:
     return not result.alert.get("contradiction")
 
 
+# Clés réservées du nœud Neo4j — exclues du contrôle des props biographiques.
+_ENTITY_META_KEYS = {"id", "name", "entity_type", "project"}
+# Fragments de clés qui trahissent une prop biographique inventée (#56).
+_BIO_KEY_FRAGMENTS = {"age", "background", "traits", "backstory", "personnalite", "historique"}
+
+
+def _gabarit_ambiance_check(result: AtelierRunResult) -> bool:
+    """#56 : ambiance pure sans personnage → 0 personnage inventé, 0 prop biographique.
+
+    Vert si :
+    - aucune entité de type personnage (result.characters vide) ;
+    - aucune entité quelconque ne porte une clé biographique (age/background/traits/…)
+      qui révèle un personnage fantôme même sans entity_type=personnage.
+    Une fiche de lieu/cadre avec une 'description' est tolérée."""
+    if result.characters:
+        return False
+    for e in result.entities:
+        custom = {k.lower() for k in e if k not in _ENTITY_META_KEYS}
+        if any(frag in key for key in custom for frag in _BIO_KEY_FRAGMENTS):
+            return False
+    return True
+
+
+def _subordonnee_fiche_check(result: AtelierRunResult) -> bool:
+    """#57 : personnage mentionné en subordonnée → fiche présente.
+
+    Deux personnages attendus : Lera (sujet) et Fenn (mort, mentionné en subordonnée).
+    Vert si les DEUX fiches existent dans result.characters."""
+    keys: set[str] = set()
+    for c in result.characters:
+        keys.add(normalize(str(c.get("name", ""))))
+        keys.add(normalize(str(c.get("id", ""))))
+    keys.discard("")
+    return (
+        any("lera" in k for k in keys)
+        and any("fenn" in k for k in keys)
+    )
+
+
+def _sujet_apposition_check(result: AtelierRunResult) -> bool:
+    """#57 (variance) : sujet avec apposition → fiche Haldren présente.
+
+    Vert si Haldren, le sujet explicite de la phrase, a sa fiche dans le graphe."""
+    keys: set[str] = set()
+    for c in result.characters:
+        keys.add(normalize(str(c.get("name", ""))))
+        keys.add(normalize(str(c.get("id", ""))))
+    keys.discard("")
+    return any("haldren" in k for k in keys)
+
+
+def _sujet_apposition_contexte_check(result: AtelierRunResult) -> bool:
+    """#57 contextualisé : Ylden (sujet + apposition au tour 2) doit avoir sa fiche.
+
+    Le tour 1 a peuplé le working set (Karev + Torvast) ; c'est la condition du
+    bug Araïko : le working set injecté au tour 2 noyait le nouveau personnage."""
+    keys: set[str] = set()
+    for c in result.characters:
+        keys.add(normalize(str(c.get("name", ""))))
+        keys.add(normalize(str(c.get("id", ""))))
+    keys.discard("")
+    return any("ylden" in k for k in keys)
+
+
+def _subordonnee_contexte_check(result: AtelierRunResult) -> bool:
+    """#57 contextualisé : Paya (sujet) ET Gorn (subordonnée, mort) au tour 2.
+
+    Le tour 1 a peuplé le working set avec Nara + Erkon (base Erkon).
+    Vert si les deux personnages ont leur fiche dans le graphe."""
+    keys: set[str] = set()
+    for c in result.characters:
+        keys.add(normalize(str(c.get("name", ""))))
+        keys.add(normalize(str(c.get("id", ""))))
+    keys.discard("")
+    return (
+        any("paya" in k for k in keys)
+        and any("gorn" in k for k in keys)
+    )
+
+
 def _bapteme_differe_check(result: AtelierRunResult) -> bool:
     """Critères inline du cas bapteme_differe : 1 personnage, Alikazeth unique.
 

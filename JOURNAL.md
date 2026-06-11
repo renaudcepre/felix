@@ -1,5 +1,19 @@
 # Journal de developpement — Felix
 
+## 2026-06-11 — test(evals): deux cas contextualisés #56/#57 (sujet_apposition_contexte + subordonnee_contexte)
+
+**Chantier.** Eval-first pour reproduire le bug dogfood Araïko : le working set du tour 1 « noie » le nouveau personnage introduit au tour 2 (sujet en apposition ou mentionné en subordonnée). Deux cas multi-run N=3, seuil 2/3, même pattern que les cas existants.
+
+**Mesures.** Les deux cas sont VERTS à froid :
+- `sujet_apposition_contexte` (Karev/Torvast au tour 1, Ylden au tour 2) : **3/3**
+- `subordonnee_contexte` (Nara/Erkon au tour 1, Paya/Gorn au tour 2) : **3/3**
+
+**Décision.** Tout vert → pas touché au SYSTEM_PROMPT (loi du repo : pas de fix sans test rouge). Les deux cas rejoignent les trois existants (gabarit_ambiance, subordonnee_fiche, sujet_apposition) comme non-régression.
+
+**Pivot / enseignement.** Le bug Araïko était peut-être déjà couvert par le fix antérieur (working set + gate stateless). Les cas contextualisés prouvent que l'agent gère le working set sans rater le personnage du tour courant — au moins sur les deux structures syntaxiques testées.
+
+**Gates.** Unit 100/100 ; ruff zéro nouvelle erreur (les 30 erreurs existantes sont antérieures, aucune dans mes fichiers) ; pas de modification de SYSTEM_PROMPT donc pas d'evals-atelier complet requis.
+
 ## ▶ HANDOFF (reprendre ici) — relations TYPÉES (vocab dur + domaine/portée) FAIT ; reste quick-wins (1)(2) + qualité de modélisation — 2026-06-09
 
 **État (2026-06-09)** : **le front est passé 100 % schemaless ET 100 % papier** (deux sections ci-dessous). `/atelier → /chat`, nouvelles pages `/entities` (liste par type + fiche générique props/relations/chronologie), **tout le legacy `:Character` supprimé** (front + API + repos + ingest + agent + cli, ~85 fichiers), puis **redesign papier** des pages d'entités (`felix-fiche.css`, design system) + retrait du shell cyan résiduel (layout/navbar/settings) → toutes pages `layout:false`. Surface vérifiée end-to-end (imports, ruff sans import mort, curl entities, route SSE atelier vivante, typecheck/lint/build front verts). Moteur `core/`/`atelier/` **non touché**. **⚠ Bug visible révélé** : le bot B **invente des entités à partir de rien** (un simple « salur » a fait écrire détective/assistant/indice/bibliothèque dans le graphe) — pas un exemple recopié (rien de tel dans le code), vraie hallucination ; viole ses règles « n'écris rien si salutation / n'invente aucun fait ». **C'est le chantier `project_modeling_quality`, désormais visible grâce aux pages d'entités — prioritaire.** Les **quick-wins moteur (1)(2)(3) ci-dessous restent aussi en attente**.
@@ -25,6 +39,16 @@
 - Profil cible démo : `MAINTENANCE_PROFILE` (~40 lignes : `piece`/`outil`/`machine`/`procedure`/`panne` ; vocab `PART_OF`/`REQUIRES`/`REPLACES`/`CAUSES` ; `manages_events=False` sauf si journal d'interventions). Zéro changement moteur (l'archi est déjà « branche-un-profil » : `AgentChoice` = profil + persona ; `CHANTIER_PROFILE` le prouve déjà).
 
 **Pointeurs** : noyau `src/felix/core/` (graph.py `entity_timeline` + tie-break `find_node`, check.py `consistency_check` concatène la timeline + `CHECK_PROMPT` temporel, agent.py `CHRONICLE_SYSTEM_PROMPT` « mort = événement », profile.py `consistency_rules` rule 1 + `manages_events`, tools.py `add_event`/`find_non_event`, deps.py `event_seq_lock`) ; route **3 passes** `src/felix/api/routes/atelier.py` ; evals `evals/atelier/` (cas `check_death_then_act`/`check_act_then_death` A/B + `event_chrono` + `roue_de_sang`). Harness checker isolé `/tmp/check_temporal.py` (juge sur graphe fixe, 1 appel/cas — robuste aux transients) et `/tmp/compare_checker.py` (6 scénarios, non-régression faux positifs). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
+
+## 2026-06-11 — evals(#56/#57) + fix(llm): non-reproduction instrumentée, et deux vrais bugs d'infra tués en chemin
+
+**Le chantier a changé de nature en cours de route.** Parti pour « fixer la passe entités » (#56 gabarit inventé, #57 sous-extraction, re-démontrés par le dogfood Araiko), le travail eval-first a rendu un verdict inattendu : **les bugs ne se reproduisent pas** sur le code actuel. Cinq structures de reproduction (3 à froid : ambiance pure pétrolière, subordonnée « A remplace B mort », sujet+apposition façon Erick ; 2 contextualisées via `beats` : working set chargé par un tour 1 puis le tour-piège) × N=3 multirun = **tout vert** (3/3 partout). Conformément à la loi du repo (pas de fix sans test rouge), **SYSTEM_PROMPT n'a pas été touché** : les 5 cas restent en sentinelles dans la session d'evals atelier. Hypothèses de la non-reproduction : les chantiers récents (working set scope EXACT par #60, relieur restreint, gate) ont réduit le terrain, et/ou la variance est plus rare que N=3 — les issues restent OUVERTES en « attente de matériau » avec les mesures.
+
+**Vrai bug n°1 trouvé en chemin : notre timeout HTTP était décoratif sur Mistral.** Un run d'eval a gelé 15 minutes sur UNE requête : le gateway Mistral (Kong) tient la connexion **900 s** avant de rendre un 504 (`x-kong-upstream-latency: 900001`), et le `httpx.Timeout(90 s)` posé sur l'AsyncClient ne s'appliquait PAS — le SDK mistralai construit chaque requête avec `timeout=None` quand `timeout_ms` n'est pas configuré, et en httpx un timeout PAR REQUÊTE à None DÉSACTIVE celui du client (`basesdk.py:213`). Fix TDD (`test_llm_timeout.py` rouge→vert) : `build_model` construit le client SDK lui-même (`MistralProvider(mistral_client=Mistral(..., timeout_ms=90_000))`). Vérifié en live : la pendaison suivante a été coupée à 90 s et retentée par `with_backoff`. Le commentaire « évite les gels silencieux de 15 min » dans llm.py datait d'avant — il décrivait exactement ce qui ne marchait pas.
+
+**Vrai bug n°2 : le 400 `invalid_function_call` tuait un run entier.** Small émet parfois un tool call malformé (le JSON des arguments DANS le champ nom de fonction — vu en vrai : `Function name was {"resume": ...}`) → 400 → non-transient → run mort. C'est de la variance de modèle pure : re-émettre redonne presque toujours un appel valide. `is_transient_error` l'admet désormais (TDD, test_backoff étendu), les autres 400 restent non retentés. Au passage : le « describe_schema exceeded max retries » vu en début de session était la même famille (rafales malformées de Small).
+
+**Méthode et coût.** Deux délégations Sonnet (cas d'eval + mesures) ; la 1ʳᵉ s'est éteinte sur sa limite de session en attendant un run — repris en direct, ce qui a permis de DÉCOUVRIR les deux bugs d'infra (le run pendu sous mes yeux). Qualification : unit **100/100** (2 nouveaux tests TDD), 5 cas d'eval verts, e2e-edits **10/10** avec le nouveau client SDK, ruff zéro nouvelle erreur. La session d'evals atelier s'alourdit de 5 multiruns (~15 runs LLM) — assumé : c'est le prix des sentinelles sur un bug de variance.
 
 ## 2026-06-11 — feat(messages): la conversation entre dans le graphe (#63 briques 1+2, double délégation Sonnet)
 

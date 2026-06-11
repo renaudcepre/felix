@@ -161,6 +161,63 @@ CHECK_ACT_THEN_DEATH_INPUTS = {
 }
 # Action (#1) AVANT la mort (#2) → ordre normal, aucune alerte attendue.
 
+# ─── #56 : gabarit pur (ambiance) — AUCUN personnage ne doit être inventé ──────────
+# Reproduction exacte du cas dogfood : aucun nom, aucun personnage, pur décor/ton.
+# Vert si 0 personnage + 0 prop biographique inventée. Multi-run dans session.py.
+GABARIT_AMBIANCE_INPUTS = {
+    "message": (
+        "un huis clos sur une plateforme pétrolière, du polar, avec un truc surnaturel"
+    ),
+    "seed": [],
+}
+
+# ─── #57 : personnage en subordonnée — doit recevoir sa fiche ───────────────────────
+# Noms Lera / Fenn : frais, absents de tous les prompts et evals existants.
+# Vert si les deux fiches personnage existent (Lera = sujet, Fenn = mentionné).
+SUBORDONNEE_FICHE_INPUTS = {
+    "message": (
+        "Lera, une mécanicienne, vient remplacer Fenn, mort la semaine d'avant."
+    ),
+    "seed": [],
+}
+
+# ─── #57 (variance) : sujet en apposition — doit recevoir sa fiche ──────────────────
+# Nom Haldren : frais, absent de tous les prompts et evals existants.
+# Vert si la fiche de Haldren est présente (sujet de la phrase + apposition).
+SUJET_APPOSITION_INPUTS = {
+    "message": (
+        "Haldren, le prévôt des marches, impose un couvre-feu sur tout le district."
+    ),
+    "seed": [],
+}
+
+# ─── #57 contextualisé : sujet en apposition APRÈS un tour de working-set ───────────
+# Reproduction de la structure exacte du dogfood Araïko : le tour 1 charge le
+# working set (Karev + Torvast), le tour 2 introduit Ylden en sujet + apposition.
+# C'est la condition du bug : le working set injecté au tour 2 « noie » le nouveau
+# personnage et l'agent l'omet.
+# Noms Karev/Torvast/Ylden : frais, absents de tous les prompts et evals existants.
+SUJET_APPOSITION_CONTEXTE_INPUTS = {
+    "beats": [
+        "Karev, un chef rebelle de la station Torvast, prépare un soulèvement contre la compagnie.",
+        "Ylden, le mage des carènes, impose un couvre-feu à la population.",
+    ],
+    "seed": [],
+}
+
+# ─── #57 contextualisé : subordonnée APRÈS un tour de working-set ────────────────────
+# Tour 1 crée Nara (personnage) + Erkon (lieu) → charge le working set.
+# Tour 2 : Paya (sujet) remplace Gorn (mort, mentionné en subordonnée).
+# Vert si les deux fiches personnage existent : Paya ET Gorn.
+# Noms Nara/Erkon/Paya/Gorn : frais, absents de tous les prompts et evals existants.
+SUBORDONNEE_CONTEXTE_INPUTS = {
+    "beats": [
+        "La doctoresse Nara dirige l'infirmerie de la base Erkon avec une poigne de fer.",
+        "Paya, une ingénieure en armement, vient remplacer Gorn, mort la semaine d'avant.",
+    ],
+    "seed": [],
+}
+
 atelier_cases = ForEach(
     [
         # --- création ---
