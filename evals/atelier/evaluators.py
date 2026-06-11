@@ -196,13 +196,14 @@ def relations_present(ctx: EvalContext, pairs: str = "", min_recall: float = 1.0
     return RelResult(rel_recall=score, rel_ok=score >= min_recall, missing_rels=", ".join(missing))
 
 
-# Formes normalisées (minuscules) du SCENARIO_PROFILE.relation_vocabulary, PLUS les
-# relations SYSTÈME créées en code par add_event (INVOLVES/NEXT) : elles ne sont pas
-# une dérive de nommage du LLM, donc ne doivent pas polluer rel_vocab_coverage.
+# Formes normalisées (minuscules) du noyau STRUCTUREL (#68 : le narratif passe
+# par lie_a + verbe verbatim, il ne s'énumère plus), PLUS les relations SYSTÈME
+# créées en code par add_event (INVOLVES/NEXT) : elles ne sont pas une dérive de
+# nommage du LLM, donc ne doivent pas polluer rel_vocab_coverage. Un ancien type
+# narratif (loves, fights…) compte désormais comme dérive.
 CANONICAL_RELS = {
-    "located_at", "member_of", "owns", "knows", "allied_with", "fights",
-    "kills", "creates", "targets", "causes", "part_of", "witnesses",
-    "commands", "transports", "loves",
+    "located_at", "member_of", "part_of",
+    "lie_a",
     "involves", "next",
 }
 
@@ -365,9 +366,12 @@ def involves_only_entities(ctx: EvalContext) -> InvolvesTargetResult:
 
 # Relations RÉSERVÉES aux entités : elles ne doivent jamais toucher un événement
 # (un event ne se relie qu'via INVOLVES/NEXT/LOCATED_AT, posés par add_event).
+# lie_a + member_of/part_of (#68) ; les anciens types narratifs restent listés —
+# zéro coût, et un repli du modèle vers eux serait aussi une arête sale.
 ENTITY_ONLY_RELS = {
+    "lie_a", "member_of", "part_of",
     "fights", "knows", "owns", "creates", "kills",
-    "member_of", "allied_with", "targets", "witnesses",
+    "allied_with", "targets", "witnesses",
     "commands", "transports", "loves",
 }
 
@@ -459,8 +463,9 @@ class RelTypedResult:
 def relation_typed(ctx: EvalContext, a: str = "", b: str = "", rel_type: str = "") -> RelTypedResult:
     """Une relation du TYPE attendu doit lier a et b (ids souples, sens ignoré —
     la direction est un chantier à part). Contrairement à relations_present, le
-    rel_type compte : c'est la sonde des trous de vocab (#48) — sans le type, un
-    KNOWS forcé passerait pour un succès."""
+    rel_type compte. Depuis #68 ne sert qu'aux types STRUCTURELS (LOCATED_AT,
+    MEMBER_OF, PART_OF) — pour un lien narratif, sonder le verbe avec
+    relation_verbe."""
     ta, tb, tt = normalize(a), normalize(b), normalize(rel_type)
 
     def touch(x: str, k: str) -> bool:
@@ -483,6 +488,51 @@ def relation_typed(ctx: EvalContext, a: str = "", b: str = "", rel_type: str = "
         rel_typed_detail="" if ok else
         f"pas de {rel_type} entre {a} et {b} (relations touchant {a} : {', '.join(others) or '—'})",
     )
+
+
+@dataclass
+class RelVerbeResult:
+    rel_verbe_ok: Annotated[bool, Verdict]
+    rel_verbe_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def relation_verbe(ctx: EvalContext, a: str = "", b: str = "", verbe_has: str = "") -> RelVerbeResult:
+    """Une arête NARRATIVE (LIE_A) doit lier a et b (ids souples, sens ignoré)
+    avec un verbe VERBATIM non vide ; si `verbe_has` (CSV) est donné, le verbe
+    doit contenir l'UNE de ces sous-chaînes. Successeur de relation_typed pour
+    le narratif (#68) : on ne sonde plus un type canonique (le narratif n'en a
+    plus), on sonde la FIDÉLITÉ du verbe aux mots de l'auteur — c'est elle qui
+    tue la traduction qui ment (« maîtresse » → LOVES)."""
+    ta, tb = normalize(a), normalize(b)
+    terms = [normalize(t.strip()) for t in verbe_has.split(",") if t.strip()]
+
+    def touch(x: str, k: str) -> bool:
+        return bool(k) and (x in k or k in x)
+
+    linking = [
+        str((r.get("props") or {}).get("verbe", ""))
+        for r in ctx.output.relations
+        if normalize(str(r.get("rel_type", ""))) == "lie_a"
+        and ((touch(ta, normalize(str(r.get("from", "")))) and touch(tb, normalize(str(r.get("to", "")))))
+             or (touch(tb, normalize(str(r.get("from", "")))) and touch(ta, normalize(str(r.get("to", ""))))))
+    ]
+    ok = any(
+        v.strip() and (not terms or any(x in normalize(v) for x in terms))
+        for v in linking
+    )
+    # En échec, montrer les verbes posés (ou les relations de repli touchant `a`).
+    others = sorted({
+        str(r.get("rel_type", ""))
+        for r in ctx.output.relations
+        if touch(ta, normalize(str(r.get("from", "")))) or touch(ta, normalize(str(r.get("to", ""))))
+    })
+    detail = "" if ok else (
+        f"verbes LIE_A entre {a} et {b} : {', '.join(repr(v) for v in linking)} "
+        f"(attendu : {verbe_has or 'non vide'})" if linking else
+        f"pas de LIE_A entre {a} et {b} (relations touchant {a} : {', '.join(others) or '—'})"
+    )
+    return RelVerbeResult(rel_verbe_ok=ok, rel_verbe_detail=detail)
 
 
 @dataclass

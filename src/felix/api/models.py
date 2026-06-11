@@ -36,6 +36,11 @@ class EntityRelationOut(BaseModel):
     rel_type: str
     direction: str  # "out" (l'entité est source) | "in" (l'entité est cible)
     other: EntityRef
+    # Arête narrative (LIE_A, #68) : le verbe VERBATIM de l'auteur (ce que la
+    # fiche affiche) et son slug (complément de clé pour la suppression — la même
+    # paire peut porter plusieurs arêtes, une par verbe).
+    verbe: str | None = None
+    verbe_slug: str | None = None
 
 
 class EntityEventOut(BaseModel):

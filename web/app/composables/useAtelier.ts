@@ -11,7 +11,7 @@ interface ToolCardPayload {
   added: string
   // cible de la carte (#61) : id de fiche/événement, ou référence de relation
   entity_id: string | null
-  relation: { from_id: string, to_id: string, rel_type: string } | null
+  relation: { from_id: string, to_id: string, rel_type: string, verbe_slug?: string | null } | null
 }
 
 // Alerte d'incohérence émise par le backend (event SSE `alert`) — cf. la route

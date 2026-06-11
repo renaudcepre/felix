@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from felix.core.graph import NARRATIVE_REL
+
 
 def _or_types(types: tuple[str, ...]) -> str:
     """« personnage », « personnage ou groupe », « a, b ou c » — pour les messages guidants."""
@@ -74,12 +76,19 @@ class Profile:
     entity_types: tuple[EntityType, ...]
     modeling_rules: tuple[str, ...] = ()
     consistency_rules: tuple[str, ...] = ()
-    # Types de relation canoniques, typés (cf. RelationSpec). L'anglais UPPER_SNAKE
+    # Noyau STRUCTUREL fermé : les seuls types canoniques, typés (cf. RelationSpec) —
+    # ceux que le code calcule ou affiche structurellement. L'anglais UPPER_SNAKE
     # (convention Neo4j) a des priors plus stables qu'une locution verbale FR → réduit
     # la dérive des noms de relations ; le typage domaine/portée coupe les relations
     # absurdes à l'écriture (cf. add_relation → validate_relation). Vide = aucune
     # contrainte (le profil ne gouverne pas les relations).
     relation_vocabulary: tuple[RelationSpec, ...] = ()
+    # Canal NARRATIF (#68) : type générique unique dont le sens vit dans la prop
+    # `verbe` (verbatim auteur). Sort du tapis roulant de l'énumération de types :
+    # zéro trou par construction, zéro traduction (« maîtresse » ne devient plus
+    # LOVES), zéro soupe (une paraphrase ne crée pas un type). "" = pas de canal
+    # narratif (le hors-vocab garde la sortie légale seule, cf. validate_relation).
+    narrative_rel: str = ""
     # Le domaine réserve le type 'evenement' au mécanisme add_event (ordre/NEXT) :
     # add_entity refuse alors d'en créer un comme entité plate (sinon node hors
     # chaîne, hors chronologie). False = domaine sans chronologie dédiée.
@@ -97,13 +106,20 @@ class Profile:
             lines.extend(f"- {rule}" for rule in self.modeling_rules)
         if self.relation_vocabulary:
             lines.append(
-                "Relations (réutilise ces types EXACTS, en CAPITALES anglaises). Choisis "
-                "TOUJOURS le type le PLUS PRÉCIS qui s'applique ; ne te rabats sur un type "
-                "neutre/vague qu'en DERNIER recours :"
+                "Relations STRUCTURELLES (réutilise ces types EXACTS, en CAPITALES "
+                "anglaises) :"
             )
             for spec in self.relation_vocabulary:
                 ex = f"  (ex. : {spec.examples})" if spec.examples else ""
                 lines.append(f"- {spec.name} : {spec.gloss}{ex}")
+        if self.narrative_rel:
+            lines.append(
+                f"TOUT AUTRE lien entre deux fiches (aimer, commander, surveiller, "
+                f"faire chanter…) : add_relation avec rel_type={self.narrative_rel} "
+                f"et verbe=« les mots EXACTS de l'auteur » (ex. verbe='était la "
+                f"maîtresse de'). Ne traduis pas, ne résume pas : le verbe de "
+                f"l'auteur EST la donnée."
+            )
         return "\n".join(lines)
 
     def render_schema_hint(self) -> str:
@@ -115,10 +131,15 @@ class Profile:
         for et in self.entity_types:
             lines.append(f"- {et.name} · propriétés usuelles : {', '.join(et.keys)}")
         if self.relation_vocabulary:
-            lines.append("Types de relations à réutiliser (CAPITALES anglaises, le PLUS précis) :")
+            lines.append("Types de relations STRUCTURELLES (CAPITALES anglaises, EXACTS) :")
             for spec in self.relation_vocabulary:
                 ex = f"  (ex. : {spec.examples})" if spec.examples else ""
                 lines.append(f"- {spec.name} : {spec.gloss}{ex}")
+        if self.narrative_rel:
+            lines.append(
+                f"Tout AUTRE lien : rel_type={self.narrative_rel} + verbe=« les mots "
+                f"exacts de l'auteur » (ex. verbe='était la maîtresse de')."
+            )
         return "\n".join(lines)
 
     def render_check_rules(self) -> str:
@@ -143,24 +164,50 @@ class Profile:
             types.add("evenement")
         return frozenset(types)
 
-    def validate_relation(
-        self, rel_type: str, subject_type: str, object_type: str, *, same_node: bool
+    def validate_relation(  # noqa: PLR0911 — chaque refus est un message GUIDANT distinct
+        self, rel_type: str, subject_type: str, object_type: str, *, same_node: bool,
+        verbe: str = "",
     ) -> str | None:
         """Valide une relation à l'écriture. Retourne ``None`` si OK, sinon un message
         GUIDANT (refus, renvoyé tel quel à l'agent — pas une exception, donc pas de
-        boucle ModelRetry). Trois règles, dans l'ordre :
+        boucle ModelRetry). Règles, dans l'ordre :
 
-        1. type ∈ vocabulaire du profil (sinon refus) — sauf profil sans vocab (tout permis) ;
-        2. pas de boucle a==b si ``allow_self`` est faux ;
-        3. domaine/portée : sujet/objet d'un type CONNU mais hors-liste → refus ; type
-           inconnu → toléré (schemaless).
+        1. canal NARRATIF (rel_type == narrative_rel) : verbe verbatim REQUIS, pas
+           de boucle a==b ; AUCUNE validation domaine/portée — le verbe fidèle de
+           l'auteur prime sur un typage qu'on ne peut pas énumérer (#68) ;
+        2. type ∈ vocabulaire structurel (sinon refus, orienté vers le canal
+           narratif s'il existe) — sauf profil sans vocab (tout permis) ;
+        3. pas de boucle a==b si ``allow_self`` est faux ;
+        4. domaine/portée : sujet/objet d'un type CONNU mais hors-liste → refus ;
+           type inconnu → toléré (schemaless).
         """
+        if self.narrative_rel and rel_type == self.narrative_rel:
+            if not verbe.strip():
+                return (
+                    f"Une relation {self.narrative_rel} porte son sens dans son "
+                    f"verbe : rappelle add_relation avec verbe=« les mots exacts "
+                    f"de l'auteur » (ex. verbe='était la maîtresse de')."
+                )
+            if same_node:
+                return "Une relation ne peut pas relier une entité à elle-même."
+            return None
+
         if not self.relation_vocabulary:
             return None  # profil ne gouverne pas les relations → tout permis
 
         spec = next((s for s in self.relation_vocabulary if s.name == rel_type), None)
         if spec is None:
             allowed = ", ".join(s.name for s in self.relation_vocabulary)
+            if self.narrative_rel:
+                # Plus de trou de vocab : le canal narratif est la sortie (#68).
+                # On garde le droit de se taire si le texte ne pose pas le lien.
+                return (
+                    f"« {rel_type} » n'est pas un type du domaine « {self.name} ». "
+                    f"Types STRUCTURELS exacts : {allowed}. Pour tout AUTRE lien "
+                    f"réel du texte, utilise rel_type={self.narrative_rel} avec "
+                    f"verbe=« les mots exacts de l'auteur ». Si le texte ne pose "
+                    f"pas ce lien, n'écris rien."
+                )
             # Sortie LÉGALE au trou de vocab : sans elle, le modèle se rabat sur
             # le type « le plus proche » et fabrique du canon faux avec assurance
             # (« Lancelot WITNESSES dépression », #64). Mieux vaut zéro arête.
@@ -247,10 +294,15 @@ SCENARIO_PROFILE = Profile(
         "Un même personnage ne peut pas être à deux lieux incompatibles au même moment.",
         "Deux dates ou deux lieux donnés pour un même fait doivent être compatibles.",
     ),
-    # Vocabulaire typé : (sujet) —[PRÉDICAT]→ (objet). Le typage coupe à l'écriture
-    # les relations absurdes vues sur « Alger 1957 » (LOCATED_AT→objet, TARGETS→objet,
-    # boucle PART_OF…). 'evenement' n'apparaît jamais via add_relation (find_non_event
-    # l'exclut), mais reste listé pour la cohérence conceptuelle du domaine.
+    # Noyau STRUCTUREL fermé (#68) : les seuls types dont le sens est calculé ou
+    # affiché structurellement par le code (machinerie events + topologie). Le
+    # typage coupe à l'écriture les relations absurdes vues sur « Alger 1957 »
+    # (LOCATED_AT→objet, boucle PART_OF…). 'evenement' n'apparaît jamais via
+    # add_relation (find_non_event l'exclut), mais reste listé pour la cohérence
+    # conceptuelle du domaine. Le narratif (aimer, commander, surveiller…) ne
+    # s'énumère pas : il passe par narrative_rel + verbe verbatim — l'historique
+    # complet du tapis roulant (soupe d'Alger → vocab dur → trous infinis) est
+    # dans l'issue #68.
     relation_vocabulary=(
         RelationSpec("LOCATED_AT", "se trouve / se déroule dans un lieu",
                      subjects=("personnage", "objet", "evenement", "groupe"),
@@ -260,53 +312,11 @@ SCENARIO_PROFILE = Profile(
         RelationSpec("MEMBER_OF", "appartient à un groupe / une organisation",
                      subjects=("personnage",), objects=("groupe",),
                      examples="est membre du FLN, appartient à la police, est dans le gang"),
-        RelationSpec("OWNS", "possède un objet",
-                     subjects=("personnage", "groupe"), objects=("objet",),
-                     examples="possède, porte sur lui, détient, a une arme"),
-        RelationSpec("ALLIED_WITH", "soutient / aide / est du même côté",
-                     subjects=("personnage", "groupe"), objects=("personnage", "groupe"),
-                     examples="protège, aide, soutient, est l'allié de, couvre"),
-        RelationSpec("FIGHTS", "affronte / se bat contre (hostilité ouverte)",
-                     subjects=("personnage", "groupe"), objects=("personnage", "groupe"),
-                     examples="attaque, combat, s'oppose à, claque la porte au nez de"),
-        RelationSpec("TARGETS", "vise / traque / prend pour cible ou victime",
-                     subjects=("personnage", "groupe"), objects=("personnage", "groupe"),
-                     examples="surveille, espionne, enquête sur, menace, dénonce, piste, soupçonne"),
-        RelationSpec("KILLS", "tue ou détruit",
-                     subjects=("personnage", "groupe"), objects=("personnage", "objet"),
-                     examples="tue, assassine, abat, détruit, fait sauter"),
-        RelationSpec("CREATES", "crée, fabrique, écrit, forge",
-                     subjects=("personnage", "groupe"), objects=("objet", "evenement"),
-                     examples="fabrique, rédige, écrit, construit, dessine"),
-        RelationSpec("COMMANDS", "donne des ordres à / dirige (lien hiérarchique)",
-                     subjects=("personnage", "groupe"), objects=("personnage", "groupe"),
-                     examples="ordonne à, commande, dirige, est le chef de, "
-                              "donne l'ordre de"),
-        RelationSpec("TRANSPORTS", "transporte / convoie / livre",
-                     subjects=("personnage", "groupe", "objet"),
-                     objects=("objet", "personnage"),
-                     examples="transporte, convoie, livre, fait passer, "
-                              "embarque une cargaison"),
-        RelationSpec("LOVES", "lien amoureux ou intime",
-                     subjects=("personnage",), objects=("personnage",),
-                     examples="aime, est l'amant ou la maîtresse de, est en couple "
-                              "avec, est marié à"),
-        RelationSpec("WITNESSES", "découvre / observe / examine un objet ou un fait",
-                     subjects=("personnage",), objects=("objet", "evenement"),
-                     examples="trouve, lit, observe, examine, remarque un objet/indice"),
-        RelationSpec("CAUSES", "provoque un événement ou un état",
-                     subjects=("personnage", "groupe", "objet", "evenement"),
-                     objects=("evenement",), examples="provoque, déclenche, entraîne"),
         RelationSpec("PART_OF", "fait partie d'un ensemble plus grand",
                      subjects=("lieu", "objet", "groupe"), objects=("lieu", "objet", "groupe"),
                      examples="la cave fait partie de l'école, une aile d'un bâtiment"),
-        # KNOWS en DERNIER : volontairement placé en fin de liste et cadré comme ultime
-        # recours — sinon le petit modèle s'y rabat (attracteur « lien vague »).
-        RelationSpec("KNOWS", "lien social NEUTRE, sans intention — DERNIER RECOURS",
-                     subjects=("personnage",), objects=("personnage",),
-                     examples="se connaissent, sont parents/amis/collègues. PAS pour "
-                     "surveiller/viser (→TARGETS), aider (→ALLIED_WITH), affronter (→FIGHTS)"),
     ),
+    narrative_rel=NARRATIVE_REL,
     manages_events=True,
 )
 

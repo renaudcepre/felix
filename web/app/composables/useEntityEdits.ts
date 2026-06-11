@@ -20,7 +20,12 @@ export function useEntityEdits() {
   async function deleteRelation(rel: RelationRef): Promise<void> {
     await $fetch(
       `/api/entities/${encodeURIComponent(rel.from_id)}/relations/${encodeURIComponent(rel.rel_type)}/${encodeURIComponent(rel.to_id)}`,
-      { method: 'DELETE' },
+      {
+        method: 'DELETE',
+        // Arête narrative (LIE_A) : le verbe_slug complète la clé — sans lui,
+        // supprimer « aime » emporterait aussi « commande » (#68).
+        query: rel.verbe_slug ? { verbe_slug: rel.verbe_slug } : undefined,
+      },
     )
   }
 

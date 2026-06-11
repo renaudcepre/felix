@@ -28,7 +28,7 @@ export interface AtelierMsg {
   added?: string
   // cible de la carte pour les actions ✎/🗑 (#61) — absente : pas d'action
   entityId?: string
-  relation?: { from_id: string, to_id: string, rel_type: string }
+  relation?: { from_id: string, to_id: string, rel_type: string, verbe_slug?: string | null }
   // état après action manuelle de l'auteur (affichage barré + désactivation)
   edited?: 'deleted' | 'renamed'
   // choice

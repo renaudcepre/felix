@@ -93,6 +93,7 @@ async def get_entity(entity_id: str, driver: Neo4jDriver) -> EntityDetail:
         else:
             continue
         other = index.get(other_id, {"id": other_id, "name": other_id})
+        props = r.get("props", {})
         relations.append(
             EntityRelationOut(
                 rel_type=r["rel_type"],
@@ -102,6 +103,8 @@ async def get_entity(entity_id: str, driver: Neo4jDriver) -> EntityDetail:
                     name=other.get("name", other["id"]),
                     entity_type=other.get("entity_type"),
                 ),
+                verbe=props.get("verbe"),
+                verbe_slug=props.get("verbe_slug"),
             )
         )
 
@@ -205,19 +208,23 @@ async def patch_entity(entity_id: str, patch: EntityPatch, driver: Neo4jDriver) 
 
 @router.delete("/{entity_id}/relations/{rel_type}/{other_id}")
 async def remove_relation(
-    entity_id: str, rel_type: str, other_id: str, driver: Neo4jDriver
+    entity_id: str, rel_type: str, other_id: str, driver: Neo4jDriver,
+    verbe_slug: str | None = Query(default=None),
 ) -> dict:
     """Supprime la relation ORIENTÉE entity —[rel_type]→ other (la direction
-    affichée sur la fiche/carte est celle de la clé)."""
+    affichée sur la fiche/carte est celle de la clé). Pour une arête narrative
+    (LIE_A), `verbe_slug` complète la clé : la même paire peut porter plusieurs
+    arêtes, une par verbe — sans lui on les supprimerait toutes (#68)."""
     a = await find_node(driver, entity_id)
     b = await find_node(driver, other_id)
     if not a or not b:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not await delete_relation(driver, a["id"], b["id"], rel_type):
+    if not await delete_relation(driver, a["id"], b["id"], rel_type, verbe_slug):
         raise HTTPException(status_code=404, detail="Relation not found")
+    label = rel_type if verbe_slug is None else f"{rel_type} « {verbe_slug} »"
     await record_user_edit(
         driver, "suppression", a.get("name", a["id"]),
-        f"la relation {a.get('name', a['id'])} —[{rel_type}]→ "
+        f"la relation {a.get('name', a['id'])} —[{label}]→ "
         f"{b.get('name', b['id'])} a été supprimée (elle était fausse)",
     )
-    return {"deleted": f"{a['id']} -[{rel_type}]-> {b['id']}"}
+    return {"deleted": f"{a['id']} -[{label}]-> {b['id']}"}

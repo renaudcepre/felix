@@ -3,7 +3,8 @@
 Modèle de données volontairement minimal :
 - nœuds ``:GenEntity`` {id (slug), name, entity_type, ...props libres (str)}
 - relations ``:REL`` {rel_type, ...props libres} (type dynamique en propriété,
-  Cypher pur sans APOC)
+  Cypher pur sans APOC) ; une arête NARRATIVE (rel_type=NARRATIVE_REL) porte en
+  plus {verbe (verbatim auteur), verbe_slug (clé de dédup)} — cf. #68
 
 Aucune sémantique de domaine ici : ces helpers ne savent ni ce qu'est un
 personnage ni ce qu'est une date — ils lisent et écrivent des entités libres.
@@ -21,6 +22,30 @@ if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
 RESERVED_KEYS = {"id", "name", "entity_type"}
+
+# Type GÉNÉRIQUE des relations narratives (#68) : le lien porte le verbe VERBATIM
+# de l'auteur en propriété `verbe` (+ `verbe_slug`, sa forme normalisée qui sert
+# de clé de MERGE — deux verbes différents entre la même paire = deux arêtes,
+# la même paraphrase exacte n'en crée qu'une). Le type canonique reste réservé
+# au noyau STRUCTUREL calculé en code (LOCATED_AT, PART_OF, MEMBER_OF,
+# INVOLVES, NEXT).
+NARRATIVE_REL = "LIE_A"
+
+# Props d'arête posées par le code, jamais par `props` libre (cf. add_relation).
+REL_RESERVED_KEYS = {"rel_type", "verbe", "verbe_slug"}
+
+
+def rel_label(rel: dict) -> str:
+    """Libellé d'une arête pour l'affichage/les prompts : le VERBE de l'auteur
+    pour une arête narrative (« a —[était la maîtresse de]→ b »), le type
+    canonique sinon. `rel` est une ligne d'all_relations (props inclus) ou
+    directement un dict de propriétés d'arête."""
+    props = rel.get("props", rel)
+    if rel.get("rel_type", props.get("rel_type")) == NARRATIVE_REL:
+        verbe = str(props.get("verbe", "")).strip()
+        if verbe:
+            return verbe
+    return str(rel.get("rel_type", props.get("rel_type", "?")))
 
 
 async def touch_entities(driver: AsyncDriver, ids: Iterable[str]) -> None:
@@ -176,19 +201,45 @@ async def merge_entity_into(driver: AsyncDriver, src_id: str, dst_id: str) -> No
     Sans APOC — le modèle :REL { rel_type } se rebranche en Cypher pur. Les arêtes
     suivent le NŒUD (pas la valeur d'id), donc INVOLVES/NEXT des événements suivent."""
     async with driver.session() as session:
-        # Relations SORTANTES de src → dst (éviter une boucle sur dst).
+        # Relations SORTANTES de src → dst (éviter une boucle sur dst). Deux
+        # passes : la clé de MERGE des arêtes NARRATIVES inclut le verbe_slug —
+        # deux verbes différents vers le même voisin restent DEUX arêtes (sur la
+        # clé rel_type seule, la 2e écraserait le verbe de la 1re, #68) ; les
+        # structurelles gardent la clé rel_type (dédup contre une arête directe
+        # préexistante de dst, qui n'a pas de verbe_slug).
         await session.run(
-            "MATCH (f:GenEntity {id:$src})-[r:REL]->(o) WHERE o.id <> $dst "
+            "MATCH (f:GenEntity {id:$src})-[r:REL]->(o) "
+            "WHERE o.id <> $dst AND r.rel_type <> $narr "
             "MATCH (t:GenEntity {id:$dst}) "
             "MERGE (t)-[nr:REL {rel_type: r.rel_type}]->(o) SET nr += properties(r)",
-            src=src_id, dst=dst_id,
+            src=src_id, dst=dst_id, narr=NARRATIVE_REL,
         )
-        # Relations ENTRANTES vers src → dst (inclut les INVOLVES/LOCATED_AT d'événements).
         await session.run(
-            "MATCH (s)-[r:REL]->(f:GenEntity {id:$src}) WHERE s.id <> $dst "
+            "MATCH (f:GenEntity {id:$src})-[r:REL {rel_type: $narr}]->(o) "
+            "WHERE o.id <> $dst "
+            "MATCH (t:GenEntity {id:$dst}) "
+            "MERGE (t)-[nr:REL {rel_type: $narr, "
+            "verbe_slug: coalesce(r.verbe_slug, '')}]->(o) "
+            "SET nr += properties(r)",
+            src=src_id, dst=dst_id, narr=NARRATIVE_REL,
+        )
+        # Relations ENTRANTES vers src → dst (inclut les INVOLVES/LOCATED_AT
+        # d'événements) — mêmes deux passes.
+        await session.run(
+            "MATCH (s)-[r:REL]->(f:GenEntity {id:$src}) "
+            "WHERE s.id <> $dst AND r.rel_type <> $narr "
             "MATCH (t:GenEntity {id:$dst}) "
             "MERGE (s)-[nr:REL {rel_type: r.rel_type}]->(t) SET nr += properties(r)",
-            src=src_id, dst=dst_id,
+            src=src_id, dst=dst_id, narr=NARRATIVE_REL,
+        )
+        await session.run(
+            "MATCH (s)-[r:REL {rel_type: $narr}]->(f:GenEntity {id:$src}) "
+            "WHERE s.id <> $dst "
+            "MATCH (t:GenEntity {id:$dst}) "
+            "MERGE (s)-[nr:REL {rel_type: $narr, "
+            "verbe_slug: coalesce(r.verbe_slug, '')}]->(t) "
+            "SET nr += properties(r)",
+            src=src_id, dst=dst_id, narr=NARRATIVE_REL,
         )
         # Props : dst garde les siennes, on complète avec celles que src a en plus.
         result = await session.run(
@@ -228,17 +279,23 @@ async def delete_entity(driver: AsyncDriver, entity_id: str) -> None:
 
 
 async def delete_relation(
-    driver: AsyncDriver, from_id: str, to_id: str, rel_type: str
+    driver: AsyncDriver, from_id: str, to_id: str, rel_type: str,
+    verbe_slug: str | None = None,
 ) -> bool:
     """Supprime UNE relation orientée (from —[rel_type]→ to). Rend False si elle
-    n'existait pas (la clé vient du front — elle peut être périmée)."""
+    n'existait pas (la clé vient du front — elle peut être périmée).
+
+    `verbe_slug` complète la clé pour une arête NARRATIVE : plusieurs LIE_A
+    peuvent lier la même paire (un par verbe) — sans lui, supprimer « aime »
+    emporterait aussi « commande » (#68)."""
     async with driver.session() as session:
         result = await session.run(
             """
             MATCH (a:GenEntity {id: $a})-[r:REL {rel_type: $t}]->(b:GenEntity {id: $b})
+            WHERE $vs IS NULL OR r.verbe_slug = $vs
             DELETE r RETURN count(r) AS n
             """,
-            a=from_id, b=to_id, t=rel_type,
+            a=from_id, b=to_id, t=rel_type, vs=verbe_slug,
         )
         record = await result.single()
         return bool(record and record["n"])
@@ -332,10 +389,12 @@ async def neighborhood(driver: AsyncDriver, ref: str) -> str | None:
             continue
         other_id = r["to"] if r["from"] == node["id"] else r["from"]
         other = entities.get(other_id, {})
-        rel_props = {k: v for k, v in r["props"].items() if k != "rel_type"}
+        rel_props = {k: v for k, v in r["props"].items() if k not in REL_RESERVED_KEYS}
         rel_extra = f" ({fmt_props(rel_props, skip_reserved=False)})" if rel_props else ""
+        # Arête narrative : le juge lit le VERBE exact de l'auteur (plus précis
+        # qu'un type canonique), une structurelle garde son type (#68).
         lines.append(
-            f"RELATION : {r['from']} —[{r['rel_type']}]→ {r['to']}{rel_extra}\n"
+            f"RELATION : {r['from']} —[{rel_label(r)}]→ {r['to']}{rel_extra}\n"
             f"  {other.get('name', other_id)} (type: {other.get('entity_type')})"
             f" · propriétés : {fmt_props(other)}"
         )

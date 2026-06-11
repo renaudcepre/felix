@@ -18,6 +18,10 @@ export interface EntityRelation {
   rel_type: string
   direction: 'out' | 'in'
   other: EntityRef
+  // Arête narrative (LIE_A, #68) : verbe VERBATIM de l'auteur (affiché à la
+  // place du type) + slug (complément de clé de suppression).
+  verbe?: string | null
+  verbe_slug?: string | null
 }
 
 export interface EntityEvent {
@@ -34,11 +38,14 @@ export interface EntityPatch {
   remove_props?: string[]
 }
 
-// Référence complète d'une relation orientée (clé de suppression).
+// Référence complète d'une relation orientée (clé de suppression). Pour une
+// arête narrative (LIE_A), verbe_slug complète la clé : la même paire peut
+// porter plusieurs arêtes, une par verbe (#68).
 export interface RelationRef {
   from_id: string
   to_id: string
   rel_type: string
+  verbe_slug?: string | null
 }
 
 export interface EntityDetail {

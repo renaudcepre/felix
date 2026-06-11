@@ -10,12 +10,15 @@ from pydantic_ai import RunContext
 
 from felix.core.deps import GenericDeps
 from felix.core.graph import (
+    NARRATIVE_REL,
+    REL_RESERVED_KEYS,
     RESERVED_KEYS,
     all_entities,
     all_relations,
     find_node,
     find_non_event,
     fmt_props,
+    rel_label,
     rename_or_merge,
     touch_entities,
 )
@@ -51,6 +54,14 @@ async def describe_schema(ctx: RunContext[GenericDeps]) -> str:
 
     rel_types = sorted({r["rel_type"] for r in relations})
     lines.append(f"Types de relations : {', '.join(rel_types) if rel_types else '—'}")
+    # Verbes narratifs déjà posés : les montrer incite à RÉUTILISER le même verbe
+    # pour le même lien (la clé de dédup est le slug du verbe, cf. add_relation).
+    verbs = sorted(
+        {str(r["props"].get("verbe", "")).strip() for r in relations
+         if r["rel_type"] == NARRATIVE_REL} - {""}
+    )
+    if verbs:
+        lines.append(f"Verbes {NARRATIVE_REL} déjà utilisés : {', '.join(verbs)}")
     return "\n".join(lines)
 
 
@@ -88,7 +99,7 @@ async def find_entity(ctx: RunContext[GenericDeps], name: str) -> str:
     await touch_entities(ctx.deps.driver, [node["id"]])
     relations = await all_relations(ctx.deps.driver)
     rel_lines = [
-        f"- {r['from']} —[{r['rel_type']}]→ {r['to']}"
+        f"- {r['from']} —[{rel_label(r)}]→ {r['to']}"
         for r in relations
         if node["id"] in (r["from"], r["to"])
     ]
@@ -335,11 +346,12 @@ async def rename_entity(
     return f"« {out.old_name} » renommé « {new_name} »."
 
 
-async def add_relation(
+async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas une prop enfouie (#68)
     ctx: RunContext[GenericDeps],
     from_name: str,
     to_name: str,
     rel_type: str,
+    verbe: str = "",
     props: dict[str, str] | None = None,
 ) -> str:
     """Crée une relation orientée entre deux entités existantes.
@@ -347,51 +359,78 @@ async def add_relation(
     Args:
         from_name: Nom de l'entité source.
         to_name: Nom de l'entité cible.
-        rel_type: Type de la relation. TOUJOURS un type CANONIQUE du domaine
-            (CAPITALES anglaises, ex: LOCATED_AT, FIGHTS, CREATES) listé dans le
-            bloc DOMAINE / describe_schema. Si aucun type ne correspond au lien
-            réel, n'écris pas de relation : l'information ira dans une propriété
-            de fiche, pas dans une arête.
+        rel_type: Type de la relation. Un type STRUCTUREL du domaine (CAPITALES
+            anglaises, ex: LOCATED_AT, MEMBER_OF, PART_OF — liste exacte dans le
+            bloc DOMAINE / describe_schema), ou LIE_A pour TOUT AUTRE lien réel
+            du texte (avec le paramètre verbe). N'écris une relation que si le
+            texte pose le lien.
+        verbe: REQUIS avec rel_type=LIE_A : les mots EXACTS de l'auteur pour ce
+            lien (ex: 'était la maîtresse de', 'fait chanter'). Ne traduis pas,
+            ne résume pas. Ignoré pour un type structurel.
         props: Propriétés factuelles de la relation (ex: date).
     """
     # Résolution HORS événements : une relation entre entités ne doit jamais avoir
-    # un node événement pour extrémité (sinon « Vance FIGHTS [event] », « event KNOWS
-    # perso »…). Les événements ne se relient qu'via add_event (INVOLVES/NEXT/LOCATED_AT).
+    # un node événement pour extrémité (sinon « Vance [se bat contre] [event] »…).
+    # Les événements ne se relient qu'via add_event (INVOLVES/NEXT/LOCATED_AT).
     a = await find_non_event(ctx.deps.driver, from_name)
     b = await find_non_event(ctx.deps.driver, to_name)
     if not a or not b:
         missing = from_name if not a else to_name
         return f"« {missing} » n'existe pas — crée d'abord l'entité avec add_entity."
 
-    # Typage du domaine : vocab dur + pas de boucle + domaine/portée (refus des seules
-    # violations CLAIRES). Refus = message guidant renvoyé tel quel (pas d'écriture, pas
-    # d'exception → l'agent rejoue avec un type/sens valides, sans boucle ModelRetry).
+    # Typage du domaine : noyau structurel dur (domaine/portée, refus des seules
+    # violations CLAIRES) + canal narratif (verbe verbatim requis). Refus = message
+    # guidant renvoyé tel quel (pas d'écriture, pas d'exception → l'agent rejoue
+    # avec un type/sens valides, sans boucle ModelRetry).
     if ctx.deps.profile is not None:
         problem = ctx.deps.profile.validate_relation(
             rel_type,
             a.get("entity_type", ""),
             b.get("entity_type", ""),
             same_node=a["id"] == b["id"],
+            verbe=verbe,
         )
         if problem:
             return problem
 
+    # `props` libres ne peuvent pas écraser les clés posées en code.
+    props = {k: v for k, v in (props or {}).items() if k not in REL_RESERVED_KEYS}
+    verbe = verbe.strip()
+    narrative = rel_type == NARRATIVE_REL and bool(verbe)
     async with ctx.deps.driver.session() as session:
-        await session.run(
-            """
-            MATCH (a:GenEntity {id: $a}), (b:GenEntity {id: $b})
-            MERGE (a)-[r:REL {rel_type: $t}]->(b)
-            SET r += $props
-            """,
-            a=a["id"], b=b["id"], t=rel_type, props=props or {},
-        )
+        if narrative:
+            # Clé de MERGE = (paire, slug du verbe) : deux liens différents entre
+            # la même paire (aime ET commande) = deux arêtes ; le même verbe
+            # re-extrait ne duplique pas (#68).
+            await session.run(
+                """
+                MATCH (a:GenEntity {id: $a}), (b:GenEntity {id: $b})
+                MERGE (a)-[r:REL {rel_type: $t, verbe_slug: $vs}]->(b)
+                SET r.verbe = $verbe, r += $props
+                """,
+                a=a["id"], b=b["id"], t=rel_type, vs=slugify(verbe),
+                verbe=verbe, props=props,
+            )
+        else:
+            await session.run(
+                """
+                MATCH (a:GenEntity {id: $a}), (b:GenEntity {id: $b})
+                MERGE (a)-[r:REL {rel_type: $t}]->(b)
+                SET r += $props
+                """,
+                a=a["id"], b=b["id"], t=rel_type, props=props,
+            )
+    # La carte et le log portent les MOTS de l'auteur pour une arête narrative
+    # (thème papier, pas de jargon graphe) ; le type canonique sinon.
+    label = verbe if narrative else rel_type
     ctx.deps.ui_events.append(
         ToolCard(tool="people", title="Relation ajoutée", subject=a["name"],
-                 field=rel_type, added=b["name"],
-                 relation=RelationRef(from_id=a["id"], to_id=b["id"], rel_type=rel_type))
+                 field=label, added=b["name"],
+                 relation=RelationRef(from_id=a["id"], to_id=b["id"], rel_type=rel_type,
+                                      verbe_slug=slugify(verbe) if narrative else None))
     )
     extra = f" ({fmt_props(props, skip_reserved=False)})" if props else ""
-    ctx.deps.write_log.append(f"relation {a['id']} —[{rel_type}]→ {b['id']}{extra}")
+    ctx.deps.write_log.append(f"relation {a['id']} —[{label}]→ {b['id']}{extra}")
     ctx.deps.touched_ids.add(a["id"])
     ctx.deps.touched_ids.add(b["id"])
     await touch_entities(ctx.deps.driver, [a["id"], b["id"]])
@@ -399,7 +438,7 @@ async def add_relation(
     # (relation = là où vivent les contradictions spatiales/relationnelles).
     ctx.deps.check_candidates.add(a["id"])
     ctx.deps.check_candidates.add(b["id"])
-    return f"Relation : {a['name']} —[{rel_type}]→ {b['name']}."
+    return f"Relation : {a['name']} —[{label}]→ {b['name']}."
 
 
 async def add_event(

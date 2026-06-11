@@ -108,13 +108,15 @@ async function removeProp(key: string) {
 }
 
 // Relations : la clé orientée se reconstruit depuis la direction affichée.
+// verbe_slug complète la clé d'une arête narrative (LIE_A) — la même paire
+// peut porter plusieurs arêtes, une par verbe (#68).
 async function removeRel(rel: EntityRelation, i: number) {
   if (!arm(`rel:${i}`)) return
   const [from_id, to_id] = rel.direction === 'out'
     ? [id, rel.other.id]
     : [rel.other.id, id]
   await act(async () => {
-    await deleteRelation({ from_id, to_id, rel_type: rel.rel_type })
+    await deleteRelation({ from_id, to_id, rel_type: rel.rel_type, verbe_slug: rel.verbe_slug })
     await refresh()
   })
 }
@@ -255,7 +257,8 @@ async function removeEvent(ev: EntityEvent) {
                 <span v-if="rel.other.entity_type" class="rel-meta">{{ rel.other.entity_type }}</span>
               </NuxtLink>
               <div class="rel-left">
-                <span class="badge badge-rel">{{ rel.rel_type }}</span>
+                <!-- Arête narrative : les mots de l'auteur, pas le type (#68). -->
+                <span class="badge badge-rel">{{ rel.verbe || rel.rel_type }}</span>
                 <span class="rel-dir" :class="rel.direction === 'in' ? 'in' : ''">
                   <AtelierIcon name="arrow" :size="15" />
                 </span>

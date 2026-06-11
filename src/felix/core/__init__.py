@@ -12,10 +12,12 @@ from felix.core.agent import SYSTEM_PROMPT, create_core_agent
 from felix.core.check import CheckVerdict, consistency_check
 from felix.core.deps import GenericDeps
 from felix.core.graph import (
+    NARRATIVE_REL,
     all_entities,
     all_relations,
     merge_entity_into,
     recent_entities,
+    rel_label,
     rename_or_merge,
     render_recent_block,
 )
@@ -30,6 +32,7 @@ from felix.core.user_edits import (
 
 __all__ = [
     "CHANTIER_PROFILE",
+    "NARRATIVE_REL",
     "SCENARIO_PROFILE",
     "SYSTEM_PROMPT",
     "CheckVerdict",
@@ -47,6 +50,7 @@ __all__ = [
     "recent_entities",
     "recent_user_edits",
     "record_user_edit",
+    "rel_label",
     "rename_or_merge",
     "render_recent_block",
     "render_user_edits_block",

@@ -9,11 +9,15 @@ from pydantic import BaseModel
 
 
 class RelationRef(BaseModel):
-    """Référence complète d'une relation orientée — la clé de sa suppression."""
+    """Référence complète d'une relation orientée — la clé de sa suppression.
+
+    `verbe_slug` complète la clé pour une arête narrative (LIE_A) : plusieurs
+    arêtes peuvent lier la même paire, une par verbe (#68)."""
 
     from_id: str
     to_id: str
     rel_type: str
+    verbe_slug: str | None = None
 
 
 class ToolCard(BaseModel):

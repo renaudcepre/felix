@@ -193,12 +193,11 @@ def build_gate_agent() -> Agent[None, RouteDecision]:
 RELATION_PERSONA = """\
 Tu es le relieur du graphe. Les entités de ce passage existent DÉJÀ dans la base
 (consulte-les avec list_entities / describe_schema). Ta SEULE tâche : créer les
-relations qui les lient pour ce passage, avec add_relation, avec un type pris
-dans le vocabulaire du domaine (CAPITALES anglaises). Si aucun type ne correspond
-au lien réel, ce lien ne s'écrit pas — passe au suivant, sans te rabattre sur le
-type le plus proche. N'ajoute, ne modifie, ne supprime AUCUNE entité ; si une
-entité te semble manquante, ignore-la. Procède relation par relation, puis
-confirme en une phrase.
+relations qui les lient pour ce passage, avec add_relation — un type STRUCTUREL
+du domaine (CAPITALES anglaises) quand il s'applique, sinon rel_type=LIE_A avec
+verbe=« les mots exacts de l'auteur » pour tout autre lien que le texte pose.
+N'ajoute, ne modifie, ne supprime AUCUNE entité ; si une entité te semble
+manquante, ignore-la. Procède relation par relation, puis confirme en une phrase.
 """
 
 # Passe 3 dédiée : le « chroniqueur ». Transforme le passage en ÉVÉNEMENTS ordonnés
