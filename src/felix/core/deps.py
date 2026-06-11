@@ -10,6 +10,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from felix.core.projects import DEFAULT_PROJECT
+
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
@@ -20,6 +22,10 @@ if TYPE_CHECKING:
 @dataclass
 class GenericDeps:
     driver: AsyncDriver
+    # Projet/histoire courant (#60) : le « tenant » de toutes les lectures et
+    # écritures du tour. Posé par la route d'après la sélection du front, jamais
+    # par le LLM. Défaut = projet de repli (evals, appels sans sélection).
+    project_id: str = DEFAULT_PROJECT
     # Cartes structurées poussées par les tools pendant le run,
     # drainées par la route SSE (et lues telles quelles par les evals).
     ui_events: list[ToolCard] = field(default_factory=list)

@@ -8,6 +8,10 @@ const id = route.params.id as string
 
 const { entity, status, refresh } = useEntity(id)
 
+// Histoire courante (#60) — affichée dans la barre, le switch vit sur /chat.
+const { currentProjectName, refreshProjects } = useProject()
+onMounted(() => { void refreshProjects() })
+
 useHead({ title: () => `Felix — ${entity.value?.name ?? 'Entité'}` })
 
 // props est un dict libre → on l'affiche tel quel, ordonné par clé.
@@ -141,7 +145,7 @@ async function removeEvent(ev: EntityEvent) {
       </div>
       <div class="fbar-brand">
         <span class="felix-mark"><AtelierIcon name="felix" :size="15" /></span>
-        <span class="fbar-project">Rivière basse</span>
+        <span class="fbar-project">{{ currentProjectName }}</span>
       </div>
     </header>
 

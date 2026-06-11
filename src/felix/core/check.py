@@ -81,16 +81,18 @@ async def consistency_check(
     ref: str,
     write_log: list[str] | None = None,
     profile: Profile | None = None,
+    *,
+    project: str,
 ) -> CheckVerdict:
     """Check générique : voisinage de l'entité + journal des écritures, le judge
     cherche une contradiction. Le profil ajoute ses règles de cohérence au prompt."""
-    context = await neighborhood(driver, ref)
+    context = await neighborhood(driver, ref, project=project)
     if context is None:
         return CheckVerdict(reason=f"entité « {ref} » introuvable", contradiction=False)
     # Chronologie ORDONNÉE de l'entité, concaténée au voisinage : donne au juge le
     # sens du temps (mort #k puis agit #>k) que neighborhood ne trie pas. Vide si
     # l'entité n'a aucun événement → le contexte reste inchangé.
-    timeline = await entity_timeline(driver, ref)
+    timeline = await entity_timeline(driver, ref, project=project)
     if timeline:
         context = f"{context}\n\n{timeline}"
     writes = "\n".join(f"- {w}" for w in write_log) if write_log else "(aucune)"

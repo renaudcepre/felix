@@ -1,5 +1,6 @@
 import type { AtelierMsg } from '~/types/atelier'
 import { parseSSEStream } from '~/utils/parseSSE'
+import { currentProject, DEFAULT_PROJECT } from './useProject'
 
 // Carte tool émise par le backend (event SSE `tool`) — cf. felix/core/models.py
 interface ToolCardPayload {
@@ -29,7 +30,13 @@ const WELCOME: Omit<AtelierMsg, 'id'> = {
   body: 'Bonjour. Raconte-moi ton histoire : décris tes personnages au fil de l\'eau, et je tiendrai leurs fiches à jour dans la bible.',
 }
 
-const STORAGE_KEY = 'felix.atelier.conversation.v1'
+// Conversation PAR PROJET (#60) : changer d'histoire change de fil — le fil
+// threadé du maître référence les entités de SON histoire, le partager
+// contaminerait l'autre. Le projet par défaut garde la clé historique (la
+// conversation d'avant le scoping survit au passage à #60).
+const STORAGE_BASE = 'felix.atelier.conversation.v1'
+const storageKey = (project: string) =>
+  project === DEFAULT_PROJECT ? STORAGE_BASE : `${STORAGE_BASE}:${project}`
 
 // État SINGLETON (hors de useAtelier) : il survit au démontage/remontage de la
 // page. Avant, useAtelier() recréait des refs neuves à chaque appel → quitter
@@ -59,10 +66,10 @@ const silentSession = computed(() => !everWrote.value && silentTurns.value >= 3)
 let initialized = false
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 
-function persist() {
+function persist(project: string = currentProject.value) {
   if (!import.meta.client) return
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(storageKey(project), JSON.stringify({
       seq: _seq,
       messages: messages.value,
       messageHistory: messageHistory.value,
@@ -90,7 +97,7 @@ function freshWelcome() {
 
 function hydrate(): boolean {
   if (!import.meta.client) return false
-  const raw = localStorage.getItem(STORAGE_KEY)
+  const raw = localStorage.getItem(storageKey(currentProject.value))
   if (!raw) return false
   try {
     const s = JSON.parse(raw) as {
@@ -124,6 +131,14 @@ function ensureInit() {
   if (import.meta.client) {
     effectScope(true).run(() => {
       watch([messages, messageHistory], schedulePersist, { deep: true })
+      // Changement d'histoire : on fige le fil de l'ANCIEN projet sous sa clé
+      // (flush du débounce), puis on charge celui du nouveau (ou un fil vierge).
+      watch(currentProject, (_nv, ov) => {
+        if (persistTimer) clearTimeout(persistTimer)
+        persist(ov)
+        if (!hydrate()) freshWelcome()
+        persist()
+      })
     })
   }
 }
@@ -163,6 +178,8 @@ export function useAtelier() {
         body: JSON.stringify({
           message: t,
           message_history: messageHistory.value,
+          // Histoire courante (#60) : le serveur est stateless, chaque tour la porte.
+          project: currentProject.value,
         }),
       })
 

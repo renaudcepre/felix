@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Must be called before pydantic-ai imports so logfire can instrument the models.
 setup_logfire()
 
-from felix.api.routes import atelier, entities
+from felix.api.routes import atelier, entities, projects
 from felix.api.routes import settings as settings_routes
 from felix.atelier.agent import (
     ATELIER_CHOICES,
@@ -25,6 +25,7 @@ from felix.atelier.agent import (
     build_relation_agent,
 )
 from felix.config import settings
+from felix.core import ensure_project_scoping
 from felix.graph.driver import close_driver, get_driver, setup_constraints
 from felix.vectorstore.store import get_collection
 
@@ -36,6 +37,9 @@ if TYPE_CHECKING:
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     driver = get_driver()
     await setup_constraints(driver)
+    # Migration #60 idempotente : le monde d'avant le scoping devient le projet
+    # par défaut (toute entité/tombstone sans `project` est adopté par `defaut`).
+    await ensure_project_scoping(driver)
     collection = get_collection()
 
     app.state.driver = driver
@@ -75,6 +79,7 @@ app.add_middleware(
 
 app.include_router(atelier.router)
 app.include_router(entities.router)
+app.include_router(projects.router)
 app.include_router(settings_routes.router)
 
 

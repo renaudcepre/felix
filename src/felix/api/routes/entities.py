@@ -32,6 +32,7 @@ from felix.core.graph import (
     rename_or_merge,
     touch_entities,
 )
+from felix.core.projects import DEFAULT_PROJECT
 from felix.core.user_edits import record_user_edit
 
 router = APIRouter(prefix="/api/entities", tags=["entities"])
@@ -50,10 +51,11 @@ def _props(entity: dict) -> dict:
 async def list_entities(
     driver: Neo4jDriver,
     type: str | None = Query(default=None),  # paramètre d'URL public (type d'entité)
+    project: str = Query(default=DEFAULT_PROJECT),  # histoire courante (#60)
 ) -> list[EntitySummary]:
     """Entités filtrées par `entity_type`. Sans filtre : tout sauf les événements
     (la chronologie n'est pas une liste de fiches)."""
-    entities = await all_entities(driver)
+    entities = await all_entities(driver, project=project)
     summaries = []
     for e in entities:
         etype = e.get("entity_type")
@@ -74,16 +76,19 @@ async def list_entities(
 
 
 @router.get("/{entity_id}")
-async def get_entity(entity_id: str, driver: Neo4jDriver) -> EntityDetail:
-    node = await find_node(driver, entity_id)
+async def get_entity(
+    entity_id: str, driver: Neo4jDriver,
+    project: str = Query(default=DEFAULT_PROJECT),
+) -> EntityDetail:
+    node = await find_node(driver, entity_id, project=project)
     if not node:
         raise HTTPException(status_code=404, detail="Entity not found")
 
     node_id = node["id"]
-    index = {e["id"]: e for e in await all_entities(driver)}
+    index = {e["id"]: e for e in await all_entities(driver, project=project)}
 
     relations: list[EntityRelationOut] = []
-    for r in await all_relations(driver):
+    for r in await all_relations(driver, project=project):
         if r["rel_type"] in _EVENT_RELS:
             continue
         if node_id == r["from"]:
@@ -110,7 +115,7 @@ async def get_entity(entity_id: str, driver: Neo4jDriver) -> EntityDetail:
 
     events = [
         EntityEventOut(id=row["id"], ordre=row["ordre"], resume=row["resume"])
-        for row in await entity_events(driver, node_id)
+        for row in await entity_events(driver, node_id, project=project)
     ]
 
     return EntityDetail(
@@ -135,31 +140,37 @@ def _label(node: dict) -> str:
 
 
 @router.delete("/{entity_id}")
-async def remove_entity(entity_id: str, driver: Neo4jDriver) -> dict:
-    node = await find_node(driver, entity_id)
+async def remove_entity(
+    entity_id: str, driver: Neo4jDriver,
+    project: str = Query(default=DEFAULT_PROJECT),
+) -> dict:
+    node = await find_node(driver, entity_id, project=project)
     if not node:
         raise HTTPException(status_code=404, detail="Entity not found")
     label = _label(node)
-    await delete_entity(driver, node["id"])
+    await delete_entity(driver, node["id"], project=project)
     await record_user_edit(
         driver, "suppression", node.get("name", node["id"]),
-        f"{label} a été supprimé(e)",
+        f"{label} a été supprimé(e)", project=project,
     )
     return {"deleted": node["id"]}
 
 
 @router.patch("/{entity_id}")
-async def patch_entity(entity_id: str, patch: EntityPatch, driver: Neo4jDriver) -> dict:
+async def patch_entity(
+    entity_id: str, patch: EntityPatch, driver: Neo4jDriver,
+    project: str = Query(default=DEFAULT_PROJECT),
+) -> dict:
     """Correction manuelle d'une fiche : rename (MÊME effet que le tool
     rename_entity — id migré, fusion sur collision, relations/événements
     conservés), pose/retrait de propriétés. Chaque action = un tombstone."""
-    node = await find_node(driver, entity_id)
+    node = await find_node(driver, entity_id, project=project)
     if not node:
         raise HTTPException(status_code=404, detail="Entity not found")
     final_id, merged = node["id"], False
 
     if patch.name and patch.name.strip() and patch.name != node.get("name"):
-        out = await rename_or_merge(driver, node["id"], patch.name)
+        out = await rename_or_merge(driver, node["id"], patch.name, project=project)
         if out.status == "invalid":
             raise HTTPException(status_code=422, detail=f"Nom invalide : {patch.name!r}")
         final_id, merged = out.final_id, out.status == "merged"
@@ -167,14 +178,14 @@ async def patch_entity(entity_id: str, patch: EntityPatch, driver: Neo4jDriver) 
             f"« {out.old_name} » et « {out.new_name} » étaient la même entité — fusionnées"
             if merged else f"« {out.old_name} » a été renommé(e) « {out.new_name} »"
         )
-        await record_user_edit(driver, "correction", out.new_name, detail)
+        await record_user_edit(driver, "correction", out.new_name, detail, project=project)
 
     to_set = {k: v for k, v in patch.props.items() if k not in RESERVED_KEYS}
     if to_set:
         async with driver.session() as session:
             await session.run(
-                "MATCH (e:GenEntity {id: $id}) SET e += $props",
-                id=final_id, props=to_set,
+                "MATCH (e:GenEntity {id: $id, project: $project}) SET e += $props",
+                id=final_id, props=to_set, project=project,
             )
         name = patch.name or node.get("name", final_id)
         for key, value in to_set.items():
@@ -184,47 +195,52 @@ async def patch_entity(entity_id: str, patch: EntityPatch, driver: Neo4jDriver) 
                 f"{old!r} → {value!r}" if old is not None
                 else f"la propriété {key} de « {name} » a été fixée à {value!r}"
             )
-            await record_user_edit(driver, "correction", name, detail)
+            await record_user_edit(driver, "correction", name, detail, project=project)
 
     to_remove = [k for k in patch.remove_props if k not in RESERVED_KEYS]
     if to_remove:
         async with driver.session() as session:
             for key in to_remove:
                 await session.run(
-                    f"MATCH (e:GenEntity {{id: $id}}) REMOVE e.`{key.replace('`', '')}`",
-                    id=final_id,
+                    f"MATCH (e:GenEntity {{id: $id, project: $project}})"
+                    f" REMOVE e.`{key.replace('`', '')}`",
+                    id=final_id, project=project,
                 )
         name = patch.name or node.get("name", final_id)
         for key in to_remove:
             await record_user_edit(
                 driver, "suppression", name,
-                f"la propriété {key} de « {name} » a été supprimée",
+                f"la propriété {key} de « {name} » a été supprimée", project=project,
             )
 
     # La fiche corrigée entre dans le working set : les extracteurs la VOIENT.
-    await touch_entities(driver, [final_id])
+    await touch_entities(driver, [final_id], project=project)
     return {"id": final_id, "merged": merged}
 
 
 @router.delete("/{entity_id}/relations/{rel_type}/{other_id}")
-async def remove_relation(
+async def remove_relation(  # noqa: PLR0913 — clé d'arête composite + scope projet (cf. delete_relation)
     entity_id: str, rel_type: str, other_id: str, driver: Neo4jDriver,
     verbe_slug: str | None = Query(default=None),
+    project: str = Query(default=DEFAULT_PROJECT),
 ) -> dict:
     """Supprime la relation ORIENTÉE entity —[rel_type]→ other (la direction
     affichée sur la fiche/carte est celle de la clé). Pour une arête narrative
     (LIE_A), `verbe_slug` complète la clé : la même paire peut porter plusieurs
     arêtes, une par verbe — sans lui on les supprimerait toutes (#68)."""
-    a = await find_node(driver, entity_id)
-    b = await find_node(driver, other_id)
+    a = await find_node(driver, entity_id, project=project)
+    b = await find_node(driver, other_id, project=project)
     if not a or not b:
         raise HTTPException(status_code=404, detail="Entity not found")
-    if not await delete_relation(driver, a["id"], b["id"], rel_type, verbe_slug):
+    if not await delete_relation(
+        driver, a["id"], b["id"], rel_type, verbe_slug, project=project,
+    ):
         raise HTTPException(status_code=404, detail="Relation not found")
     label = rel_type if verbe_slug is None else f"{rel_type} « {verbe_slug} »"
     await record_user_edit(
         driver, "suppression", a.get("name", a["id"]),
         f"la relation {a.get('name', a['id'])} —[{label}]→ "
         f"{b.get('name', b['id'])} a été supprimée (elle était fausse)",
+        project=project,
     )
     return {"deleted": f"{a['id']} -[{label}]-> {b['id']}"}

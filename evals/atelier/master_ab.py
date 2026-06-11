@@ -35,10 +35,11 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.settings import ModelSettings
 
+from evals._utils import with_backoff
 from felix.api.main import app, lifespan
 from felix.atelier.agent import ATELIER_CHOICES, build_master_agent
 from felix.config import settings
-from felix.core import GenericDeps, all_entities
+from felix.core import DEFAULT_PROJECT, GenericDeps, all_entities
 from felix.graph.driver import get_driver
 from felix.llm import build_model
 
@@ -130,23 +131,6 @@ def build_judge(model_name: str) -> Agent[None, JudgeVerdict]:
         retries=3,
     )
 
-
-async def with_backoff(make_coro, attempts: int = 6):
-    """Mistral dev tier rate-limite (429) — pydantic-ai ne back-off pas dessus.
-    On retente avec backoff exponentiel (asyncio.sleep, pas le sleep Bash)."""
-    delay = 3.0
-    last: Exception | None = None
-    for _ in range(attempts):
-        try:
-            return await make_coro()
-        except Exception as exc:
-            msg = str(exc).lower()
-            if "429" not in msg and "rate" not in msg and "timeout" not in msg:
-                raise
-            last = exc
-            await asyncio.sleep(delay)
-            delay *= 2
-    raise last  # type: ignore[misc]
 
 
 async def opener_history(agent: Agent, driver: object) -> list:
@@ -247,7 +231,7 @@ async def main() -> int:  # noqa: PLR0912, PLR0915 — script de restitution : i
             async with driver.session() as s:
                 await s.run("MATCH (n) DETACH DELETE n")
                 await s.run("MATCH (u:UserEdit) DETACH DELETE u")
-        n_ents = len(await all_entities(driver))
+        n_ents = len(await all_entities(driver, project=DEFAULT_PROJECT))
         print(f"BASE au départ : {n_ents} entité(s) "
               f"({'VIDE — démarrage à froid' if n_ents == 0 else 'peuplée'})\n")
 

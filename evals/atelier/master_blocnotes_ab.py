@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
+from evals._utils import with_backoff
 from evals.atelier.master_ab import (
     CHOICE,
     CONTROL,
@@ -33,7 +34,6 @@ from evals.atelier.master_ab import (
     last_assistant_text,
     opener_history,
     run_master,
-    with_backoff,
 )
 from felix.api.main import app, lifespan
 from felix.atelier.agent import (
@@ -42,7 +42,7 @@ from felix.atelier.agent import (
     MASTER_TOOLS,
 )
 from felix.config import settings
-from felix.core import all_entities
+from felix.core import DEFAULT_PROJECT, all_entities
 from felix.core.agent import create_core_agent
 from felix.graph.driver import get_driver
 from felix.llm import build_model
@@ -192,7 +192,7 @@ async def main() -> int:
             async with driver.session() as s:
                 await s.run("MATCH (n) DETACH DELETE n")
                 await s.run("MATCH (u:UserEdit) DETACH DELETE u")
-        n_ents = len(await all_entities(driver))
+        n_ents = len(await all_entities(driver, project=DEFAULT_PROJECT))
         print(f"BASE au départ : {n_ents} entité(s) "
               f"({'VIDE — démarrage à froid' if n_ents == 0 else 'peuplée'})\n")
 

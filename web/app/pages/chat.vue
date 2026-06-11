@@ -8,6 +8,29 @@ useHead({ title: 'Felix — Atelier · Rivière basse' })
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
 const { messages, typing, phase, sendMessage, silentSession, newConversation } = useAtelier()
 
+// Histoire courante (#60) : sélecteur d'histoire + « Nouvelle histoire » — le
+// fil de conversation ET la bible suivent (useAtelier persiste par projet, les
+// fetchs d'entités portent le projet).
+const { currentProject, projects, refreshProjects, switchProject, createProject } = useProject()
+onMounted(() => { void refreshProjects() })
+
+async function onProjectChange(e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  if (v !== '__new__') {
+    switchProject(v)
+    return
+  }
+  // v1 volontairement frustre : un prompt natif suffit pour nommer l'histoire.
+  const name = window.prompt('Nom de la nouvelle histoire ?')?.trim()
+  if (name) {
+    await createProject(name)
+  }
+  else {
+    // Annulé : le select doit revenir sur l'histoire courante.
+    (e.target as HTMLSelectElement).value = currentProject.value
+  }
+}
+
 const draft = ref('')
 
 // « Nouvelle conversation » : confirmation à double-clic (comme le 🗑 des cartes,
@@ -101,7 +124,10 @@ function onKeydown(e: KeyboardEvent) {
         <span class="felix-mark"><AtelierIcon name="felix" :size="18" /></span>
         <span class="felix-word">Felix</span>
         <span class="tb-sep" />
-        <span class="tb-project">Rivière basse</span>
+        <select class="tb-project tb-project-select" :value="currentProject" @change="onProjectChange">
+          <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+          <option value="__new__">＋ Nouvelle histoire…</option>
+        </select>
       </div>
       <div class="tb-right">
         <span class="tb-save"><span class="save-dot" />Enregistré</span>
@@ -299,6 +325,18 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .felix-word { font-family: var(--serif); font-weight: 600; font-size: 19px; margin-left: 1px; letter-spacing: .01em; }
 .felix-atelier .tb-sep { width: 4px; height: 4px; border-radius: 50%; background: var(--line-2); }
 .felix-atelier .tb-project { font-family: var(--sans); font-weight: 600; font-size: 14px; color: var(--ink-2); }
+/* Sélecteur d'histoire (#60) : même habit que l'ancien libellé statique, plus
+   un curseur — l'affordance vient au survol, pas d'un chrome de formulaire. */
+.felix-atelier .tb-project-select {
+  appearance: none; -webkit-appearance: none;
+  border: 1px solid transparent; border-radius: 7px; background: transparent;
+  padding: 3px 6px; cursor: pointer; max-width: 220px;
+  text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+}
+.felix-atelier .tb-project-select:hover,
+.felix-atelier .tb-project-select:focus-visible {
+  border-color: var(--line-2); background: rgba(0, 0, 0, .025); outline: none;
+}
 .felix-atelier .tb-save { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); }
 .felix-atelier .save-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); box-shadow: 0 0 0 3px var(--sage-soft); }
 

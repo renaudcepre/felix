@@ -20,11 +20,18 @@ def get_driver(
 async def setup_constraints(driver: AsyncDriver) -> None:
     """Create constraints and indexes if they don't exist.
 
-    Modèle 100 % schemaless : une seule contrainte d'unicité sur l'id des
-    :GenEntity. Les anciennes contraintes legacy (:Character/:Scene/…) déjà
-    créées en base sont inertes (plus aucun code ne les lit)."""
+    Modèle 100 % schemaless, scopé par projet (#60) : l'ancienne contrainte
+    d'unicité GLOBALE sur e.id est incompatible avec la clé composite
+    {id, project} (deux histoires ont chacune leur « camille ») → on la DROP.
+    L'unicité vit dans les clés de MERGE des writers (Community : pas de
+    contrainte composite). L'index (project, id) porte les lookups scopés.
+    Les anciennes contraintes legacy (:Character/:Scene/…) déjà créées en base
+    sont inertes (plus aucun code ne les lit)."""
     statements = [
-        "CREATE CONSTRAINT genentity_id_unique IF NOT EXISTS FOR (e:GenEntity) REQUIRE e.id IS UNIQUE",
+        "DROP CONSTRAINT genentity_id_unique IF EXISTS",
+        "CREATE INDEX genentity_project_id IF NOT EXISTS"
+        " FOR (e:GenEntity) ON (e.project, e.id)",
+        "CREATE INDEX project_id IF NOT EXISTS FOR (p:Project) ON (p.id)",
     ]
     async with driver.session() as session:
         for stmt in statements:

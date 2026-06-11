@@ -28,7 +28,7 @@ import sys
 import httpx
 
 from felix.api.main import app, lifespan
-from felix.core import all_entities
+from felix.core import DEFAULT_PROJECT, all_entities
 from felix.graph.driver import get_driver
 
 # Placeholders génériques que les petits modèles inventent quand on les somme
@@ -175,7 +175,7 @@ async def main() -> int:
                 print(f"\n===== {name} =====")
                 per_turn, empty, errs = await play_session(client, driver, turns)
                 errors += errs
-                ents = await all_entities(driver)
+                ents = await all_entities(driver, project=DEFAULT_PROJECT)
                 print()
                 failed += check_session(turns, per_turn, empty, ents,
                                         full_recall=full_recall)

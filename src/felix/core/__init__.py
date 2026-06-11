@@ -23,6 +23,12 @@ from felix.core.graph import (
 )
 from felix.core.models import RelationRef, ToolCard
 from felix.core.profile import CHANTIER_PROFILE, SCENARIO_PROFILE, EntityType, Profile
+from felix.core.projects import (
+    DEFAULT_PROJECT,
+    create_project,
+    ensure_project_scoping,
+    list_projects,
+)
 from felix.core.user_edits import (
     consume_unnotified_edits,
     recent_user_edits,
@@ -32,6 +38,7 @@ from felix.core.user_edits import (
 
 __all__ = [
     "CHANTIER_PROFILE",
+    "DEFAULT_PROJECT",
     "NARRATIVE_REL",
     "SCENARIO_PROFILE",
     "SYSTEM_PROMPT",
@@ -46,6 +53,9 @@ __all__ = [
     "consistency_check",
     "consume_unnotified_edits",
     "create_core_agent",
+    "create_project",
+    "ensure_project_scoping",
+    "list_projects",
     "merge_entity_into",
     "recent_entities",
     "recent_user_edits",

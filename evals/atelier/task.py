@@ -18,7 +18,7 @@ from protest import fixture
 from protest.evals import TaskResult
 
 from evals._judge import MISTRAL_SMALL_INPUT_COST, MISTRAL_SMALL_OUTPUT_COST
-from evals._utils import normalize
+from evals._utils import normalize, with_backoff
 from felix.atelier.agent import (
     create_atelier_agent,
     create_chronicle_agent,
@@ -123,14 +123,20 @@ async def run_atelier_case(
             # touchées) préfixé au prompt des passes entités/relieur — sans elle le
             # harness ne testerait pas le mécanisme anti-doublon (baptême différé).
             block = render_recent_block(
-                await recent_entities(driver, settings.recent_entities_limit)
+                await recent_entities(driver, settings.recent_entities_limit, project=deps.project_id)
             )
             extract_beat = f"{block}\n\n{beat}" if block else beat
-            result = await agent.run(extract_beat, deps=deps, message_history=prev)
-            rel_result = await relation_agent.run(extract_beat, deps=deps, message_history=prev)
+            result = await with_backoff(
+                lambda: agent.run(extract_beat, deps=deps, message_history=prev)  # noqa: B023
+            )
+            rel_result = await with_backoff(
+                lambda: relation_agent.run(extract_beat, deps=deps, message_history=prev)  # noqa: B023
+            )
             # Chroniqueur SANS historique : il ne chronique que le beat courant (sinon
             # re-chronique les tours passés → doublons) ; entités relues du graphe.
-            chr_result = await chronicle_agent.run(beat, deps=deps, message_history=None)
+            chr_result = await with_backoff(
+                lambda: chronicle_agent.run(beat, deps=deps, message_history=None)  # noqa: B023
+            )
             history = result.all_messages()  # relieur/chroniqueur internes/jetables
             cards.extend(deps.ui_events)
             for u in (result.usage(), rel_result.usage(), chr_result.usage()):
@@ -139,8 +145,8 @@ async def run_atelier_case(
 
         assert result is not None and deps is not None  # beats non vide → boucle exécutée
 
-        entities = await all_entities(driver)
-        relations = await all_relations(driver)
+        entities = await all_entities(driver, project=deps.project_id)
+        relations = await all_relations(driver, project=deps.project_id)
         # Sous-ensemble personnages : une entité « lieu » créée en passant ne doit
         # pas fausser les graph_char_count des cas mono-tour.
         characters = [
@@ -152,8 +158,8 @@ async def run_atelier_case(
         # la route SSE émet une alerte ssi le verdict conclut à une contradiction.
         alert = None
         if inputs.get("check"):
-            verdict = await consistency_check(
-                driver, inputs["check"], deps.write_log, SCENARIO_PROFILE
+            verdict = await with_backoff(
+                lambda: consistency_check(driver, inputs["check"], deps.write_log, SCENARIO_PROFILE, project=deps.project_id)
             )
             alert = verdict.model_dump()
 
@@ -170,6 +176,24 @@ async def run_atelier_case(
         output_tokens=out_tok,
         cost=in_tok * MISTRAL_SMALL_INPUT_COST + out_tok * MISTRAL_SMALL_OUTPUT_COST,
     )
+
+
+def _check_death_then_act(result: AtelierRunResult) -> bool:
+    """Mort-puis-agit : doit émettre une alerte (contradiction temporelle).
+
+    Retourne False si le check n'a pas été exécuté (inputs sans 'check')."""
+    if result.alert is None:
+        return False
+    return bool(result.alert.get("contradiction"))
+
+
+def _check_act_then_death(result: AtelierRunResult) -> bool:
+    """Agit-puis-mort : AUCUNE alerte attendue (ordre chronologique normal).
+
+    Retourne False si le check n'a pas été exécuté (inputs sans 'check')."""
+    if result.alert is None:
+        return False
+    return not result.alert.get("contradiction")
 
 
 def _bapteme_differe_check(result: AtelierRunResult) -> bool:

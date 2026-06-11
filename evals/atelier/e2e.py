@@ -18,7 +18,7 @@ import sys
 import httpx
 
 from felix.api.main import app, lifespan
-from felix.core import all_entities, all_relations
+from felix.core import DEFAULT_PROJECT, all_entities, all_relations
 from felix.graph.driver import get_driver
 
 # Scénario « Le Nadir » (sci-fi noir) joué au fil de l'eau — le cas qui a révélé les
@@ -99,8 +99,8 @@ async def main() -> int:
                 n_ev = sum(1 for c in cards if c.get("title") == "Événement")
                 print(f"tour {i}: {n_ev} events, {len(cards)} cartes | {text[:64]!r}")
 
-        ents = await all_entities(driver)
-        rels = await all_relations(driver)
+        ents = await all_entities(driver, project=DEFAULT_PROJECT)
+        rels = await all_relations(driver, project=DEFAULT_PROJECT)
         await driver.close()
 
     evs = [e for e in ents if "evenement" in norm(e.get("entity_type", ""))]

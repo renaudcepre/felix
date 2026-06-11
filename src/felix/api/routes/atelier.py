@@ -73,7 +73,8 @@ async def _consistency_alerts(
     if not ids:
         return
     verdicts = await asyncio.gather(
-        *(consistency_check(driver, i, deps.write_log, profile) for i in ids),
+        *(consistency_check(driver, i, deps.write_log, profile,
+                            project=deps.project_id) for i in ids),
         return_exceptions=True,
     )
     seen: set[str] = set()
@@ -127,12 +128,14 @@ async def _stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + histor
         holder["messages"] = run.all_messages()
 
 
-async def _master_prompt(driver: AsyncDriver, message: str) -> str:
+async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str:
     """Préfixe le message du maître des actions manuelles PAS ENCORE annoncées
     (#61). Une fois suffit : le fil threadé retient — répéter le bloc chaque tour
     ne ferait que gonfler l'historique. Les extracteurs, eux, stateless, reçoivent
     le bloc COMPLET à chaque tour d'extraction (cf. event_generator)."""
-    block = render_user_edits_block(await consume_unnotified_edits(driver))
+    block = render_user_edits_block(
+        await consume_unnotified_edits(driver, project=project)
+    )
     return f"{block}\n\n{message}" if block else message
 
 
@@ -173,7 +176,8 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
     agent = agents[choice.key]
     relation_agent = relation_agents[choice.key]
     chronicle_agent = chronicle_agents[choice.key]
-    deps = GenericDeps(driver=driver, profile=choice.profile)
+    # Le projet/histoire courant vient du FRONT à chaque tour (stateless serveur).
+    deps = GenericDeps(driver=driver, profile=choice.profile, project_id=body.project)
 
     message_history = None
     if body.message_history:
@@ -196,7 +200,7 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
             yield ServerSentEvent(data="Felix répond…", event="phase")
             master: dict = {}
             async for ev in _stream_pass(
-                master_agent, await _master_prompt(driver, body.message),
+                master_agent, await _master_prompt(driver, body.message, body.project),
                 message_history, deps, stream_text=True, holder=master
             ):
                 yield ev
@@ -215,13 +219,16 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
                 # un doublon au baptême (« le mage noir se nomme X » → fiche X neuve,
                 # bug Adator). Le chroniqueur garde le message nu (il ne crée pas).
                 block = render_recent_block(
-                    await recent_entities(driver, settings.recent_entities_limit)
+                    await recent_entities(
+                        driver, settings.recent_entities_limit, project=body.project
+                    )
                 )
                 # Décisions manuelles de l'auteur (#61) : injectées à CHAQUE tour
                 # d'extraction tant que le tombstone vit (TTL) — c'est la garantie
                 # qu'une fiche supprimée depuis l'UI ne renaît pas via l'historique.
                 edits_block = render_user_edits_block(await recent_user_edits(
-                    driver, settings.user_edits_limit, settings.user_edits_ttl_minutes
+                    driver, settings.user_edits_limit, settings.user_edits_ttl_minutes,
+                    project=body.project,
                 ))
                 extract_prompt = "\n\n".join(
                     part for part in (edits_block, block, body.message) if part

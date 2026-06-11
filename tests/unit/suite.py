@@ -1,5 +1,6 @@
 from protest import ProTestSuite
 
+from tests.unit.test_backoff import backoff_suite
 from tests.unit.test_conductor import conductor_suite
 from tests.unit.test_history_window import history_window_suite
 from tests.unit.test_modeling_quality import modeling_quality_suite
@@ -10,6 +11,7 @@ from tests.unit.test_update_event_guard import update_event_guard_suite
 from tests.unit.test_vectorstore import vectorstore_suite
 
 unit_suite = ProTestSuite("Unit", tags=["unit"])
+unit_suite.add_suite(backoff_suite)
 unit_suite.add_suite(resolver_suite)
 unit_suite.add_suite(vectorstore_suite)
 unit_suite.add_suite(relation_typing_suite)

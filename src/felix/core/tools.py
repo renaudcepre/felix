@@ -33,8 +33,8 @@ async def describe_schema(ctx: RunContext[GenericDeps]) -> str:
     À appeler AVANT toute écriture, pour réutiliser les types et noms de
     propriétés existants au lieu d'en inventer de nouveaux.
     """
-    entities = await all_entities(ctx.deps.driver)
-    relations = await all_relations(ctx.deps.driver)
+    entities = await all_entities(ctx.deps.driver, project=ctx.deps.project_id)
+    relations = await all_relations(ctx.deps.driver, project=ctx.deps.project_id)
     if not entities:
         if ctx.deps.profile is not None:
             return ctx.deps.profile.render_schema_hint()
@@ -72,7 +72,7 @@ async def list_entities(ctx: RunContext[GenericDeps]) -> str:
     a-t-il ? », « qui sont les personnages ? ») ou pour voir ce qui existe déjà
     avant de créer. Ne devine jamais le contenu : lis-le ici.
     """
-    entities = await all_entities(ctx.deps.driver)
+    entities = await all_entities(ctx.deps.driver, project=ctx.deps.project_id)
     if not entities:
         return "La base est vide."
     by_type: dict[str, list[str]] = {}
@@ -91,13 +91,13 @@ async def find_entity(ctx: RunContext[GenericDeps], name: str) -> str:
     Args:
         name: Nom complet ou partiel de l'entité.
     """
-    node = await find_node(ctx.deps.driver, name)
+    node = await find_node(ctx.deps.driver, name, project=ctx.deps.project_id)
     if not node:
         return f"Aucune entité ne correspond à « {name} »."
     # Une lecture RÉSOLUE compte dans le working set : l'entité qu'on consulte fait
     # partie de l'histoire en cours (cf. recent_entities).
-    await touch_entities(ctx.deps.driver, [node["id"]])
-    relations = await all_relations(ctx.deps.driver)
+    await touch_entities(ctx.deps.driver, [node["id"]], project=ctx.deps.project_id)
+    relations = await all_relations(ctx.deps.driver, project=ctx.deps.project_id)
     rel_lines = [
         f"- {r['from']} —[{rel_label(r)}]→ {r['to']}"
         for r in relations
@@ -153,16 +153,19 @@ async def add_entity(
     entity_id = slugify(name)
     if not entity_id:
         return f"Nom invalide : « {name} »."
-    if await find_node(ctx.deps.driver, entity_id):
+    if await find_node(ctx.deps.driver, entity_id, project=ctx.deps.project_id):
         return f"« {name} » existe déjà (id: {entity_id}) — utilise update_entity."
 
     clean = {k: v for k, v in (props or {}).items() if k not in RESERVED_KEYS}
+    # Clé composite {id, project} (#60) : deux histoires ont chacune leur
+    # « camille » — l'unicité vit dans la clé de MERGE, pas dans une contrainte.
     async with ctx.deps.driver.session() as session:
         await session.run(
-            "MERGE (e:GenEntity {id: $id})"
+            "MERGE (e:GenEntity {id: $id, project: $project})"
             " ON CREATE SET e.name = $name, e.entity_type = $type"
             " SET e += $props",
             id=entity_id, name=name, type=entity_type, props=clean,
+            project=ctx.deps.project_id,
         )
     ctx.deps.ui_events.append(
         ToolCard(title="Entité créée", subject=name, field=entity_type,
@@ -172,7 +175,7 @@ async def add_entity(
         f"création de {entity_id} (type {entity_type}) : {fmt_props(clean, skip_reserved=False)}"
     )
     ctx.deps.touched_ids.add(entity_id)
-    await touch_entities(ctx.deps.driver, [entity_id])
+    await touch_entities(ctx.deps.driver, [entity_id], project=ctx.deps.project_id)
     return f"Entité créée : {name} (id: {entity_id}, type: {entity_type})."
 
 
@@ -234,7 +237,7 @@ async def update_entity(
         is_correction: True UNIQUEMENT pour une correction explicite de l'auteur
             (autorise alors le remplacement d'une valeur existante).
     """
-    node = await find_node(ctx.deps.driver, name)
+    node = await find_node(ctx.deps.driver, name, project=ctx.deps.project_id)
     # Garde anti-événement : find_node peut résoudre sur un nœud evenement quand
     # le name de l'événement contient le nom cherché (ex. « L'Aumônier dit… »).
     guard = check_update_target(node, name)
@@ -259,8 +262,8 @@ async def update_entity(
     if to_set:
         async with ctx.deps.driver.session() as session:
             await session.run(
-                "MATCH (e:GenEntity {id: $id}) SET e += $props",
-                id=node["id"], props=to_set,
+                "MATCH (e:GenEntity {id: $id, project: $project}) SET e += $props",
+                id=node["id"], props=to_set, project=ctx.deps.project_id,
             )
         ctx.deps.ui_events.append(
             ToolCard(title="Entité mise à jour", subject=node["name"],
@@ -268,7 +271,7 @@ async def update_entity(
                      added=fmt_props(to_set, skip_reserved=False), entity_id=node["id"])
         )
         ctx.deps.touched_ids.add(node["id"])
-        await touch_entities(ctx.deps.driver, [node["id"]])
+        await touch_entities(ctx.deps.driver, [node["id"]], project=ctx.deps.project_id)
         # Un ÉCRASEMENT (correction) peut masquer une contradiction → candidat au check.
         # Une prop purement additive, non (rien à contredire).
         if replaced:
@@ -309,17 +312,19 @@ async def rename_entity(
     # La mécanique (migration d'id, fusion sur collision) vit au niveau driver
     # (graph.rename_or_merge) : la route PATCH de l'API (#61) DOIT avoir le même
     # effet qu'ici. Le tool ne garde que le narratif (cartes, write_log, working set).
-    node = await find_node(ctx.deps.driver, current_name)
+    node = await find_node(ctx.deps.driver, current_name, project=ctx.deps.project_id)
     if not node:
         return f"« {current_name} » n'existe pas — rien à renommer."
-    out = await rename_or_merge(ctx.deps.driver, current_name, new_name)
+    out = await rename_or_merge(
+        ctx.deps.driver, current_name, new_name, project=ctx.deps.project_id
+    )
 
     if out.status == "invalid":
         return f"Nom invalide : « {new_name} »."
 
     if out.status == "refreshed":
         ctx.deps.touched_ids.add(out.final_id)
-        await touch_entities(ctx.deps.driver, [out.final_id])
+        await touch_entities(ctx.deps.driver, [out.final_id], project=ctx.deps.project_id)
         return f"« {out.old_name} » est désormais « {new_name} »."
 
     if out.status == "merged":
@@ -330,7 +335,7 @@ async def rename_entity(
         )
         ctx.deps.write_log.append(f"fusion {node['id']} → {out.final_id}")
         ctx.deps.touched_ids.add(out.final_id)
-        await touch_entities(ctx.deps.driver, [out.final_id])
+        await touch_entities(ctx.deps.driver, [out.final_id], project=ctx.deps.project_id)
         ctx.deps.check_candidates.add(out.final_id)
         return (f"« {out.old_name} » et « {out.new_name} » étaient la même entité — "
                 f"fusionnées dans « {out.new_name} » (relations et événements conservés).")
@@ -342,7 +347,7 @@ async def rename_entity(
     )
     ctx.deps.write_log.append(f"renommage {node['id']} → {out.final_id} ({new_name})")
     ctx.deps.touched_ids.add(out.final_id)
-    await touch_entities(ctx.deps.driver, [out.final_id])
+    await touch_entities(ctx.deps.driver, [out.final_id], project=ctx.deps.project_id)
     return f"« {out.old_name} » renommé « {new_name} »."
 
 
@@ -372,8 +377,8 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
     # Résolution HORS événements : une relation entre entités ne doit jamais avoir
     # un node événement pour extrémité (sinon « Vance [se bat contre] [event] »…).
     # Les événements ne se relient qu'via add_event (INVOLVES/NEXT/LOCATED_AT).
-    a = await find_non_event(ctx.deps.driver, from_name)
-    b = await find_non_event(ctx.deps.driver, to_name)
+    a = await find_non_event(ctx.deps.driver, from_name, project=ctx.deps.project_id)
+    b = await find_non_event(ctx.deps.driver, to_name, project=ctx.deps.project_id)
     if not a or not b:
         missing = from_name if not a else to_name
         return f"« {missing} » n'existe pas — crée d'abord l'entité avec add_entity."
@@ -404,21 +409,24 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
             # re-extrait ne duplique pas (#68).
             await session.run(
                 """
-                MATCH (a:GenEntity {id: $a}), (b:GenEntity {id: $b})
+                MATCH (a:GenEntity {id: $a, project: $project}),
+                      (b:GenEntity {id: $b, project: $project})
                 MERGE (a)-[r:REL {rel_type: $t, verbe_slug: $vs}]->(b)
                 SET r.verbe = $verbe, r += $props
                 """,
                 a=a["id"], b=b["id"], t=rel_type, vs=slugify(verbe),
-                verbe=verbe, props=props,
+                verbe=verbe, props=props, project=ctx.deps.project_id,
             )
         else:
             await session.run(
                 """
-                MATCH (a:GenEntity {id: $a}), (b:GenEntity {id: $b})
+                MATCH (a:GenEntity {id: $a, project: $project}),
+                      (b:GenEntity {id: $b, project: $project})
                 MERGE (a)-[r:REL {rel_type: $t}]->(b)
                 SET r += $props
                 """,
                 a=a["id"], b=b["id"], t=rel_type, props=props,
+                project=ctx.deps.project_id,
             )
     # La carte et le log portent les MOTS de l'auteur pour une arête narrative
     # (thème papier, pas de jargon graphe) ; le type canonique sinon.
@@ -433,7 +441,7 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
     ctx.deps.write_log.append(f"relation {a['id']} —[{label}]→ {b['id']}{extra}")
     ctx.deps.touched_ids.add(a["id"])
     ctx.deps.touched_ids.add(b["id"])
-    await touch_entities(ctx.deps.driver, [a["id"], b["id"]])
+    await touch_entities(ctx.deps.driver, [a["id"], b["id"]], project=ctx.deps.project_id)
     # Les deux extrémités d'une nouvelle relation sont candidates au check
     # (relation = là où vivent les contradictions spatiales/relationnelles).
     ctx.deps.check_candidates.add(a["id"])
@@ -472,18 +480,23 @@ async def add_event(
     # ordre auto-incrémenté (en code, pas par le modèle) + id unique : deux actions
     # proches ne doivent PAS fusionner, donc surtout pas de slug du résumé. Le lock
     # sérialise les add_event concurrents d'un même run (sinon collision d'ordre/id).
+    proj = ctx.deps.project_id
     async with ctx.deps.event_seq_lock, ctx.deps.driver.session() as session:
         # Dédup : ne pas recréer un événement au resume identique (le chroniqueur
         # appelle parfois add_event 2x pour la même action dans une seule réponse).
         dup = await session.run(
-            "MATCH (e:GenEntity {entity_type: 'evenement'})"
+            "MATCH (e:GenEntity {entity_type: 'evenement', project: $project})"
             " WHERE toLower(e.resume) = toLower($r) RETURN e.id LIMIT 1",
-            r=text,
+            r=text, project=proj,
         )
         if await dup.single():
             return f"Événement déjà enregistré (ignoré) : {text}."
+        # L'ordre (et donc la chaîne NEXT) est PAR PROJET : chaque histoire a sa
+        # propre chronologie, les timelines ne s'entrelacent pas (#60).
         result = await session.run(
-            "MATCH (e:GenEntity {entity_type: 'evenement'}) RETURN max(e.ordre) AS maxo"
+            "MATCH (e:GenEntity {entity_type: 'evenement', project: $project})"
+            " RETURN max(e.ordre) AS maxo",
+            project=proj,
         )
         record = await result.single()
         prev_ordre = record["maxo"] if record else None
@@ -491,16 +504,16 @@ async def add_event(
         event_id = f"event-{ordre}"
         await session.run(
             "CREATE (e:GenEntity {id: $id, name: $name, entity_type: 'evenement',"
-            " resume: $resume, ordre: $ordre})",
-            id=event_id, name=text, resume=text, ordre=ordre,
+            " resume: $resume, ordre: $ordre, project: $project})",
+            id=event_id, name=text, resume=text, ordre=ordre, project=proj,
         )
         # Chaîne NEXT depuis l'événement de plus grand ordre précédent.
         if prev_ordre is not None:
             await session.run(
-                "MATCH (p:GenEntity {entity_type: 'evenement', ordre: $po}),"
-                " (e:GenEntity {id: $id})"
+                "MATCH (p:GenEntity {entity_type: 'evenement', ordre: $po, project: $project}),"
+                " (e:GenEntity {id: $id, project: $project})"
                 " MERGE (p)-[:REL {rel_type: 'NEXT'}]->(e)",
-                po=prev_ordre, id=event_id,
+                po=prev_ordre, id=event_id, project=proj,
             )
 
     # Participants / lieu : reliés seulement s'ils existent déjà comme VRAIES entités
@@ -513,15 +526,16 @@ async def add_event(
     if lieu:
         targets.append((lieu, "LOCATED_AT"))
     for raw, rel in targets:
-        node = await find_non_event(ctx.deps.driver, raw)
+        node = await find_non_event(ctx.deps.driver, raw, project=proj)
         if not node or node["id"] in seen_ids:
             continue
         seen_ids.add(node["id"])
         async with ctx.deps.driver.session() as session:
             await session.run(
-                "MATCH (e:GenEntity {id: $e}), (t:GenEntity {id: $t})"
+                "MATCH (e:GenEntity {id: $e, project: $project}),"
+                " (t:GenEntity {id: $t, project: $project})"
                 " MERGE (e)-[r:REL {rel_type: $rel}]->(t)",
-                e=event_id, t=node["id"], rel=rel,
+                e=event_id, t=node["id"], rel=rel, project=proj,
             )
         linked.append(node["name"])
         ctx.deps.touched_ids.add(node["id"])
@@ -531,7 +545,7 @@ async def add_event(
 
     # Les participants/lieu entrent dans le working set (pas le nœud événement,
     # de toute façon exclu de recent_entities).
-    await touch_entities(ctx.deps.driver, seen_ids - {event_id})
+    await touch_entities(ctx.deps.driver, seen_ids - {event_id}, project=proj)
 
     ctx.deps.ui_events.append(
         ToolCard(tool="people", title="Événement", subject=text,

@@ -15,7 +15,12 @@ from protest import From, ProTestSession, Use
 from protest.evals import EvalCase, EvalSuite, ModelLabel, TaskResult
 
 from evals._judge import FelixJudge
-from evals.atelier.dataset import BAPTEME_DIFFERE_INPUTS, atelier_cases
+from evals.atelier.dataset import (
+    BAPTEME_DIFFERE_INPUTS,
+    CHECK_ACT_THEN_DEATH_INPUTS,
+    CHECK_DEATH_THEN_ACT_INPUTS,
+    atelier_cases,
+)
 from evals.atelier.evaluators import multirun_majority
 
 # Import runtime (pas TYPE_CHECKING) : protest résout les annotations des evals
@@ -23,6 +28,8 @@ from evals.atelier.evaluators import multirun_majority
 from evals.atelier.task import (
     AtelierRunResult,
     _bapteme_differe_check,
+    _check_act_then_death,
+    _check_death_then_act,
     atelier_driver,
     run_atelier_case,
     run_atelier_multirun_case,
@@ -65,4 +72,36 @@ async def bapteme_differe(
         BAPTEME_DIFFERE_INPUTS,
         n=3,
         check=_bapteme_differe_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def check_death_then_act(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """Multi-run (N=3, seuil ≥2/3) — variance du juge Mistral Small.
+
+    Mort-puis-agit : le juge doit détecter l'impossibilité temporelle (alerte).
+    Joué 3 fois en série ; vert si ≥2 passes émettent l'alerte attendue."""
+    return await run_atelier_multirun_case(
+        driver,
+        CHECK_DEATH_THEN_ACT_INPUTS,
+        n=3,
+        check=_check_death_then_act,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def check_act_then_death(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """Multi-run (N=3, seuil ≥2/3) — variance du juge Mistral Small.
+
+    Agit-puis-mort : aucune alerte attendue (ordre chronologique normal).
+    Joué 3 fois en série ; vert si ≥2 passes n'émettent pas d'alerte."""
+    return await run_atelier_multirun_case(
+        driver,
+        CHECK_ACT_THEN_DEATH_INPUTS,
+        n=3,
+        check=_check_act_then_death,
     )

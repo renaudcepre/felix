@@ -4,12 +4,32 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from felix.core import DEFAULT_PROJECT
+
 
 class ChatRequest(BaseModel):
     message: str
     message_history: list[dict[str, object]] = []
     # Bot B uniquement : clé de profil/mode choisie dans l'UI (scenario/chantier/none).
     profile: str = "scenario"
+    # Projet/histoire courant (#60) : le front l'envoie à chaque tour (stateless
+    # côté serveur). Défaut = projet de repli (anciens clients, curl).
+    project: str = DEFAULT_PROJECT
+
+
+# --- Projets / histoires (#60) ---
+
+
+class ProjectOut(BaseModel):
+    """Un projet du registre (:Project) — le « tenant » d'une histoire."""
+
+    id: str
+    name: str
+    created_at: int | None = None
+
+
+class ProjectCreate(BaseModel):
+    name: str
 
 
 # --- Entités schemaless (:GenEntity / :REL) ---

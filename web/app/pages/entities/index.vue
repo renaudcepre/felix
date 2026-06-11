@@ -1,9 +1,14 @@
 <script setup lang="ts">
 definePageMeta({ layout: false })
-useHead({ title: 'Felix — Entités · Rivière basse' })
+useHead({ title: 'Felix — Entités' })
 
 const route = useRoute()
 const router = useRouter()
+
+// Histoire courante (#60) : affichée dans la barre (le switch vit sur /chat),
+// et les fetchs d'entités la portent via useEntities.
+const { currentProjectName, refreshProjects } = useProject()
+onMounted(() => { void refreshProjects() })
 
 // Un seul fetch (toutes sauf événements) : il alimente à la fois les filtres
 // (types réellement présents) et la grille. Le filtre est client-side → pas de
@@ -41,7 +46,7 @@ function selectType(type: string | undefined) {
       </div>
       <div class="fbar-brand">
         <span class="felix-mark"><AtelierIcon name="felix" :size="15" /></span>
-        <span class="fbar-project">Rivière basse</span>
+        <span class="fbar-project">{{ currentProjectName }}</span>
       </div>
     </header>
 

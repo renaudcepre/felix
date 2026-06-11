@@ -21,6 +21,7 @@ from protest.evals import TaskResult
 
 from evals._judge import MISTRAL_SMALL_INPUT_COST, MISTRAL_SMALL_OUTPUT_COST
 from felix.core import (
+    DEFAULT_PROJECT,
     GenericDeps,
     all_entities,
     all_relations,
@@ -100,12 +101,13 @@ async def run_generic_case(
             in_tok += usage.request_tokens or 0
             out_tok += usage.response_tokens or 0
 
-        out.entities = await all_entities(driver)
-        out.relations = await all_relations(driver)
+        out.entities = await all_entities(driver, project=DEFAULT_PROJECT)
+        out.relations = await all_relations(driver, project=DEFAULT_PROJECT)
         out.cards = [card.model_dump() for card in deps.ui_events]
 
         if inputs.get("check"):
-            verdict = await consistency_check(driver, inputs["check"], deps.write_log)
+            verdict = await consistency_check(driver, inputs["check"], deps.write_log,
+                                              project=DEFAULT_PROJECT)
             out.check = verdict.model_dump()
 
     return TaskResult(

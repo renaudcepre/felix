@@ -1,11 +1,16 @@
 import type { EntityPatch, RelationRef } from '~/types/entities'
+import { currentProject } from './useProject'
 
 // Édition manuelle de la bible (#61) — quand Felix se trompe, l'auteur corrige
 // DEPUIS l'UI. Chaque appel laisse un tombstone :UserEdit côté backend, injecté
 // au LLM au tour suivant : supprimer une fiche ici ne la fait PAS renaître.
+// Tous les appels portent l'histoire courante (#60).
 export function useEntityEdits() {
   async function deleteEntity(id: string): Promise<void> {
-    await $fetch(`/api/entities/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    await $fetch(`/api/entities/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      query: { project: currentProject.value },
+    })
   }
 
   // Rename + set/retrait de props. Renvoie l'id final (il change au rename,
@@ -13,7 +18,7 @@ export function useEntityEdits() {
   async function patchEntity(id: string, patch: EntityPatch): Promise<{ id: string, merged: boolean }> {
     return await $fetch<{ id: string, merged: boolean }>(
       `/api/entities/${encodeURIComponent(id)}`,
-      { method: 'PATCH', body: patch },
+      { method: 'PATCH', body: patch, query: { project: currentProject.value } },
     )
   }
 
@@ -24,7 +29,10 @@ export function useEntityEdits() {
         method: 'DELETE',
         // Arête narrative (LIE_A) : le verbe_slug complète la clé — sans lui,
         // supprimer « aime » emporterait aussi « commande » (#68).
-        query: rel.verbe_slug ? { verbe_slug: rel.verbe_slug } : undefined,
+        query: {
+          project: currentProject.value,
+          ...(rel.verbe_slug ? { verbe_slug: rel.verbe_slug } : {}),
+        },
       },
     )
   }

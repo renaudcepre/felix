@@ -20,45 +20,55 @@ if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
 
-async def record_user_edit(driver: AsyncDriver, kind: str, name: str, detail: str) -> None:
+async def record_user_edit(
+    driver: AsyncDriver, kind: str, name: str, detail: str, *, project: str
+) -> None:
     """Trace une action manuelle (kind: 'suppression' | 'correction').
 
     `detail` est la phrase injectée telle quelle au LLM — la rédiger côté route,
-    complète et autoportante (« l'entité X (personnage) a été supprimée »)."""
+    complète et autoportante (« l'entité X (personnage) a été supprimée »).
+    Scopée par projet (#60) : une suppression dans l'histoire A ne s'injecte
+    jamais dans les prompts de l'histoire B."""
     async with driver.session() as session:
         await session.run(
             "CREATE (:UserEdit {kind: $kind, name: $name, detail: $detail,"
-            " ts: timestamp(), notified: false})",
-            kind=kind, name=name, detail=detail,
+            " ts: timestamp(), notified: false, project: $project})",
+            kind=kind, name=name, detail=detail, project=project,
         )
 
 
-async def recent_user_edits(driver: AsyncDriver, limit: int, ttl_minutes: int) -> list[dict]:
+async def recent_user_edits(
+    driver: AsyncDriver, limit: int, ttl_minutes: int, *, project: str
+) -> list[dict]:
     """Les actions manuelles encore vivantes (TTL), plus anciennes d'abord — et PURGE
     au passage celles qui ont expiré (un appel par tour de chat suffit comme GC).
 
     Le TTL borne la durée de la consigne « ne recrée pas » : passé ce délai,
-    l'auteur peut réintroduire le même nom sans que le bloc s'y oppose."""
+    l'auteur peut réintroduire le même nom sans que le bloc s'y oppose.
+    Purge et lecture sont scopées par projet : chaque tour de chat fait le
+    ménage de SA propre histoire (un projet jamais revisité garde ses tombstones
+    expirés — inertes, personne ne les lit)."""
     cutoff_ms = ttl_minutes * 60_000
     async with driver.session() as session:
         await session.run(
-            "MATCH (u:UserEdit) WHERE u.ts < timestamp() - $cutoff DELETE u",
-            cutoff=cutoff_ms,
+            "MATCH (u:UserEdit {project: $project})"
+            " WHERE u.ts < timestamp() - $cutoff DELETE u",
+            cutoff=cutoff_ms, project=project,
         )
         result = await session.run(
             """
-            MATCH (u:UserEdit)
+            MATCH (u:UserEdit {project: $project})
             RETURN u.kind AS kind, u.name AS name, u.detail AS detail
             ORDER BY u.ts DESC LIMIT $limit
             """,
-            limit=limit,
+            limit=limit, project=project,
         )
         rows = [dict(r) for r in await result.data()]
     rows.reverse()  # chronologique : la dernière action en dernier (la plus saillante)
     return rows
 
 
-async def consume_unnotified_edits(driver: AsyncDriver) -> list[dict]:
+async def consume_unnotified_edits(driver: AsyncDriver, *, project: str) -> list[dict]:
     """Les actions pas encore annoncées au MAÎTRE — marquées `notified` au passage.
 
     Le maître est threadé : une fois le marqueur entré dans son fil, le répéter
@@ -68,11 +78,12 @@ async def consume_unnotified_edits(driver: AsyncDriver) -> list[dict]:
     async with driver.session() as session:
         result = await session.run(
             """
-            MATCH (u:UserEdit) WHERE u.notified = false
+            MATCH (u:UserEdit {project: $project}) WHERE u.notified = false
             SET u.notified = true
             RETURN u.kind AS kind, u.name AS name, u.detail AS detail
             ORDER BY u.ts
-            """
+            """,
+            project=project,
         )
         return [dict(r) for r in await result.data()]
 

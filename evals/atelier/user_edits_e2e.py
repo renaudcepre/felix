@@ -22,7 +22,7 @@ import httpx
 
 from evals.atelier.e2e import norm, play_turn
 from felix.api.main import app, lifespan
-from felix.core import all_entities
+from felix.core import DEFAULT_PROJECT, all_entities
 from felix.graph.driver import get_driver
 
 TURN_CREATE = (
@@ -40,7 +40,24 @@ def names_of(ents: list[dict]) -> set[str]:
 
 def has(ents: list[dict], frag: str) -> bool:
     """Présence par FRAGMENT de nom : Small baptise librement (« la citadelle de
-    Vels », « capitaine Doran ») — on asserte le référent, pas le libellé exact."""
+    Vels », « capitaine Doran ») — on asserte le référent, pas le libellé exact.
+
+    Les ÉVÉNEMENTS sont exclus : leur name EST leur résumé, qui peut citer un nom
+    supprimé sans que l'entité existe (« Ottra répare la herse » survit — à
+    raison — au DELETE de la fiche Ottra ; la chronologie n'est pas la bible).
+    Sans ce filtre, l'invariant anti-résurrection devient un faux positif dès que
+    le chroniqueur capte l'action du tour 1."""
+    return any(
+        frag in norm(e.get("name", ""))
+        for e in ents if e.get("entity_type") != "evenement"
+    )
+
+
+def has_any(ents: list[dict], frag: str) -> bool:
+    """Comme has(), événements INCLUS — pour asserter « le modèle a écrit quelque
+    chose sur X » (fiche OU événement). La passe entités peut rater la fiche
+    (sous-extraction #57) pendant que le chroniqueur capte l'action : pour
+    l'invariant « pas rendu muet par le tombstone », les deux comptent."""
     return any(frag in n for n in names_of(ents))
 
 
@@ -58,7 +75,7 @@ async def main() -> int:
                                      timeout=180) as client:
             # 1. Un tour crée Ottra + Vels.
             _, cards, history = await play_turn(client, TURN_CREATE, None)
-            ents = await all_entities(driver)
+            ents = await all_entities(driver, project=DEFAULT_PROJECT)
             print(f"tour 1 : {len(cards)} cartes, entités = {sorted(names_of(ents))}")
             checks.append(("tour 1 crée Ottra et Vels",
                            has(ents, "ottra") and has(ents, "vels"),
@@ -71,7 +88,7 @@ async def main() -> int:
             resp = await client.delete("/api/entities/ottra")
             checks.append(("DELETE /api/entities/ottra → 200",
                            resp.status_code == 200, f"HTTP {resp.status_code}"))
-            ents = await all_entities(driver)
+            ents = await all_entities(driver, project=DEFAULT_PROJECT)
             checks.append(("Ottra absente de la bible après DELETE",
                            "ottra" not in names_of(ents), f"{sorted(names_of(ents))}"))
             async with driver.session() as session:
@@ -82,12 +99,12 @@ async def main() -> int:
 
             # 3. Tour voisin (Ottra vit encore dans l'historique threadé) → 0 recréation.
             _, cards, history = await play_turn(client, TURN_NEIGHBOR, history)
-            ents = await all_entities(driver)
+            ents = await all_entities(driver, project=DEFAULT_PROJECT)
             print(f"tour 2 : {len(cards)} cartes, entités = {sorted(names_of(ents))}")
             checks.append(("le tour suivant ne RECRÉE pas Ottra (anti-résurrection)",
                            not has(ents, "ottra"), f"{sorted(names_of(ents))}"))
             checks.append(("le tour suivant écrit quand même (Doran capté)",
-                           has(ents, "doran"), f"{sorted(names_of(ents))}"))
+                           has_any(ents, "doran"), f"{sorted(names_of(ents))}"))
 
             # 4. L'auteur renomme la fiche de Vels → Velsgarde depuis l'UI (la cible
             # se résout comme le front le ferait : la fiche dont le nom porte Vels).
@@ -106,7 +123,7 @@ async def main() -> int:
 
             # 5. Tour qui mentionne l'ANCIEN nom → la fiche renommée ne réapparaît pas.
             _, cards, history = await play_turn(client, TURN_OLD_NAME, history)
-            ents = await all_entities(driver)
+            ents = await all_entities(driver, project=DEFAULT_PROJECT)
             print(f"tour 3 : {len(cards)} cartes, entités = {sorted(names_of(ents))}")
             ids = {e["id"] for e in ents}
             checks.append(("l'ancien nom ne ressuscite pas la fiche renommée",
