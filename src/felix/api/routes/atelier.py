@@ -15,7 +15,7 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sse_starlette import EventSourceResponse, ServerSentEvent
@@ -29,18 +29,25 @@ from felix.api.deps import (
     RelationAgentsDep,
 )
 from felix.api.history import window_history_by_tokens
-from felix.api.models import ChatRequest
+from felix.api.models import ChatRequest, ConversationMessageOut
 from felix.atelier.agent import ATELIER_CHOICES, DEFAULT_PROFILE
 from felix.config import settings
 from felix.core import (
     GenericDeps,
+    archive_conversation,
     consistency_check,
     consume_unnotified_edits,
+    conversation_messages,
+    link_produced,
+    load_llm_history,
     recent_entities,
     recent_user_edits,
+    record_message,
     render_recent_block,
     render_user_edits_block,
+    save_llm_history,
 )
+from felix.core.projects import DEFAULT_PROJECT
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -162,7 +169,7 @@ async def atelier_profiles() -> list[dict[str, str]]:
 
 
 @router.post("/chat")
-async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances FastAPI
+async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup avant le générateur
     body: ChatRequest,
     gate_agent: GateAgentDep,
     master_agents: MasterAgentsDep,
@@ -181,14 +188,35 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
 
     message_history = None
     if body.message_history:
+        # Chemin eval/e2e : le front (ou le test) fournit un historique contrôlé —
+        # prioritaire, on ne touche pas au :Thread. Borne toujours par budget.
         full = ModelMessagesTypeAdapter.validate_python(body.message_history)
         # Borne l'historique threadé par budget de tokens : on garde les tours
         # récents, le graphe (list_entities/find_entity) sert de mémoire longue.
         # Au niveau route plutôt que via history_processors → borne AUSSI le payload
         # SSE `history` renvoyé au front (réseau + mémoire front), pas que l'input modèle.
         message_history = window_history_by_tokens(full, settings.history_token_budget)
+    else:
+        # Chemin normal du front web (#63) : le fil est stocké côté serveur dans
+        # :Thread, le front n'a plus besoin de gérer du localStorage. On charge,
+        # on borne, et on garde le même chemin que ci-dessus.
+        raw = await load_llm_history(driver, project=body.project)
+        if raw is not None:
+            full = ModelMessagesTypeAdapter.validate_python(json.loads(raw))
+            message_history = window_history_by_tokens(full, settings.history_token_budget)
 
-    async def event_generator() -> AsyncGenerator[ServerSentEvent]:
+    async def event_generator() -> AsyncGenerator[ServerSentEvent]:  # noqa: PLR0912 — branches = phases du tour (gate/extracteurs/checks), toutes intentionnelles
+        # Persistance du message utilisateur dès l'entrée du tour (#63) : si une
+        # passe LLM crashe ensuite, la question reste en base — c'est voulu (témoi-
+        # gnage que la question a été posée, indépendamment du succès de la réponse).
+        user_msg_id = await record_message(
+            driver, "user", "text", body.message, project=body.project
+        )
+        # Buffer d'accumulation du texte streamé par le maître (deltas).
+        master_text_buf: list[str] = []
+        # Cartes collectées ce tour : (kind, data_json) pour tool et alert.
+        turn_cards: list[tuple[str, str]] = []
+
         # GATE de routage STATELESS : décide si ce tour doit extraire, sur le message
         # SEUL (jamais le fil → l'ornière d'auto-imitation est impossible par
         # construction, issue #43). Lancé EN PARALLÈLE du maître : sa latence est
@@ -204,6 +232,11 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
                 message_history, deps, stream_text=True, holder=master
             ):
                 yield ev
+                # Accumulation du texte et collecte des cartes outil du maître.
+                if ev.event == "text":
+                    master_text_buf.append(ev.data)
+                elif ev.event == "tool":
+                    turn_cards.append(("tool", ev.data))
 
             usages = [master["usage"]]
             await _apply_gate_verdict(gate_task, deps, usages)
@@ -248,6 +281,8 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
                             sub_agent, prompt, hist, deps, stream_text=False, holder=sub
                         ):
                             yield ev
+                            if ev.event == "tool":
+                                turn_cards.append(("tool", ev.data))
                         usages.append(sub["usage"])
                     except Exception:
                         logger.exception("passe %s échouée (tour non bloqué)", label)
@@ -258,6 +293,7 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
                 try:
                     async for alert in _consistency_alerts(driver, deps, choice.profile):
                         yield alert
+                        turn_cards.append(("alert", alert.data))
                 except Exception:
                     logger.exception("consistency_check a échoué (tour non bloqué)")
 
@@ -278,9 +314,79 @@ async def atelier_chat(  # noqa: PLR0913 — params = injection de dépendances 
             serialized = ModelMessagesTypeAdapter.dump_python(master["messages"], mode="json")
             yield ServerSentEvent(data=json.dumps(serialized), event="history")
 
+            # --- Persistance du tour en graphe (#63) ---
+            # Ordre garanti : texte felix → cartes → provenance → fil threadé.
+            # Exécuté APRÈS l'event history (compat e2e) et AVANT done.
+            if master_text_buf:
+                await record_message(
+                    driver, "felix", "text", "".join(master_text_buf),
+                    project=body.project,
+                )
+            for kind, card_data in turn_cards:
+                await record_message(
+                    driver, "felix", kind, "", payload=card_data,
+                    project=body.project,
+                )
+            # Provenance : le message de l'AUTEUR a produit les entités touchées
+            # ce tour. Scoping fort : link_produced ne traverse pas les projets.
+            await link_produced(driver, user_msg_id, deps.touched_ids, project=body.project)
+            # Le fil threadé du maître est stocké côté serveur : le front web n'a
+            # plus besoin de localStorage. Les evals/e2e qui fournissent
+            # message_history continuent à fonctionner sans aucun changement.
+            await save_llm_history(
+                driver, json.dumps(serialized), project=body.project
+            )
+
             yield ServerSentEvent(data="", event="done")
         except Exception as e:
             gate_task.cancel()
             yield ServerSentEvent(data=str(e), event="error")
 
     return EventSourceResponse(event_generator())
+
+
+@router.get("/conversation")
+async def get_conversation(
+    driver: Neo4jDriver,
+    project: str = Query(default=DEFAULT_PROJECT),
+) -> list[ConversationMessageOut]:
+    """Messages non archivés de la conversation active, ordonnés par ord.
+
+    payload est décodé de JSON string (base) vers dict (API) — None pour
+    les messages kind='text'. Le front utilise cette route pour restaurer
+    l'affichage après un rechargement de page (pas de localStorage)."""
+    msgs = await conversation_messages(driver, project=project)
+    out = []
+    for m in msgs:
+        payload_raw = m.get("payload")
+        payload_dict: dict | None = None
+        if payload_raw is not None:
+            try:
+                payload_dict = json.loads(payload_raw)
+            except (json.JSONDecodeError, TypeError):
+                payload_dict = None
+        out.append(
+            ConversationMessageOut(
+                id=m["id"],
+                role=m["role"],
+                kind=m["kind"],
+                body=m.get("body") or "",
+                ord=m["ord"],
+                payload=payload_dict,
+            )
+        )
+    return out
+
+
+@router.post("/conversation/clear")
+async def clear_conversation(
+    driver: Neo4jDriver,
+    project: str = Query(default=DEFAULT_PROJECT),
+) -> dict[str, int]:
+    """Archive la conversation active et remet le fil LLM à null.
+
+    Archive ≠ suppression : les nœuds :Message restent en base pour le futur
+    repêchage (brique 3). Après cet appel, conversation_messages retourne [],
+    et load_llm_history retourne None — nouvelle conversation propre."""
+    n = await archive_conversation(driver, project=project)
+    return {"archived": n}

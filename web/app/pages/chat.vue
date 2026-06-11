@@ -45,7 +45,7 @@ function clickNewConversation() {
   }
   if (confirmNewTimer) clearTimeout(confirmNewTimer)
   confirmNew.value = false
-  newConversation()
+  void newConversation()
 }
 const scrollRef = ref<HTMLElement | null>(null)
 const taRef = ref<HTMLTextAreaElement | null>(null)

@@ -1,6 +1,6 @@
 import type { AtelierMsg } from '~/types/atelier'
 import { parseSSEStream } from '~/utils/parseSSE'
-import { currentProject, DEFAULT_PROJECT } from './useProject'
+import { currentProject } from './useProject'
 
 // Carte tool émise par le backend (event SSE `tool`) — cf. felix/core/models.py
 interface ToolCardPayload {
@@ -24,27 +24,27 @@ interface AlertPayload {
   status: 'open' | 'resolving' | 'resolved' | 'dismissed'
 }
 
+// Message persisté côté serveur (GET /api/atelier/conversation, #63).
+interface ConversationMessageOut {
+  id: string
+  role: 'user' | 'felix'
+  kind: 'text' | 'tool' | 'alert'
+  body: string
+  ord: number
+  payload: Record<string, unknown> | null
+}
+
 const WELCOME: Omit<AtelierMsg, 'id'> = {
   role: 'felix',
   kind: 'text',
   body: 'Bonjour. Raconte-moi ton histoire : décris tes personnages au fil de l\'eau, et je tiendrai leurs fiches à jour dans la bible.',
 }
 
-// Conversation PAR PROJET (#60) : changer d'histoire change de fil — le fil
-// threadé du maître référence les entités de SON histoire, le partager
-// contaminerait l'autre. Le projet par défaut garde la clé historique (la
-// conversation d'avant le scoping survit au passage à #60).
-const STORAGE_BASE = 'felix.atelier.conversation.v1'
-const storageKey = (project: string) =>
-  project === DEFAULT_PROJECT ? STORAGE_BASE : `${STORAGE_BASE}:${project}`
-
-// État SINGLETON (hors de useAtelier) : il survit au démontage/remontage de la
-// page. Avant, useAtelier() recréait des refs neuves à chaque appel → quitter
-// /chat et revenir repartait de zéro. Ici on le persiste aussi en localStorage
-// pour survivre au reload (F5). La bible (Neo4j) gardait déjà l'univers ; ce
-// qu'on garde ici, c'est le FIL de conversation + l'historique threadé au LLM
-// (messageHistory) sans quoi Felix perdrait le contexte en reprenant.
-// Hypothèse assumée : app local-first MONO-utilisateur (pas de fuite inter-requêtes).
+// État SINGLETON (hors de useAtelier) : survit au démontage/remontage de la page.
+// Depuis #63 (brique 2), la conversation EST EN BASE Neo4j — source de vérité.
+// Plus de localStorage pour le fil (felix.atelier.conversation.v1*) : les vieilles
+// clés restent mortes dans les navigateurs, on ne migre pas (décision assumée).
+// NE PAS TOUCHER à felix.project.v1 (useProject).
 let _seq = 0
 const uid = () => ++_seq
 
@@ -54,99 +54,153 @@ const typing = ref(false)
 // cohérence) — affichée près de l'indicateur de frappe pour ne pas laisser
 // l'auteur devant un long silence pendant ces passes non streamées.
 const phase = ref<string | null>(null)
-const messageHistory = ref<object[]>([])
 // Garde-fou « session muette » (issue #43) : si la bible est toujours vide après
 // 3 tours d'auteur, on l'affiche au lieu de laisser la session se perdre en
 // silence. Toute carte `tool` est une écriture (les lectures n'émettent pas de
 // carte) — le compteur repart à zéro dès que la bible bouge.
+// Ces deux flags sont désormais DÉRIVÉS du fil hydraté (pas stockés/lus de localStorage).
 const silentTurns = ref(0)
 const everWrote = ref(false)
 const silentSession = computed(() => !everWrote.value && silentTurns.value >= 3)
 
 let initialized = false
-let persistTimer: ReturnType<typeof setTimeout> | null = null
 
-function persist(project: string = currentProject.value) {
-  if (!import.meta.client) return
-  try {
-    localStorage.setItem(storageKey(project), JSON.stringify({
-      seq: _seq,
-      messages: messages.value,
-      messageHistory: messageHistory.value,
-      silentTurns: silentTurns.value,
-      everWrote: everWrote.value,
-    }))
-  }
-  catch { /* quota / mode privé : on dégrade silencieusement vers le non-persisté */ }
-}
-
-function schedulePersist() {
-  if (!import.meta.client) return
-  if (persistTimer) clearTimeout(persistTimer)
-  // Débounce : le stream pousse beaucoup de deltas texte, inutile d'écrire à chaque.
-  persistTimer = setTimeout(persist, 300)
-}
+// Compteur de génération pour détecter les résultats périmés après un switch
+// d'histoire pendant le fetch d'hydratation (évite d'afficher le fil de l'ancien
+// projet si le nouveau projet répond en premier).
+let _hydrationGen = 0
 
 function freshWelcome() {
   _seq = 0
   messages.value = [{ id: uid(), ...WELCOME }]
-  messageHistory.value = []
   silentTurns.value = 0
   everWrote.value = false
 }
 
-function hydrate(): boolean {
-  if (!import.meta.client) return false
-  const raw = localStorage.getItem(storageKey(currentProject.value))
-  if (!raw) return false
-  try {
-    const s = JSON.parse(raw) as {
-      seq?: number
-      messages?: AtelierMsg[]
-      messageHistory?: object[]
-      silentTurns?: number
-      everWrote?: boolean
+// Dérive les compteurs de session muette depuis le fil hydraté.
+// À appeler juste après avoir rempli messages.value depuis le serveur.
+// everWrote = au moins une carte tool dans le fil (une écriture en base).
+// silentTurns = si déjà écrit : 0 ; sinon le nombre de messages de l'auteur.
+function deriveCounters() {
+  const hasWrite = messages.value.some(m => m.kind === 'tool')
+  everWrote.value = hasWrite
+  silentTurns.value = hasWrite ? 0 : messages.value.filter(m => m.role === 'user').length
+}
+
+// Mapping ConversationMessageOut → AtelierMsg.
+// Renvoie null pour les messages tool/alert dont le payload est absent (défensif :
+// un bug de persistance ne doit pas faire planter l'hydratation entière).
+function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
+  if (m.kind === 'text') {
+    return {
+      id: uid(),
+      role: m.role === 'user' ? 'user' : 'felix',
+      kind: 'text',
+      body: m.body,
     }
-    if (!Array.isArray(s.messages) || s.messages.length === 0) return false
-    messages.value = s.messages
-    messageHistory.value = Array.isArray(s.messageHistory) ? s.messageHistory : []
-    silentTurns.value = s.silentTurns ?? 0
-    everWrote.value = s.everWrote ?? false
-    _seq = s.seq ?? messages.value.reduce((m, x) => Math.max(m, x.id), 0)
-    return true
   }
-  catch {
-    return false
+  if (m.kind === 'tool') {
+    if (!m.payload) return null
+    const p = m.payload as unknown as ToolCardPayload
+    return {
+      id: uid(),
+      role: 'felix',
+      kind: 'tool',
+      tool: p.tool,
+      title: p.title,
+      subject: p.subject,
+      field: p.field,
+      added: p.added,
+      entityId: p.entity_id ?? undefined,
+      relation: p.relation ?? undefined,
+    }
+  }
+  if (m.kind === 'alert') {
+    if (!m.payload) return null
+    const p = m.payload as unknown as AlertPayload
+    return {
+      id: uid(),
+      role: 'felix',
+      kind: 'alert',
+      title: p.title,
+      body: p.body,
+      status: p.status,
+    }
+  }
+  return null
+}
+
+// Hydratation depuis GET /api/atelier/conversation.
+// Retourne :
+//   'ok'    : fil chargé et appliqué dans messages.value
+//   'empty' : fil vide ou fetch en erreur (l'appelant doit afficher freshWelcome)
+//   'stale' : un switch d'histoire a eu lieu PENDANT le fetch — ne rien appliquer
+//             (la nouvelle hydratation gèrera elle-même le résultat)
+async function hydrateFromServer(project: string): Promise<'ok' | 'empty' | 'stale'> {
+  const myGen = ++_hydrationGen
+  try {
+    const serverMsgs = await $fetch<ConversationMessageOut[]>(
+      '/api/atelier/conversation',
+      { query: { project } },
+    )
+    if (myGen !== _hydrationGen) return 'stale'
+    if (!Array.isArray(serverMsgs) || serverMsgs.length === 0) return 'empty'
+    _seq = 0
+    const mapped = serverMsgs.map(mapServerMsg).filter((m): m is AtelierMsg => m !== null)
+    if (mapped.length === 0) return 'empty'
+    messages.value = mapped
+    deriveCounters()
+    return 'ok'
+  }
+  catch (err) {
+    if (myGen !== _hydrationGen) return 'stale'
+    console.error('[useAtelier] hydrateFromServer — échec du fetch :', err)
+    return 'empty'
   }
 }
 
 function ensureInit() {
   if (initialized) return
   initialized = true
-  if (!hydrate()) freshWelcome()
-  // Persiste à chaque évolution du fil : texte streamé, cartes, édits (#61),
-  // nouvel historique threadé. Scope DÉTACHÉ (effectScope(true)) sinon le watch,
-  // créé pendant le setup de la 1ʳᵉ page, serait tué à son démontage → la
-  // persistance des édits s'arrêterait après la 1ʳᵉ navigation.
-  if (import.meta.client) {
-    effectScope(true).run(() => {
-      watch([messages, messageHistory], schedulePersist, { deep: true })
-      // Changement d'histoire : on fige le fil de l'ANCIEN projet sous sa clé
-      // (flush du débounce), puis on charge celui du nouveau (ou un fil vierge).
-      watch(currentProject, (_nv, ov) => {
-        if (persistTimer) clearTimeout(persistTimer)
-        persist(ov)
-        if (!hydrate()) freshWelcome()
-        persist()
-      })
+  if (!import.meta.client) return
+
+  // Hydratation asynchrone : fire-and-forget.
+  // Le fil reste VIDE pendant le chargement (pas de flash welcome → remplacement).
+  // Si le serveur retourne un fil vide OU si le fetch échoue, on affiche le welcome.
+  // 'stale' : un switch d'histoire a pris le relais avant la fin — on ne fait rien.
+  void hydrateFromServer(currentProject.value).then((result) => {
+    if (result === 'empty') freshWelcome()
+  })
+
+  // Scope DÉTACHÉ (effectScope(true)) : le watch survit au démontage de la 1ʳᵉ page.
+  effectScope(true).run(() => {
+    // Changement d'histoire : fil vide pendant le chargement, puis hydratation
+    // depuis le serveur (fil du nouveau projet, ou welcome si vide).
+    // Plus de flush/lecture localStorage — le serveur est la source de vérité.
+    watch(currentProject, async (nv) => {
+      messages.value = []
+      const result = await hydrateFromServer(nv)
+      if (result === 'empty') freshWelcome()
+      // 'stale' : encore un switch entre-temps — la nouvelle instance gère
     })
-  }
+  })
 }
 
-// Repartir d'une conversation vierge (et oublier la persistée).
-function newConversation() {
-  freshWelcome()
-  persist()
+// Repartir d'une conversation vierge.
+// Archive côté serveur (≠ suppression : les nœuds :Message restent en base pour
+// le futur repêchage — brique 3), puis welcome local. En cas d'échec réseau,
+// on conserve le fil courant (l'erreur est loggée, pas affichée dans l'UI).
+async function newConversation() {
+  try {
+    await $fetch('/api/atelier/conversation/clear', {
+      method: 'POST',
+      query: { project: currentProject.value },
+    })
+    freshWelcome()
+  }
+  catch (err) {
+    console.error('[useAtelier] newConversation — échec de l\'archivage serveur :', err)
+  }
 }
 
 export function useAtelier() {
@@ -177,8 +231,10 @@ export function useAtelier() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: t,
-          message_history: messageHistory.value,
-          // Histoire courante (#60) : le serveur est stateless, chaque tour la porte.
+          // message_history supprimé (#63, brique 2) : le serveur tient le fil
+          // LLM dans :Thread (nœud Neo4j). Le front n'a plus à gérer l'historique.
+          // Les evals/e2e qui fournissent message_history dans le body continuent
+          // à fonctionner côté backend sans aucune modification.
           project: currentProject.value,
         }),
       })
@@ -226,7 +282,9 @@ export function useAtelier() {
             break
           }
           case 'history':
-            messageHistory.value = JSON.parse(sse.data) as object[]
+            // Le serveur émet toujours `history` pour la compat e2e/evals (qui
+            // fournissent message_history côté back) — le front n'en a plus besoin
+            // depuis #63 (fil threadé géré côté serveur en :Thread).
             break
           case 'error':
             append({ role: 'felix', kind: 'text', body: `Erreur : ${sse.data}` })
@@ -250,7 +308,6 @@ export function useAtelier() {
       else {
         silentTurns.value += 1
       }
-      persist()
     }
   }
 

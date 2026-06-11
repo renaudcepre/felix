@@ -21,6 +21,14 @@ from felix.core.graph import (
     rename_or_merge,
     render_recent_block,
 )
+from felix.core.messages import (
+    archive_conversation,
+    conversation_messages,
+    link_produced,
+    load_llm_history,
+    record_message,
+    save_llm_history,
+)
 from felix.core.models import RelationRef, ToolCard
 from felix.core.profile import CHANTIER_PROFILE, SCENARIO_PROFILE, EntityType, Profile
 from felix.core.projects import (
@@ -50,18 +58,24 @@ __all__ = [
     "ToolCard",
     "all_entities",
     "all_relations",
+    "archive_conversation",
     "consistency_check",
     "consume_unnotified_edits",
+    "conversation_messages",
     "create_core_agent",
     "create_project",
     "ensure_project_scoping",
+    "link_produced",
     "list_projects",
+    "load_llm_history",
     "merge_entity_into",
     "recent_entities",
     "recent_user_edits",
+    "record_message",
     "record_user_edit",
     "rel_label",
     "rename_or_merge",
     "render_recent_block",
     "render_user_edits_block",
+    "save_llm_history",
 ]

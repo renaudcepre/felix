@@ -33,6 +33,7 @@ CYPHER_MODULES = [
     SRC / "core" / "tools.py",
     SRC / "core" / "projects.py",
     SRC / "core" / "user_edits.py",
+    SRC / "core" / "messages.py",  # brique #63 — :Message / :Thread
     SRC / "api" / "routes" / "entities.py",
 ]
 
@@ -103,6 +104,30 @@ def test_deps_default_to_default_project() -> None:
     par défaut — comportement identique à l'avant-#60."""
     field = GenericDeps.__dataclass_fields__["project_id"]
     assert field.default == DEFAULT_PROJECT
+
+
+@project_scoping_suite.test()
+def test_message_queries_are_project_scoped() -> None:
+    """Chaque requête Cypher touchant :Message ou :Thread porte le scoping project.
+
+    Les messages sont du TÉMOIGNAGE (brique #63) : même loi que :GenEntity et
+    :UserEdit — une conversation du projet A ne doit jamais apparaître dans les
+    lectures du projet B. L'assert module.exists() met la suite en rouge tant que
+    messages.py n'existe pas : c'est l'état RED voulu de l'eval-first."""
+    path = SRC / "core" / "messages.py"
+    assert path.exists(), f"module attendu manquant : {path}"
+
+    missing = []
+    for marker in (":Message", ":Thread"):
+        queries = _cypher_strings(path, marker)
+        for where, query in queries:
+            if "project" not in query:
+                missing.append(f"{where} [{marker}] : {query.strip()[:80]}…")
+
+    assert not missing, (
+        "Requêtes :Message/:Thread SANS filtre project (contamination possible) :\n"
+        + "\n".join(missing)
+    )
 
 
 @project_scoping_suite.test()
