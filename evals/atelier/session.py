@@ -19,6 +19,8 @@ from evals.atelier.dataset import (
     BAPTEME_DIFFERE_INPUTS,
     CHECK_ACT_THEN_DEATH_INPUTS,
     CHECK_DEATH_THEN_ACT_INPUTS,
+    FLASHBACK_CORRECTION_INPUTS,
+    FLASHBACK_CREATION_INPUTS,
     GABARIT_AMBIANCE_INPUTS,
     SUBORDONNEE_CONTEXTE_INPUTS,
     SUBORDONNEE_FICHE_INPUTS,
@@ -35,6 +37,8 @@ from evals.atelier.task import (
     _bapteme_differe_check,
     _check_act_then_death,
     _check_death_then_act,
+    _flashback_correction_check,
+    _flashback_creation_check,
     _gabarit_ambiance_check,
     _subordonnee_contexte_check,
     _subordonnee_fiche_check,
@@ -200,4 +204,42 @@ async def subordonnee_contexte(
         SUBORDONNEE_CONTEXTE_INPUTS,
         n=3,
         check=_subordonnee_contexte_check,
+    )
+
+
+# ─────────────────── #44 : raconter dans le désordre ────────────────────────────────
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def flashback_correction(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#44 cas cirque : correction de l'ordre d'un événement existant (move_event).
+
+    Beat 1 : Jovan meurt. Beat 2 : event postérieur impliquant Jovan (juge alertera).
+    Beat 3 : « l'annonce de Kezra c'était la veille de la mort de Jovan, je raconte
+    dans le désordre » → move_event doit replacer l'annonce AVANT la mort.
+    Vert si ordre(annonce) < ordre(mort), seuil ≥2/3."""
+    return await run_atelier_multirun_case(
+        driver,
+        FLASHBACK_CORRECTION_INPUTS,
+        n=3,
+        check=_flashback_correction_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def flashback_creation(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#44 cas pétrolier : flashback explicite à la création (add_event avec avant=).
+
+    Beat 1 : Imra arrive. Beat 2 : « la tempête trois jours avant l'arrivée d'Imra,
+    je raconte dans le désordre » → add_event avec avant='arrivée d'Imra'.
+    Vert si ordre(tempête) < ordre(arrivée Imra), seuil ≥2/3."""
+    return await run_atelier_multirun_case(
+        driver,
+        FLASHBACK_CREATION_INPUTS,
+        n=3,
+        check=_flashback_creation_check,
     )

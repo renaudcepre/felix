@@ -490,3 +490,35 @@ atelier_cases = ForEach(
         ),
     ]
 )
+
+# ─── #44 : raconter dans le désordre — correction a posteriori (cas cirque) ─────────
+# Beat 1 : Jovan meurt. Beat 2 : un event postérieur impliquant Jovan (juge alertera).
+# Beat 3 : l'auteur corrige l'ordre → l'event du beat 2 doit se retrouver AVANT
+# la mort (ordre(annonce) < ordre(mort)).
+# Noms Jovan/Kezra : frais, absents de tous les prompts et evals existants.
+FLASHBACK_CORRECTION_INPUTS = {
+    "beats": [
+        "Jovan, l'acrobate vedette du cirque, rate son saut périlleux et s'écrase sur la piste. Il meurt sur le coup.",
+        "Kezra annonce le nom de Jovan sous les projecteurs et le public l'acclame longuement.",
+        "En fait, l'annonce de Kezra c'était la veille de la mort de Jovan — je raconte dans le désordre.",
+    ],
+    "seed": [
+        {"name": "Jovan", "entity_type": "personnage", "props": {"role": "acrobate vedette"}},
+        {"name": "Kezra", "entity_type": "personnage", "props": {"role": "présentatrice"}},
+    ],
+}
+
+# ─── #44 : raconter dans le désordre — insertion à la création (cas pétrolier) ──────
+# Beat 1 : Imra arrive (event A). Beat 2 : un flashback explicite « trois jours
+# avant l'arrivée d'Imra » → event B doit être créé AVANT event A
+# (ordre(tempête) < ordre(arrivée Imra)).
+# Nom Imra : frais, absent de tous les prompts et evals existants.
+FLASHBACK_CREATION_INPUTS = {
+    "beats": [
+        "Imra, la cheffe de plateforme, arrive sur le site en hélicoptère.",
+        "La tempête avait soufflé les antennes trois jours avant l'arrivée d'Imra — je raconte dans le désordre, c'est un flashback.",
+    ],
+    "seed": [
+        {"name": "Imra", "entity_type": "personnage", "props": {"role": "cheffe de plateforme"}},
+    ],
+}

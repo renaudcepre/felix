@@ -276,6 +276,58 @@ def _subordonnee_contexte_check(result: AtelierRunResult) -> bool:
     )
 
 
+def _flashback_correction_check(result: AtelierRunResult) -> bool:
+    """#44 cas cirque : l'event postérieur (annonce Kezra) doit être AVANT la mort.
+
+    Après le beat 3 (« je raconte dans le désordre »), l'événement « annonce / acclame »
+    doit avoir un ordre INFÉRIEUR à l'événement mort de Jovan.
+    Vert si ordre(annonce) < ordre(mort). normalize() pour l'insensibilité aux accents."""
+    events = [e for e in result.entities if e.get("entity_type") == "evenement"]
+    acclame = next(
+        (e for e in events
+         if "acclame" in normalize(str(e.get("resume", "")))
+         or "annonce" in normalize(str(e.get("resume", "")))),
+        None,
+    )
+    mort = next(
+        (e for e in events
+         if "jovan" in normalize(str(e.get("resume", "")))
+         and (
+             "meurt" in normalize(str(e.get("resume", "")))
+             or "mort" in normalize(str(e.get("resume", "")))
+             or "ecrase" in normalize(str(e.get("resume", "")))
+         )),
+        None,
+    )
+    if acclame is None or mort is None:
+        return False
+    return int(acclame.get("ordre", 999)) < int(mort.get("ordre", 0))
+
+
+def _flashback_creation_check(result: AtelierRunResult) -> bool:
+    """#44 cas pétrolier : l'event flashback (tempête) doit être AVANT l'arrivée.
+
+    Le beat 2 est un flashback explicite : la tempête s'est passée avant l'arrivée
+    d'Imra. Le chroniqueur doit créer cet event INSÉRÉ avec avant='arrivée d'Imra'.
+    Vert si ordre(tempête) < ordre(arrivée Imra)."""
+    events = [e for e in result.entities if e.get("entity_type") == "evenement"]
+    arrive = next(
+        (e for e in events
+         if "imra" in str(e.get("resume", "")).lower()
+         and "arriv" in str(e.get("resume", "")).lower()),
+        None,
+    )
+    tempete = next(
+        (e for e in events
+         if "tempete" in normalize(str(e.get("resume", "")))
+         or "antenne" in normalize(str(e.get("resume", "")))),
+        None,
+    )
+    if arrive is None or tempete is None:
+        return False
+    return int(tempete.get("ordre", 999)) < int(arrive.get("ordre", 0))
+
+
 def _bapteme_differe_check(result: AtelierRunResult) -> bool:
     """Critères inline du cas bapteme_differe : 1 personnage, Alikazeth unique.
 
@@ -312,7 +364,18 @@ async def run_atelier_multirun_case(
     last_tr: TaskResult[AtelierRunResult] | None = None
 
     for i in range(1, n + 1):
-        tr = await run_atelier_case(driver, inputs)
+        try:
+            tr = await run_atelier_case(driver, inputs)
+        except AssertionError:
+            # Un assert est un VERDICT ou un bug de harnais — jamais de la variance
+            # modèle : il remonte (le masquer en FAIL cacherait un bug, loi du repo).
+            raise
+        except Exception as exc:
+            # Erreur modèle (ex. UnexpectedModelBehavior « desc_schema extra args »,
+            # UsageLimitExceeded...) : variance du LLM, pas un bug protest.
+            # Compté comme FAIL pour ne pas crasher le verdict multirun.
+            print(f"  [multirun] pass {i}/{n} → MODEL_ERROR ({type(exc).__name__}: {str(exc)[:60]})")
+            continue
         total_in += tr.input_tokens or 0
         total_out += tr.output_tokens or 0
         ok = check(tr.output)
@@ -323,7 +386,14 @@ async def run_atelier_multirun_case(
         print(f"  [multirun] pass {i}/{n} → {status}  ({len(tr.output.characters)} perso(s) : {chars or '—'})")
         last_tr = tr
 
-    assert last_tr is not None  # n >= 1 garanti par l'appelant
+    if last_tr is None:
+        # Tous les passes ont levé une erreur modèle — résultat vide.
+        empty = AtelierRunResult(answer="", characters=[], entities=[], relations=[], cards=[])
+        empty.multirun_passes = 0
+        empty.multirun_total = n
+        print(f"  [multirun] verdict : 0/{n} passes (tous en erreur modèle)")
+        return TaskResult(output=empty, input_tokens=0, output_tokens=0, cost=0.0)
+
     last_tr.output.multirun_passes = passes
     last_tr.output.multirun_total = n
     print(f"  [multirun] verdict : {passes}/{n} passes")

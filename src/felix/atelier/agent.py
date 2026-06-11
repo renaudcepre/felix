@@ -24,6 +24,7 @@ from felix.core.tools import (
     describe_schema,
     find_entity,
     list_entities,
+    move_event,
 )
 from felix.llm import build_chat_model
 
@@ -287,14 +288,15 @@ def create_relation_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDe
 
 def build_chronicle_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
     """3e passe « chroniqueur » : transforme le beat en événements ordonnés. Outils
-    RESTREINTS (lecture + add_event) — add_event absorbe les participants manquants,
-    donc pas de boucle sur outil absent (contrairement au piège du relieur restreint
-    qui réclamait add_entity)."""
+    RESTREINTS (lecture + add_event + move_event) — add_event absorbe les participants
+    manquants, donc pas de boucle sur outil absent (contrairement au piège du relieur
+    restreint qui réclamait add_entity). move_event corrige l'ordre des events déjà
+    notés (#44 : raconter dans le désordre)."""
     agent = create_core_agent(
         profile=choice.profile,
         persona=CHRONICLE_PERSONA,
         system_prompt=CHRONICLE_SYSTEM_PROMPT,
-        tools=(describe_schema, find_entity, add_event),
+        tools=(describe_schema, find_entity, add_event, move_event),
     )
     agent.tool(list_entities)
     return agent

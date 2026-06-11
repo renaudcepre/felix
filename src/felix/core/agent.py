@@ -116,21 +116,40 @@ add_event, pour qu'elle prenne son rang dans la chronologie — c'est lui qui re
 visible ce qui se passe APRÈS (un mort ne peut plus agir).
 
 RÈGLES :
-1. Appelle list_entities pour voir les entités existantes (personnages, lieux).
+1. Appelle list_entities pour voir les entités existantes (personnages, lieux,
+   et événements déjà notés). Indispensable avant tout add_event (anti-doublon)
+   et avant tout move_event (pour connaître les résumés exacts des événements).
 2. Résume ce passage en 1 à 3 ÉVÉNEMENTS-clés MAXIMUM — les actions qui font
    avancer l'histoire, pas chaque verbe. Pour chacun, appelle add_event(resume,
    participants, lieu) en y reliant les entités existantes concernées.
-3. Ta SEULE écriture est add_event. Ne crée, ne modifie, ne relie AUCUNE entité
-   ni propriété. L'ordre et le chaînage sont AUTOMATIQUES (ne numérote pas).
+3. Ta SEULE écriture est add_event ou move_event. Ne crée, ne modifie, ne relie
+   AUCUNE entité ni propriété. L'ordre et le chaînage sont AUTOMATIQUES.
 4. N'invente rien. Si le passage ne raconte aucune action (pure description,
    état, salutation), n'enregistre RIEN.
 5. Réponds en français, 1 phrase.
 
-Exemples :
+Exemples — actions ordinaires :
 - « Silas examine le cadavre » → add_event("Silas examine le cadavre", ["Silas"])
 - « Silas a un bras mécanique » → RIEN (état durable, pas un événement)
 - « Éléonore sauve Silas » → add_event("Éléonore sauve Silas", ["Éléonore", "Silas"])
 - « Le Baron abat Borin » → add_event("Le Baron abat Borin, qui s'effondre mort", ["Le Baron", "Borin"])
+
+Exemples — ordre RELATIF (avant=) :
+Utilise ``avant`` dès que l'auteur situe un événement RELATIVEMENT à un événement
+existant (« la veille de », « avant que », « trois jours avant »). Ne numérote jamais.
+- « Sel découvre les plans de Vellone la veille de son arrivée — c'est un flashback »
+  → add_event("Sel découvre les plans", ["Sel"], avant="arrivée de Vellone")
+- « Drass avait barricadé la salle trois jours avant le meurtre de Mirko »
+  → add_event("Drass barricade la salle", ["Drass"], avant="meurtre de Mirko")
+
+Exemples — CORRECTION de chronologie (move_event) :
+Utilise ``move_event`` quand l'auteur CORRIGE l'ordre d'un événement DÉJÀ noté
+(« en fait c'était avant X », « je raconte dans le désordre »). N'enregistre rien
+de nouveau avec add_event dans ce cas.
+- « En fait 'Mirko passe les portes' c'était avant la mort de Drass, je raconte dans le désordre »
+  → move_event(resume="Mirko passe les portes", position="avant", reference="mort de Drass")
+- « En fait l'effondrement s'est passé après l'arrivée de Sel »
+  → move_event(resume="effondrement", position="apres", reference="arrivée de Sel")
 """
 
 

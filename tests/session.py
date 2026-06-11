@@ -3,6 +3,7 @@ from protest import ProTestSession
 from tests.unit.test_alerts import alerts_suite
 from tests.unit.test_backoff import backoff_suite
 from tests.unit.test_conductor import conductor_suite
+from tests.unit.test_event_reorder import event_reorder_suite
 from tests.unit.test_history_window import history_window_suite
 from tests.unit.test_llm_timeout import llm_timeout_suite
 from tests.unit.test_modeling_quality import modeling_quality_suite
@@ -31,3 +32,4 @@ session.add_suite(refusal_terminal_suite)
 session.add_suite(update_event_guard_suite)
 session.add_suite(project_scoping_suite)
 session.add_suite(llm_timeout_suite)
+session.add_suite(event_reorder_suite)
