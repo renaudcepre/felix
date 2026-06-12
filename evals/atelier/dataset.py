@@ -21,6 +21,7 @@ from evals.atelier.evaluators import (
     events_distinct,
     events_involve,
     events_ordered,
+    graph_blob,
     graph_char_count,
     graph_has_characters,
     graph_has_entities,
@@ -325,9 +326,14 @@ atelier_cases = ForEach(
                      "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
                 ],
             },
-            # Fait divergent (autre lieu, même soir) → s'AJOUTE sans écraser l'alibi :
-            # les DEUX doivent finir dans les props de Marco (ancien + nouveau).
-            evaluators=[char_props(name="Marco Santi", has="marseille, lyon")],
+            # Fait divergent (autre lieu, même soir) → s'AJOUTE sans écraser l'alibi.
+            # Deux formes CONFORMES (règle 4 : « nouvelle clé OU une relation ») :
+            # prop alibi_bis sur Marco, ou entité lieu + LOCATED_AT datée. Le check :
+            # marseille jamais écrasé (props de Marco), lyon enregistré (graphe entier).
+            evaluators=[
+                char_props(name="Marco Santi", has="marseille"),
+                graph_blob(has="lyon"),
+            ],
         ),
         EvalCase(
             name="explicit_correction_overwrites",

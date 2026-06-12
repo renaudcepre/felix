@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     llm_checker_base_url: str | None = None
     llm_chat_model: str | None = None
     llm_chat_base_url: str | None = None
+    # Gate de routage (1 appel court/tour, stateless) : tiering intra-famille —
+    # un petit modèle (ex. Devstral Small 2) suffit avec le gros en garant.
+    llm_gate_model: str | None = None
+    llm_gate_base_url: str | None = None
 
     logfire_token: str = Field(
         default="",

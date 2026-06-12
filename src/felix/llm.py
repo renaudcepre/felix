@@ -75,3 +75,15 @@ def build_checker_model() -> Model:
 def build_chat_model() -> Model:
     """Build model for the chatbot (per-feature override)."""
     return build_model(settings.llm_chat_model, settings.llm_chat_base_url)
+
+
+def build_gate_model() -> Model:
+    """Build model for the routing gate (per-feature override, fallback chat).
+
+    Le gate est le « petit truc simple » du tiering intra-famille : 1 appel
+    court, stateless, sortie structurée binaire — premier candidat à descendre
+    d'un tier (ex. Devstral Small 2) avec le modèle de chat en garant."""
+    return build_model(
+        settings.llm_gate_model or settings.llm_chat_model,
+        settings.llm_gate_base_url if settings.llm_gate_model else settings.llm_chat_base_url,
+    )

@@ -26,7 +26,7 @@ from felix.core.tools import (
     list_entities,
     move_event,
 )
-from felix.llm import build_chat_model
+from felix.llm import build_gate_model
 
 # Outils du relieur (passe 2) : le noyau SANS update_entity. Sa tâche est de RELIER
 # (add_relation), pas de toucher aux propriétés — le churn de props (ex. `arc`
@@ -203,7 +203,7 @@ def build_gate_agent() -> Agent[None, RouteDecision]:
     fraîcheur de la décision est la propriété qui tue l'ornière — ne pas lui
     passer de message_history."""
     return Agent(
-        build_chat_model(),
+        build_gate_model(),
         instructions=GATE_SYSTEM_PROMPT,
         output_type=RouteDecision,
         model_settings=ModelSettings(temperature=0.0),

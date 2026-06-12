@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from protest import ProTestSuite
 
-from felix.llm import build_model
+from felix.config import settings
+from felix.llm import build_chat_model, build_gate_model, build_model
 
 llm_timeout_suite = ProTestSuite("LlmTimeout")
 
@@ -30,3 +31,22 @@ def test_mistral_sdk_carries_explicit_timeout() -> None:
         "timeout (le None par requête écrase le timeout du client httpx)"
     )
     assert 30_000 <= timeout_ms <= 300_000, f"timeout_ms aberrant : {timeout_ms}"
+
+
+@llm_timeout_suite.test()
+def test_gate_model_fallback_chat() -> None:
+    """Sans FLX_LLM_GATE_MODEL, le gate tourne sur le modèle de chat (fallback)."""
+    assert settings.llm_gate_model is None, "préconception du test : pas d'override gate"
+    assert build_gate_model().model_name == build_chat_model().model_name
+
+
+@llm_timeout_suite.test()
+def test_gate_model_override() -> None:
+    """Avec un override gate, build_gate_model construit CE modèle-là."""
+    old_model, old_url = settings.llm_gate_model, settings.llm_gate_base_url
+    try:
+        settings.llm_gate_model = "labs-devstral-small-2512"
+        settings.llm_gate_base_url = None
+        assert build_gate_model().model_name == "labs-devstral-small-2512"
+    finally:
+        settings.llm_gate_model, settings.llm_gate_base_url = old_model, old_url

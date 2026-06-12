@@ -10,8 +10,10 @@ from tests.unit.test_modeling_quality import modeling_quality_suite
 from tests.unit.test_project_scoping import project_scoping_suite
 from tests.unit.test_recent_entities import recent_entities_suite
 from tests.unit.test_refusal_terminal import refusal_terminal_suite
+from tests.unit.test_relation_reemission import relation_reemission_suite
 from tests.unit.test_relation_typing import relation_typing_suite
 from tests.unit.test_resolver import resolver_suite
+from tests.unit.test_retype_entity import retype_entity_suite
 from tests.unit.test_update_event_guard import update_event_guard_suite
 from tests.unit.test_user_edits import user_edits_suite
 from tests.unit.test_vectorstore import vectorstore_suite
@@ -33,3 +35,5 @@ session.add_suite(update_event_guard_suite)
 session.add_suite(project_scoping_suite)
 session.add_suite(llm_timeout_suite)
 session.add_suite(event_reorder_suite)
+session.add_suite(relation_reemission_suite)
+session.add_suite(retype_entity_suite)

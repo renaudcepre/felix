@@ -539,6 +539,94 @@ async def rename_entity(
     return f"« {out.old_name} » renommé « {new_name} »."
 
 
+async def retype_entity(
+    ctx: RunContext[GenericDeps], name: str, nouveau_type: str
+) -> str:
+    """Corrige le TYPE d'une entité existante (« le Klarkz n'est pas un lieu,
+    c'est un minerai » → retype_entity('Klarkz', 'objet')).
+
+    À utiliser quand l'auteur dit qu'une entité a été rangée sous le mauvais type.
+    Ne touche ni au nom, ni aux propriétés, ni aux relations — mais signale les
+    relations que le nouveau type rend douteuses, sans les supprimer.
+
+    Args:
+        name: Nom ou id de l'entité existante.
+        nouveau_type: Le type corrigé (ex: objet, lieu, groupe, personnage).
+    """
+    node = await find_non_event(ctx.deps.driver, name, project=ctx.deps.project_id)
+    if not node:
+        return f"« {name} » n'existe pas — rien à retyper."
+
+    ancien = str(node.get("entity_type", "?"))
+    nouveau = nouveau_type.strip()
+    if nouveau.lower() == ancien.lower():
+        return f"« {node['name']} » est déjà de type {ancien} — rien à faire."
+
+    # Les gardes de CRÉATION sont rejouées sur le type cible (#75) : retyper vers
+    # `evenement` ou un état (#64) serait le même contournement qu'une création.
+    # On n'inscrit PAS le nom dans refused_names : l'entité existe et reste
+    # légitime sous son type actuel — seul le retypage est refusé.
+    refusal, _ = check_add_entity_guards(
+        node["name"], nouveau, set(), ctx.deps.profile
+    )
+    if refusal:
+        return refusal
+
+    async with ctx.deps.driver.session() as session:
+        await session.run(
+            "MATCH (e:GenEntity {id: $id, project: $project})"
+            " SET e.entity_type = $type",
+            id=node["id"], type=nouveau, project=ctx.deps.project_id,
+        )
+        # Re-valider les arêtes STRUCTURELLES sous le nouveau type : celles que
+        # le retypage rend invalides (domaine/portée) sont SIGNALÉES, jamais
+        # supprimées — l'auteur ou le checker tranchera (témoignage).
+        result = await session.run(
+            """
+            MATCH (e:GenEntity {id: $id, project: $project})-[r:REL]-(o:GenEntity)
+            WHERE r.rel_type IS NOT NULL
+              AND NOT r.rel_type IN ['LIE_A', 'NEXT', 'INVOLVES']
+            RETURN r.rel_type AS t, startNode(r) = e AS outgoing,
+                   o.entity_type AS otype, o.name AS oname
+            """,
+            id=node["id"], project=ctx.deps.project_id,
+        )
+        edges = [r.data() async for r in result]
+
+    doubtful: list[str] = []
+    if ctx.deps.profile is not None:
+        for e in edges:
+            from_t = nouveau if e["outgoing"] else str(e["otype"] or "")
+            to_t = str(e["otype"] or "") if e["outgoing"] else nouveau
+            problem = ctx.deps.profile.validate_relation(
+                e["t"], from_t, to_t, same_node=False, verbe="",
+            )
+            if problem:
+                arrow = f"{node['name']} —[{e['t']}]→ {e['oname']}" if e["outgoing"] \
+                    else f"{e['oname']} —[{e['t']}]→ {node['name']}"
+                doubtful.append(arrow)
+
+    ctx.deps.ui_events.append(
+        ToolCard(title="Type corrigé", subject=node["name"],
+                 field=ancien, added=f"→ {nouveau}", entity_id=node["id"])
+    )
+    ctx.deps.write_log.append(f"retypage {node['id']} : {ancien} → {nouveau} (correction)")
+    ctx.deps.touched_ids.add(node["id"])
+    await touch_entities(ctx.deps.driver, [node["id"]], project=ctx.deps.project_id)
+    # Le checker doit revoir l'entité : c'est lui qui alertait tant que le type
+    # était faux — l'alerte s'éteint par construction une fois le type corrigé.
+    ctx.deps.check_candidates.add(node["id"])
+
+    msg = f"« {node['name']} » est désormais de type {nouveau} (était : {ancien})."
+    if doubtful:
+        msg += (
+            " Attention, ce nouveau type rend douteuse(s) : "
+            + " ; ".join(doubtful)
+            + ". Rien n'a été supprimé — signale-le à l'auteur si pertinent."
+        )
+    return msg
+
+
 async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas une prop enfouie (#68)
     ctx: RunContext[GenericDeps],
     from_name: str,
@@ -594,31 +682,50 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
         if narrative:
             # Clé de MERGE = (paire, slug du verbe) : deux liens différents entre
             # la même paire (aime ET commande) = deux arêtes ; le même verbe
-            # re-extrait ne duplique pas (#68).
-            await session.run(
+            # re-extrait ne duplique pas (#68). `existed` détecte la ré-émission
+            # AVANT le MERGE (#45 : 3 moteurs ré-émettent l'existant chaque tour).
+            result = await session.run(
                 """
                 MATCH (a:GenEntity {id: $a, project: $project}),
                       (b:GenEntity {id: $b, project: $project})
+                OPTIONAL MATCH (a)-[e:REL {rel_type: $t, verbe_slug: $vs}]->(b)
+                WITH a, b, e IS NOT NULL AS existed
                 MERGE (a)-[r:REL {rel_type: $t, verbe_slug: $vs}]->(b)
                 SET r.verbe = $verbe, r += $props
+                RETURN existed
                 """,
                 a=a["id"], b=b["id"], t=rel_type, vs=slugify(verbe),
                 verbe=verbe, props=props, project=ctx.deps.project_id,
             )
         else:
-            await session.run(
+            result = await session.run(
                 """
                 MATCH (a:GenEntity {id: $a, project: $project}),
                       (b:GenEntity {id: $b, project: $project})
+                OPTIONAL MATCH (a)-[e:REL {rel_type: $t}]->(b)
+                WITH a, b, e IS NOT NULL AS existed
                 MERGE (a)-[r:REL {rel_type: $t}]->(b)
                 SET r += $props
+                RETURN existed
                 """,
                 a=a["id"], b=b["id"], t=rel_type, props=props,
                 project=ctx.deps.project_id,
             )
+        record = await result.single()
+        existed = bool(record and record["existed"])
+
+    label = verbe if narrative else rel_type
+    # Ré-émission d'une arête déjà en base (#45) : rien de nouveau n'a été écrit
+    # → NI carte NI write_log NI check (le MERGE dédupliquait déjà l'arête, mais
+    # chaque ré-émission polluait l'UI et le contexte du checker — vu sur les
+    # 3 moteurs, doublons intra-tour compris). On garde le tampon de récence :
+    # re-mentionner un lien maintient ses extrémités dans le working set.
+    if existed:
+        await touch_entities(ctx.deps.driver, [a["id"], b["id"]], project=ctx.deps.project_id)
+        return f"Relation déjà connue : {a['name']} —[{label}]→ {b['name']} (rien à ajouter)."
+
     # La carte et le log portent les MOTS de l'auteur pour une arête narrative
     # (thème papier, pas de jargon graphe) ; le type canonique sinon.
-    label = verbe if narrative else rel_type
     ctx.deps.ui_events.append(
         ToolCard(tool="people", title="Relation ajoutée", subject=a["name"],
                  field=label, added=b["name"],
