@@ -70,6 +70,8 @@ async def main() -> int:
     print(f"  relations créées : {report.relations}")
     print(f"  tokens (req/rép/total) : "
           f"{report.request_tokens}/{report.response_tokens}/{report.total_tokens}")
+    cost = f"{report.cost_usd:.4f} $" if report.cost_usd is not None else "prix inconnu"
+    print(f"  coût estimé : {cost}")
     if report.alerts:
         print(f"  alertes de cohérence ({len(report.alerts)}) :")
         for alert in report.alerts:

@@ -3,6 +3,7 @@ from protest import ProTestSession
 from tests.unit.test_alerts import alerts_suite
 from tests.unit.test_backoff import backoff_suite
 from tests.unit.test_conductor import conductor_suite
+from tests.unit.test_cost import cost_suite
 from tests.unit.test_emergent_profile import emergent_profile_suite
 from tests.unit.test_event_reorder import event_reorder_suite
 from tests.unit.test_history_window import history_window_suite
@@ -51,3 +52,4 @@ session.add_suite(emergent_profile_suite)
 session.add_suite(profile_store_suite)
 session.add_suite(profile_evolution_suite)
 session.add_suite(schema_detector_suite)
+session.add_suite(cost_suite)

@@ -3,7 +3,7 @@
 Protocole d'événements (aligné sur le modèle AtelierMsg du front) :
 - ``text``    : delta de texte du modèle
 - ``tool``    : carte structurée émise par un tool (JSON ToolCard)
-- ``usage``   : tokens de la requête (JSON)
+- ``usage``   : coût du tour — tokens + USD (JSON, cf. felix.cost.CostSummary)
 - ``history`` : message_history sérialisé pour le tour suivant (JSON)
 - ``alert``   : incohérence détectée par le check de cohérence (JSON, kind=alert)
 - ``done`` / ``error``
@@ -50,6 +50,7 @@ from felix.core import (
     load_llm_history,
     recent_entities,
     recent_user_edits,
+    record_cost_entry,
     record_message,
     render_alerts_block,
     render_recent_block,
@@ -57,11 +58,13 @@ from felix.core import (
     save_llm_history,
 )
 from felix.core.projects import DEFAULT_PROJECT
+from felix.cost import agent_model_name
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
     from neo4j import AsyncDriver
+    from pydantic_ai import Agent
 
 logger = logging.getLogger(__name__)
 
@@ -88,13 +91,17 @@ async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str
     return "\n\n".join(parts)
 
 
-async def _apply_gate_verdict(gate_task: asyncio.Task, deps: GenericDeps, usages: list) -> None:
+async def _apply_gate_verdict(gate_task: asyncio.Task, gate_agent: Agent, deps: GenericDeps) -> None:
     """Attend le gate et pose `extraction_requested`. Best-effort FAIL-CLOSED : si le
     gate crashe (transient LLM), on n'extrait pas ce tour — l'invariant produit n°1
-    reste « jamais d'écriture sans contenu », et le fait peut être redonné."""
+    reste « jamais d'écriture sans contenu », et le fait peut être redonné.
+
+    Le gate n'est pas joué via `stream_pass` (pas de cartes/texte à streamer) —
+    son coût est donc déposé ICI dans `deps.cost_ledger`, seul appel qui échappe
+    au dépôt automatique de `stream_pass`."""
     try:
         gate_run = await gate_task
-        usages.append(gate_run.usage())
+        deps.cost_ledger.add_usage(agent_model_name(gate_agent), gate_run.usage())
         if gate_run.output.noter:
             deps.extraction_requested = True
             deps.write_log.append(
@@ -193,8 +200,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 elif ev.event == "tool":
                     turn_cards.append(("tool", ev.data))
 
-            usages = [master["usage"]]
-            await _apply_gate_verdict(gate_task, deps, usages)
+            await _apply_gate_verdict(gate_task, gate_agent, deps)
 
             # Extracteurs MUETS, dispatchés UNIQUEMENT si le gate a signalé du contenu.
             # Une salutation / une question n'écrit donc RIEN (hallu impossible par
@@ -227,7 +233,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 async for ev in run_extractors(
                     agent, relation_agent, chronicle_agent,
                     extract_prompt, body.message, message_history,
-                    deps, profile, usages,
+                    deps, profile,
                 ):
                     yield ev
                     if ev.event == "tool":
@@ -243,16 +249,11 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 except Exception:
                     logger.exception("consistency_check a échoué (tour non bloqué)")
 
-            yield ServerSentEvent(
-                data=json.dumps(
-                    {
-                        "request_tokens": sum(u.request_tokens or 0 for u in usages),
-                        "response_tokens": sum(u.response_tokens or 0 for u in usages),
-                        "total_tokens": sum(u.total_tokens or 0 for u in usages),
-                    }
-                ),
-                event="usage",
-            )
+            # Coût du tour ENTIER (gate + maître + extracteurs + juge de cohérence) —
+            # un seul système de comptabilité (deps.cost_ledger), alimenté par
+            # chaque passe (cf. stream_pass / _apply_gate_verdict / consistency_check).
+            cost_summary = deps.cost_ledger.summary()
+            yield ServerSentEvent(data=cost_summary.model_dump_json(), event="usage")
 
             # L'historique threadé = le FIL DU MAÎTRE (la conversation), pas les
             # tool-calls d'extraction : le graphe est la mémoire longue, relue à la
@@ -263,16 +264,28 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             # --- Persistance du tour en graphe (#63) ---
             # Ordre garanti : texte felix → cartes → provenance → fil threadé.
             # Exécuté APRÈS l'event history (compat e2e) et AVANT done.
+            # Le coût du tour est attaché au DERNIER message felix du tour (la
+            # dernière carte s'il y en a, sinon le texte) — « sous chaque réponse »
+            # côté front veut dire une seule ligne par tour, pas une par carte.
+            cost_json = cost_summary.model_dump()
             if master_text_buf:
+                text_payload = None if turn_cards else json.dumps({"cost": cost_json})
                 await record_message(
                     driver, "felix", "text", "".join(master_text_buf),
-                    project=body.project,
+                    payload=text_payload, project=body.project,
                 )
-            for kind, card_data in turn_cards:
+            for idx, (kind, card_data) in enumerate(turn_cards):
+                card = json.loads(card_data)
+                if idx == len(turn_cards) - 1:
+                    card["cost"] = cost_json
                 await record_message(
-                    driver, "felix", kind, "", payload=card_data,
+                    driver, "felix", kind, "", payload=json.dumps(card),
                     project=body.project,
                 )
+            # Coût persistant du projet (#coût) : accumulé en base pour le total
+            # affiché dans la topbar, INDÉPENDAMMENT de l'historique des messages
+            # (survit à « nouvelle conversation »/archivage).
+            await record_cost_entry(driver, cost_summary, project=body.project, kind="chat")
             # Provenance : le message de l'AUTEUR a produit les entités touchées
             # ce tour. Scoping fort : link_produced ne traverse pas les projets.
             await link_produced(driver, user_msg_id, deps.touched_ids, project=body.project)
@@ -298,9 +311,10 @@ async def get_conversation(
 ) -> list[ConversationMessageOut]:
     """Messages non archivés de la conversation active, ordonnés par ord.
 
-    payload est décodé de JSON string (base) vers dict (API) — None pour
-    les messages kind='text'. Le front utilise cette route pour restaurer
-    l'affichage après un rechargement de page (pas de localStorage)."""
+    payload est décodé de JSON string (base) vers dict (API) — None pour la
+    plupart des messages kind='text' (seule la réponse felix qui clôt un tour
+    en porte un, ``{"cost": ...}``). Le front utilise cette route pour
+    restaurer l'affichage après un rechargement de page (pas de localStorage)."""
     msgs = await conversation_messages(driver, project=project)
     out = []
     for m in msgs:

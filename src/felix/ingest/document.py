@@ -31,10 +31,14 @@ from felix.core import (
     create_entity,
     link_described_in,
     recent_entities,
+    record_cost_entry,
     render_recent_block,
 )
 from felix.core.graph import all_entities
 from felix.core.projects import create_project
+from felix.cost import (
+    ModelCost,  # noqa: TC001 — champ pydantic (IngestReport), résolu au runtime
+)
 from felix.ingest.resolver import slugify
 
 if TYPE_CHECKING:
@@ -289,6 +293,11 @@ class IngestReport(BaseModel):
     request_tokens: int = 0
     response_tokens: int = 0
     total_tokens: int = 0
+    # Coût de l'ingestion ENTIÈRE (tous les blocs + le check de cohérence final),
+    # cf. felix.cost.CostLedger.summary — None si au moins un modèle utilisé a un
+    # prix inconnu (jamais un faux 0), éclaté par modèle pour l'affichage détaillé.
+    cost_usd: float | None = None
+    by_model: list[ModelCost] = []
     # Un bloc en échec (best-effort, cf. run_extractors) : "pages p-q : erreur".
     errors: list[str] = []
 
@@ -339,7 +348,6 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
     # accumulent touched_ids/check_candidates/write_log pour le résumé et le
     # check de cohérence final, qui porte sur le document ENTIER.
     totals = GenericDeps(driver=driver, profile=profile, project_id=project)
-    usages: list = []
     errors: list[str] = []
     relations_count = 0
 
@@ -357,7 +365,7 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
             async for ev in run_extractors(
                 agent, relation_agent, chronicle_agent,
                 extract_prompt, chunk_prompt, None,
-                chunk_deps, profile, usages,
+                chunk_deps, profile,
             ):
                 if ev.event == "tool":
                     card = json.loads(ev.data)
@@ -387,11 +395,19 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
         totals.touched_ids |= touched
         totals.check_candidates |= chunk_deps.check_candidates
         totals.write_log.extend(chunk_deps.write_log)
+        # Coût du bloc (extracteurs) fusionné dans le ledger DOCUMENT — un seul
+        # système de comptabilité, comme touched_ids/check_candidates ci-dessus.
+        totals.cost_ledger.merge(chunk_deps.cost_ledger)
 
     alerts: list[str] = []
     async for ev in consistency_alerts(driver, totals, profile):
         card = json.loads(ev.data)
         alerts.append(card.get("body", ""))
+
+    # Coût de l'ingestion ENTIÈRE (tous les blocs + le check de cohérence final,
+    # qui a déposé son coût dans totals.cost_ledger via consistency_alerts ci-dessus).
+    cost_summary = totals.cost_ledger.summary()
+    await record_cost_entry(driver, cost_summary, project=project, kind="ingest")
 
     return IngestReport(
         document_id=document_id,
@@ -400,8 +416,10 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
         entities_touched=len(totals.touched_ids - {document_id}),
         relations=relations_count,
         alerts=alerts,
-        request_tokens=sum(u.request_tokens or 0 for u in usages),
-        response_tokens=sum(u.response_tokens or 0 for u in usages),
-        total_tokens=sum(u.total_tokens or 0 for u in usages),
+        request_tokens=cost_summary.request_tokens,
+        response_tokens=cost_summary.response_tokens,
+        total_tokens=cost_summary.total_tokens,
+        cost_usd=cost_summary.cost_usd,
+        by_model=cost_summary.by_model,
         errors=errors,
     )

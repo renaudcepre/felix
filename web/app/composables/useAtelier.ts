@@ -1,7 +1,9 @@
 import type { AtelierMsg } from '~/types/atelier'
+import type { CostSummaryPayload } from '~/types/costs'
 import { parseSSEStream } from '~/utils/parseSSE'
 import { currentProfile, profiles as atelierProfiles, useAtelierProfile } from './useAtelierProfile'
 import { currentProject } from './useProject'
+import { useProjectCost } from './useProjectCost'
 
 // Carte tool émise par le backend (event SSE `tool`) — cf. felix/core/models.py
 interface ToolCardPayload {
@@ -93,6 +95,12 @@ function deriveCounters() {
   silentTurns.value = hasWrite ? 0 : messages.value.filter(m => m.role === 'user').length
 }
 
+// Coût du tour, s'il a été persisté dans le payload (#coût) — posé côté back
+// UNIQUEMENT sur le dernier message felix du tour (cf. felix.api.routes.atelier).
+function extractCost(payload: Record<string, unknown> | null | undefined): CostSummaryPayload | undefined {
+  return (payload?.cost as CostSummaryPayload | undefined) ?? undefined
+}
+
 // Mapping ConversationMessageOut → AtelierMsg.
 // Renvoie null pour les messages tool/alert dont le payload est absent (défensif :
 // un bug de persistance ne doit pas faire planter l'hydratation entière).
@@ -103,6 +111,7 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       role: m.role === 'user' ? 'user' : 'felix',
       kind: 'text',
       body: m.body,
+      cost: extractCost(m.payload),
     }
   }
   if (m.kind === 'tool') {
@@ -119,6 +128,7 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       added: p.added,
       entityId: p.entity_id ?? undefined,
       relation: p.relation ?? undefined,
+      cost: extractCost(m.payload),
     }
   }
   if (m.kind === 'alert') {
@@ -131,6 +141,7 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       title: p.title,
       body: p.body,
       status: p.status,
+      cost: extractCost(m.payload),
     }
   }
   return null
@@ -243,6 +254,10 @@ export function useAtelier() {
     // le delta suivant ouvre alors un nouveau message.
     let current: AtelierMsg | null = null
     let wroteThisTurn = false
+    // Dernier message felix ajouté ce tour (texte OU carte) — c'est LUI qui
+    // reçoit le coût à l'event `usage` (#coût) : « sous chaque réponse » = une
+    // ligne par tour, pas une par carte, cf. le même choix côté back.
+    let lastAppended: AtelierMsg | null = null
 
     try {
       const response = await fetch(`${apiStreamBase}/api/atelier/chat`, {
@@ -278,13 +293,14 @@ export function useAtelier() {
             phase.value = null
             if (!current) current = append({ role: 'felix', kind: 'text', body: '' })
             current.body += sse.data
+            lastAppended = current
             messages.value = [...messages.value]
             break
           case 'tool': {
             const card = JSON.parse(sse.data) as ToolCardPayload
             current = null
             wroteThisTurn = true
-            append({
+            lastAppended = append({
               role: 'felix',
               kind: 'tool',
               tool: card.tool,
@@ -300,7 +316,15 @@ export function useAtelier() {
           case 'alert': {
             const a = JSON.parse(sse.data) as AlertPayload
             current = null
-            append({ role: 'felix', kind: 'alert', title: a.title, body: a.body, status: a.status })
+            lastAppended = append({ role: 'felix', kind: 'alert', title: a.title, body: a.body, status: a.status })
+            break
+          }
+          case 'usage': {
+            const summary = JSON.parse(sse.data) as CostSummaryPayload
+            if (lastAppended) {
+              lastAppended.cost = summary
+              messages.value = [...messages.value]
+            }
             break
           }
           case 'history':
@@ -330,6 +354,10 @@ export function useAtelier() {
       else {
         silentTurns.value += 1
       }
+      // Total persistant du projet (#coût) : rafraîchi après CHAQUE tour, même
+      // en erreur réseau (le tour peut avoir coûté avant de planter) — best-effort,
+      // cf. useProjectCost.
+      void useProjectCost().refreshProjectCost()
     }
   }
 

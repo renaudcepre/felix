@@ -38,6 +38,18 @@
 
 **Reste hors scope de cette passe** : les prompts LLM (`Profile.description`, personas) gardent leur vocabulaire de domaine — volontairement, ils ne sont pas montrés tels quels à l'utilisateur. Le panneau ne montre pas encore `entity_types` dans la vue profil (seulement `relation_vocabulary`, demandé explicitement).
 
+## 2026-09-24 — feat(web): tout depuis la page — vocabulaire par mode, file de validation, coût tokens + $ partout
+
+**Demandes de Renaud** : repartir d'une base vide et tout faire depuis la page ; virer le vocabulaire scénario codé en dur (« Raconte-moi ton histoire… » affiché en mode maintenance) ; afficher TOUJOURS le coût en tokens et en prix (« c'est un POC, c'est une donnée que je peux pas rater »).
+
+**Fait (2 Sonnet en série, vérifiés) :** base archivée en texte (`data/archives/neo4j-20260924-155115.txt`, ignoré par git) puis vidée. `AgentChoice.welcome/input_placeholder` exposés par `/api/atelier/profiles` ; mode par défaut `emergent` ; « Nouveau projet », « Fiches », « Projet par défaut ». Panneau **Propositions** (valider avec nom éditable, refuser) ; refus PERSISTÉS sur `:ProjectProfile`, le détecteur ne repropose pas un changement refusé (signature = kind + ensemble des slugs/sources, indépendante du nom proposé). Coût : `felix/cost.py` (grille de prix par modèle, surchargée par `FLX_PRICING_JSON`, modèle inconnu → prix null, jamais un faux 0), UN `CostLedger` par opération porté par `GenericDeps` et alimenté par `stream_pass` — **les juges du checker n'étaient comptés nulle part avant** (coûts affichés jusqu'ici sous-estimés). `:CostEntry` par projet + `GET /api/costs`. Front : ligne « N tokens · X $ » sous chaque tour et chaque import, total projet dans la topbar.
+
+**Prix** : devstral-2512 = 0,40 $/M entrée, 2 $/M sortie — Mistral ne le liste plus sur sa page, chiffre tiré d'agrégateurs (OpenRouter, pricepertoken). Ordre de grandeur mesuré : un tour de chat avec extraction ≈ 27k tokens ≈ 0,014 $ ; une fiche de 4 pages ≈ 0,16 $.
+
+**Accrocs** : `/api/projects` en 500 après les runs e2e — bug antérieur à la branche, `record_message` MERGEait un `:Project` SANS nom et `ProjectOut.name: str` faisait planter tout le sélecteur. Corrigé à la source + réparation au démarrage (`coalesce`). Le projet par défaut recréé au redémarrage portait encore « Histoire par défaut » (redémarrage fait AVANT le renommage dans le code, et `coalesce` garde le nom existant) → renommé en base à la main.
+
+**Qualification** : unit 316/316, typecheck/lint/build front verts, coût vérifié en live par l'API (un tour réel sur projet jetable, supprimé ensuite).
+
 ## 2026-09-24 — feat(core): boucle de profil émergent complète (POC) — détecteur, profil par projet, e2e live vert
 
 **Fait (délégué à un Sonnet, 276/276 unit, e2e lancé de ma main) :** vocab fermé quand le canal narratif existe (profil sans vocab + narrative_rel = LIE_A seul, sinon le modèle inventait librement ses types) ; `EMERGENT_SEED_PROFILE` (aucun type, aucune relation) ; profil stocké par projet (`:ProjectProfile`, JSON versionné) ; `evolve_profile` (promotion → RelationSpec avec domaine/portée tirés des paires observées) ; détecteur DÉTERMINISTE (tête de verbe des LIE_A après mots-outils, types quasi-doublons) ; choix `emergent` qui résout le profil du projet à chaque requête ; `/api/schema/*`, `tools/schema.py accept-all` (humain simulé), `just e2e-emergent`, 2e fiche SX-40 (maintenance).

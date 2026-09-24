@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     llm_gate_model: str | None = None
     llm_gate_base_url: str | None = None
 
+    # Surcharge de la table de prix (JSON, cf. felix.cost.DEFAULT_PRICING) —
+    # {"nom-modele": {"input": prix_par_million, "output": prix_par_million}, ...}.
+    # Une entrée surcharge ENTIÈREMENT le défaut du même nom (pas de fusion
+    # input/output partielle) ; un nom absent des deux tables → prix inconnu.
+    pricing_json: str = ""
+
     logfire_token: str = Field(
         default="",
         validation_alias=AliasChoices("LOGFIRE_TOKEN", "FLX_LOGFIRE_TOKEN"),

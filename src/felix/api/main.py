@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 # Must be called before pydantic-ai imports so logfire can instrument the models.
 setup_logfire()
 
-from felix.api.routes import atelier, entities, ingest, projects
+from felix.api.routes import atelier, costs, entities, ingest, projects
 from felix.api.routes import schema as schema_routes
 from felix.api.routes import settings as settings_routes
 from felix.atelier.agent import (
@@ -81,6 +81,7 @@ app.add_middleware(
 )
 
 app.include_router(atelier.router)
+app.include_router(costs.router)
 app.include_router(entities.router)
 app.include_router(ingest.router)
 app.include_router(projects.router)

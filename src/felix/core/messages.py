@@ -19,7 +19,9 @@ Deux lois structurelles gravées ici :
 
 Nœud :Message (méta-nœud, hors :GenEntity, invisible des tools LLM) :
   id (UUID Cypher), project, role ('user'|'felix'), kind ('text'|'tool'|'alert'),
-  body (texte), payload (JSON string pour tool/alert, null pour text),
+  body (texte), payload (JSON string ou null — toujours pour tool/alert ; pour
+  text, null sauf pour la réponse felix qui clôt un tour, où il porte
+  ``{"cost": CostSummary}`` — cf. felix.api.routes.atelier),
   ts (timestamp ms), ord (entier, continu par projet même après archivage),
   archived (bool, false à la création).
 

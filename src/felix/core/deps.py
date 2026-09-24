@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from felix.core.projects import DEFAULT_PROJECT
+from felix.cost import CostLedger
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
@@ -64,3 +65,7 @@ class GenericDeps:
     event_seq_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, repr=False, compare=False
     )
+    # Comptabilité UNIQUE des coûts LLM de ce tour/import (cf. felix.cost) :
+    # gate, maître, extracteurs et juge de cohérence y déposent chacun leur
+    # (modèle, tokens) — jamais une liste `usages` ad hoc par appelant.
+    cost_ledger: CostLedger = field(default_factory=CostLedger)

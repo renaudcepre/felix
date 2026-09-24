@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AtelierMsg, ChoiceOption, ResolveOption } from '~/types/atelier'
 import { marked } from 'marked'
+import { formatCostLine } from '~/utils/formatCost'
 
 const props = defineProps<{ msg: AtelierMsg }>()
 const emit = defineEmits<{
@@ -110,7 +111,10 @@ function submitFree() {
     </div>
     <div class="msg-main">
       <!-- text (markdown rendu via marked) -->
-      <div v-if="msg.kind === 'text'" class="felix-text" v-html="html" />
+      <template v-if="msg.kind === 'text'">
+        <div class="felix-text" v-html="html" />
+        <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
+      </template>
 
       <!-- tool use -->
       <div v-else-if="msg.kind === 'tool'" class="tool-card" :class="{ 'is-removed': msg.edited === 'deleted' }">
@@ -166,6 +170,7 @@ function submitFree() {
             <span class="tool-text">{{ msg.added }}</span>
           </div>
           <p v-if="actionError" class="tool-error">{{ actionError }}</p>
+          <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
         </div>
       </div>
 
@@ -190,6 +195,7 @@ function submitFree() {
           <ul v-if="msg.report.errors.length" class="report-list report-errors">
             <li v-for="(err, i) in msg.report.errors" :key="`err-${i}`">{{ err }}</li>
           </ul>
+          <div class="msg-cost">{{ formatCostLine(msg.report.total_tokens, msg.report.cost_usd) }}</div>
         </div>
       </div>
 
@@ -272,6 +278,7 @@ function submitFree() {
             </button>
             <button class="btn btn-ghost" @click="emit('status', msg, 'dismissed')">Ignorer</button>
           </div>
+          <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
         </div>
       </template>
     </div>

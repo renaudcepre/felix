@@ -15,6 +15,7 @@ from felix.core.alerts import (
     render_alerts_block,
 )
 from felix.core.check import CheckVerdict, consistency_check
+from felix.core.costs import project_cost_totals, record_cost_entry
 from felix.core.deps import GenericDeps
 from felix.core.graph import (
     NARRATIVE_REL,
@@ -89,9 +90,11 @@ __all__ = [
     "list_projects",
     "load_llm_history",
     "merge_entity_into",
+    "project_cost_totals",
     "recent_entities",
     "recent_user_edits",
     "record_alert",
+    "record_cost_entry",
     "record_message",
     "record_user_edit",
     "rel_label",

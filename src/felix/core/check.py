@@ -13,12 +13,14 @@ from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
 from felix.core.graph import entity_timeline, neighborhood
+from felix.cost import agent_model_name
 from felix.llm import build_checker_model
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
 
     from felix.core.profile import Profile
+    from felix.cost import CostLedger
 
 
 class CheckVerdict(BaseModel):
@@ -109,16 +111,26 @@ def distinct_contradictions(verdicts: list[CheckVerdict]) -> list[CheckVerdict]:
     return kept
 
 
-async def consistency_check(
+async def consistency_check(  # noqa: PLR0913 — driver + contexte + profil + project + ledger/judge injectables
     driver: AsyncDriver,
     ref: str,
     write_log: list[str] | None = None,
     profile: Profile | None = None,
     *,
     project: str,
+    cost_ledger: CostLedger | None = None,
+    judge: Agent[None, CheckVerdict] | None = None,
 ) -> CheckVerdict:
     """Check générique : voisinage de l'entité + journal des écritures, le judge
-    cherche une contradiction. Le profil ajoute ses règles de cohérence au prompt."""
+    cherche une contradiction. Le profil ajoute ses règles de cohérence au prompt.
+
+    `cost_ledger`, si fourni, reçoit le coût de CET appel (modèle réellement
+    utilisé + tokens) — le judge du check n'était compté NULLE PART avant.
+    `judge` est injectable (tests avec un Agent `TestModel`, sans appel réseau) ;
+    par défaut, le modèle DÉDIÉ au checker (FLX_LLM_CHECKER_MODEL, fallback
+    llm_model) : le check est du jugement à faible volume (1 appel/entité
+    touchée) où un modèle plus fort peut valoir le coût, sans se heurter au
+    rate-limit des passes d'extraction."""
     context = await neighborhood(driver, ref, project=project)
     if context is None:
         return CheckVerdict(reason=f"entité « {ref} » introuvable", contradiction=False)
@@ -130,10 +142,7 @@ async def consistency_check(
         context = f"{context}\n\n{timeline}"
     writes = "\n".join(f"- {w}" for w in write_log) if write_log else "(aucune)"
     domain_rules = profile.render_check_rules() if profile is not None else ""
-    # Modèle DÉDIÉ au checker (FLX_LLM_CHECKER_MODEL, fallback llm_model) : le check
-    # est du jugement à faible volume (1 appel/entité touchée) où un modèle plus fort
-    # peut valoir le coût, sans se heurter au rate-limit des passes d'extraction.
-    judge = Agent(
+    judge = judge or Agent(
         build_checker_model(),
         output_type=CheckVerdict,
         model_settings=ModelSettings(temperature=0.0),
@@ -142,4 +151,6 @@ async def consistency_check(
     result = await judge.run(
         CHECK_PROMPT.format(context=context, writes=writes, domain_rules=domain_rules)
     )
+    if cost_ledger is not None:
+        cost_ledger.add_usage(agent_model_name(judge), result.usage())
     return result.output

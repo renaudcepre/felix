@@ -19,6 +19,7 @@ from sse_starlette import ServerSentEvent
 
 from felix.core import consistency_check, record_alert, runs_chronicle
 from felix.core.check import CheckVerdict, distinct_contradictions
+from felix.cost import agent_model_name
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -39,7 +40,12 @@ async def stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + histori
     `messages` dans `holder` (un générateur ne peut pas « return »). Factorisé
     pour toutes les passes : maître (texte streamé) ; extracteurs (cartes live, pas
     de texte → une seule bulle). `prompt` varie : message nu pour le maître et
-    le chroniqueur, message préfixé du working set pour entités/relieur."""
+    le chroniqueur, message préfixé du working set pour entités/relieur.
+
+    Dépose AUSSI le coût de cette passe dans `deps.cost_ledger` — attribué au
+    modèle RÉELLEMENT utilisé par `sub_agent` (gate/maître/extracteurs peuvent
+    différer, cf. build_gate_model/build_checker_model/build_chat_model) : un
+    seul système de comptabilité, alimenté par chaque passe."""
     async with sub_agent.iter(
         prompt, deps=deps, message_history=history
     ) as run:
@@ -54,11 +60,13 @@ async def stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + histori
         for card in deps.ui_events:
             yield ServerSentEvent(data=card.model_dump_json(), event="tool")
         deps.ui_events.clear()
-        holder["usage"] = run.usage()
+        usage = run.usage()
+        holder["usage"] = usage
         holder["messages"] = run.all_messages()
+        deps.cost_ledger.add_usage(agent_model_name(sub_agent), usage)
 
 
-async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profile/usages, un seul appelant par tour
+async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profile, un seul appelant par tour
     agent: Agent,
     relation_agent: Agent,
     chronicle_agent: Agent,
@@ -67,7 +75,6 @@ async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profi
     message_history: list | None,
     deps: GenericDeps,
     profile: Profile | None,
-    usages: list,
 ) -> AsyncGenerator[ServerSentEvent]:
     """Boucle d'extraction PARTAGÉE : entités → relieur → chroniqueur (si le
     domaine tient une chronologie). Chaque passe est BEST-EFFORT — une passe
@@ -77,9 +84,9 @@ async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profi
     `extract_prompt` porte le working set + les décisions de l'auteur + le
     contenu à extraire (entités/relieur) ; `chronicle_prompt` est le contenu
     NU (le chroniqueur ne reçoit ni working set ni historique — il ne crée pas
-    d'entité, seulement des événements). `usages` est une liste MUTABLE fournie
-    par l'appelant (un générateur ne peut pas « return » un total au fil de
-    l'itération) : chaque passe réussie y ajoute son `RunUsage`.
+    d'entité, seulement des événements). Le coût de chaque passe réussie est
+    déposé dans `deps.cost_ledger` par `stream_pass` lui-même (pas de liste
+    `usages` séparée à tenir ici).
     """
     passes = [
         (agent, "entités", extract_prompt, message_history,
@@ -103,7 +110,6 @@ async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profi
                 sub_agent, prompt, hist, deps, stream_text=False, holder=sub
             ):
                 yield ev
-            usages.append(sub["usage"])
         except Exception:
             logger.exception("passe %s échouée (tour non bloqué)", label)
 
@@ -128,7 +134,8 @@ async def consistency_alerts(
         return
     verdicts = await asyncio.gather(
         *(consistency_check(driver, i, deps.write_log, profile,
-                            project=deps.project_id) for i in ids),
+                            project=deps.project_id, cost_ledger=deps.cost_ledger)
+          for i in ids),
         return_exceptions=True,
     )
     ok: list[CheckVerdict] = []

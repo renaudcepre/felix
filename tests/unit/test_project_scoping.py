@@ -173,6 +173,25 @@ def test_project_profile_queries_are_project_scoped() -> None:
 
 
 @project_scoping_suite.test()
+def test_cost_entry_queries_are_project_scoped() -> None:
+    """Le méta-nœud :CostEntry (#coût, comptabilité par projet) est scopé : le
+    coût de l'histoire A ne doit jamais s'agréger dans le total de l'histoire B.
+    L'assert path.exists() met la suite en rouge tant que costs.py n'existe pas —
+    état RED voulu de l'eval-first."""
+    path = SRC / "core" / "costs.py"
+    assert path.exists(), f"module attendu manquant : {path}"
+
+    queries = _cypher_strings(path, ":CostEntry")
+    assert queries, "aucune requête :CostEntry trouvée — le scan est cassé"
+
+    missing = [where for where, q in queries if "project" not in q]
+    assert not missing, (
+        "Requêtes :CostEntry SANS filtre project (contamination inter-histoires "
+        "possible) :\n" + "\n".join(missing)
+    )
+
+
+@project_scoping_suite.test()
 def test_no_global_id_uniqueness_constraint() -> None:
     """La contrainte d'unicité GLOBALE sur e.id est incompatible avec la clé
     composite {id, project} (deux histoires ont chacune leur « camille ») :

@@ -1,6 +1,8 @@
 // Modèle de message du chat « atelier » (porté depuis le proto Claude Design).
 // Reflète la spec produit B : text / tool / choice / cite / alert.
 
+import type { CostSummaryPayload, ModelCostPayload } from './costs'
+
 export interface ChoiceOption {
   k: string
   label: string
@@ -38,6 +40,12 @@ export interface IngestReportPayload {
   relations: number
   alerts: string[]
   errors: string[]
+  // Coût de l'import ENTIER (#coût) — cf. felix.cost.CostSummary.
+  request_tokens: number
+  response_tokens: number
+  total_tokens: number
+  cost_usd: number | null
+  by_model: ModelCostPayload[]
 }
 
 export interface AtelierMsg {
@@ -71,4 +79,8 @@ export interface AtelierMsg {
   status?: AlertStatus
   resolves?: ResolveOption[]
   resolution?: string
+  // Coût du TOUR qui a produit ce message (#coût) — posé sur le DERNIER message
+  // felix du tour (carte s'il y en a, sinon le texte) ; survit au reload car
+  // persisté dans le payload du message stocké, cf. useAtelier.mapServerMsg.
+  cost?: CostSummaryPayload
 }

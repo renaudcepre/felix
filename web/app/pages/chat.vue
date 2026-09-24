@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AtelierMsg, ChoiceOption, IngestReportPayload, ResolveOption } from '~/types/atelier'
+import { formatCostLine } from '~/utils/formatCost'
 
 // Page autonome (pas le layout cyan de l'app de référence).
 definePageMeta({ layout: false })
@@ -12,6 +13,18 @@ const { messages, typing, phase, sendMessage, silentSession, newConversation, pu
 // fetchs d'entités portent le projet).
 const { currentProject, currentProjectName, projects, refreshProjects, switchProject, createProject } = useProject()
 onMounted(() => { void refreshProjects() })
+
+// Total persistant du projet (#coût) — indépendant de l'historique de
+// conversation, rafraîchi au montage, au changement d'histoire, et après
+// chaque tour/import (cf. useAtelier.sendMessage et onFileSelected ci-dessous).
+const { cost: projectCost, refreshProjectCost } = useProjectCost()
+onMounted(() => { void refreshProjectCost() })
+watch(currentProject, () => { void refreshProjectCost() })
+const projectCostLine = computed(() => {
+  const c = projectCost.value
+  if (!c || c.total_tokens === 0) return null
+  return `Projet : ${formatCostLine(c.total_tokens, c.cost_usd)}`
+})
 
 useHead({ title: () => `Felix — ${currentProjectName.value}` })
 
@@ -86,6 +99,8 @@ async function onFileSelected(e: Event) {
     // La liste d'entités (page /entities) cache sa réponse par appel : sans
     // ça, revenir dessus après un import montrerait encore l'ancien état.
     clearNuxtData()
+    // Total persistant du projet (#coût) : l'import vient d'ajouter une opération.
+    void refreshProjectCost()
     // Un document EST du contenu : le détecteur (mode évolutif) peut avoir de
     // nouvelles propositions dès la fin de l'import — la file de validation
     // se rafraîchit toute seule, sans repasser par le bouton.
@@ -204,6 +219,7 @@ function onKeydown(e: KeyboardEvent) {
         </select>
       </div>
       <div class="tb-right">
+        <span v-if="projectCostLine" class="tb-cost" title="Total cumulé du projet, tous tours et imports confondus">{{ projectCostLine }}</span>
         <span class="tb-save"><span class="save-dot" />Enregistré</span>
         <button class="btn btn-outline" :disabled="importing" @click="triggerImport">
           <template v-if="importing">
@@ -446,6 +462,7 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .tb-project-select:focus-visible {
   border-color: var(--line-2); background: rgba(0, 0, 0, .025); outline: none;
 }
+.felix-atelier .tb-cost { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .felix-atelier .tb-save { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); }
 .felix-atelier .save-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); box-shadow: 0 0 0 3px var(--sage-soft); }
 
@@ -524,6 +541,11 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .report-list { margin: 11px 0 0; padding-left: 19px; font-family: var(--serif); font-size: 14.5px; line-height: 1.5; }
 .felix-atelier .report-alerts { color: var(--terra); }
 .felix-atelier .report-errors { color: var(--ink-2); }
+
+/* Ligne de coût discrète (#coût) — sous une réponse texte, une carte tool,
+   une alerte, ou le résumé d'import. Même habit que .tool-field (mono, ton
+   estompé) : une donnée de contexte, pas une donnée de récit. */
+.felix-atelier .msg-cost { margin-top: 6px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
 
 /* Actions ✎/🗑 des cartes (#61) — l'auteur corrige Felix sans quitter le fil */
 .felix-atelier .tool-act { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 6px; border: 1px solid transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12px; font-weight: 600; transition: color .14s ease, background .14s ease, border-color .14s ease; }
