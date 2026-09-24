@@ -34,6 +34,7 @@ from felix.core import (
     render_recent_block,
 )
 from felix.core.graph import all_entities
+from felix.core.projects import create_project
 from felix.ingest.resolver import slugify
 
 if TYPE_CHECKING:
@@ -323,6 +324,9 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
     title = guess_title(pages, Path(source_name).stem)
     chunks = chunk_pages(pages, max_chars=max_chars)
 
+    # Un projet alimenté par ingestion doit exister au registre, sinon le
+    # sélecteur du front ne le propose jamais (seul le chat créait ses projets).
+    await create_project(driver, project)
     document_id = slugify(title)
     await create_entity(
         driver, document_id, title, "document",
