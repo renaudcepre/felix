@@ -64,6 +64,20 @@ def verb_head(verbe: str) -> str:
     return ""
 
 
+def content_tokens(verbe: str) -> list[str]:
+    """Tous les tokens SUBSTANTIELS d'un verbe narratif (hors mots de fonction),
+    dans l'ordre — même normalisation que ``verb_head``, mais garde TOUS les
+    tokens (pas seulement le premier). Sert à détecter une paraphrase dont le
+    mot clé n'est pas en tête (« Machine concernée » : la tête est « machine »,
+    mais « concernee » est le token qui rapproche du verbe « concerne »),
+    cf. ``felix.core.tools.same_narrative_link``."""
+    return [
+        cleaned
+        for token in _normalize(verbe).split()
+        if (cleaned := token.strip("'")) and cleaned not in _STOPWORDS
+    ]
+
+
 def cluster_verbs(edges: list[dict], *, min_count: int) -> dict[str, list[dict]]:
     """Groupe des arêtes LIE_A (dicts avec au moins la clé ``verbe``) par tête de
     verbe — pure, testable sans Neo4j. Ne garde que les clusters atteignant

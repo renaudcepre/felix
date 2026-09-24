@@ -9,6 +9,11 @@ Loi testée ici : add_relation sur une arête déjà existante (même paire, mê
 type — et même verbe_slug pour le narratif) n'émet NI carte NI write_log ; une
 arête nouvelle (autre verbe, autre paire, autre projet) émet normalement.
 
+Bug live (fiche technique réelle importée) : la MÊME paire recevait deux LIE_A
+d'un même fait reformulé (« concerné par » PUIS « Machine concernée »), et dans
+d'autres tours les deux SENS. `same_narrative_link` (pure) + le garde-fou de
+`add_relation` ci-dessous couvrent ce cas — testés en bas de fichier.
+
 Univers Ostive/Bellac/Vandre — frais, absent de tous les prompts (anti-leakage).
 """
 from __future__ import annotations
@@ -20,7 +25,7 @@ from protest import ProTestSuite, Use, fixture
 from pydantic_ai import RunContext
 
 from felix.core.deps import GenericDeps
-from felix.core.tools import add_relation
+from felix.core.tools import add_relation, same_narrative_link
 from felix.graph.driver import get_driver, setup_constraints
 
 if TYPE_CHECKING:
@@ -131,3 +136,92 @@ async def test_etancheite_projet(
     ctx_b = await _seed_pair(driver, PROJ + "-b")
     await add_relation(ctx_b, "Ostive", "Bellac", "LOCATED_AT")
     assert len(ctx_b.deps.ui_events) == 1, "projet distinct → carte émise"
+
+
+# ──────────────────── same_narrative_link (pure, #45bis) ────────────────────
+# Quatre cas du bug live, dans l'univers invented (jamais les mots du client) :
+# « concerné par »/« Machine concernée » sont LA MÊME paraphrase malgré l'accord
+# féminin ET la nominalisation ; « règle »/« permet de régler » sont le même
+# verbe sous deux formes ; « règle »/« signale » et « lance »/« arrête » sont
+# bien deux liens DIFFÉRENTS.
+
+@relation_reemission_suite.test()
+def test_same_narrative_link_paraphrase_accordee_et_nominalisee() -> None:
+    assert same_narrative_link("concerné par", ["Machine concernée"])
+    assert same_narrative_link("Machine concernée", ["concerné par"])
+
+
+@relation_reemission_suite.test()
+def test_same_narrative_link_meme_verbe_forme_conjuguee_et_infinitive() -> None:
+    assert same_narrative_link("règle", ["permet de régler"])
+    assert same_narrative_link("permet de régler", ["règle"])
+
+
+@relation_reemission_suite.test()
+def test_same_narrative_link_verbes_distincts() -> None:
+    assert not same_narrative_link("règle", ["signale"])
+    assert not same_narrative_link("lance", ["arrête"])
+
+
+@relation_reemission_suite.test()
+def test_same_narrative_link_empty_or_no_match() -> None:
+    assert not same_narrative_link("règle", [])
+    assert not same_narrative_link("", ["signale"])
+
+
+# ──────────────────── add_relation : garde anti-paraphrase (Neo4j) ────────────────────
+
+@relation_reemission_suite.test()
+async def test_add_relation_refuse_paraphrase_meme_paire(
+    driver: Annotated[AsyncDriver, Use(_rel_driver)],
+) -> None:
+    """Deux paraphrases du même fait sur la MÊME paire → UNE seule arête, la
+    2e est refusée avec un message qui liste le verbe déjà posé (le cas exact
+    vu en live sur une fiche réelle : « concerné par » puis « Machine concernée »)."""
+    await _wipe(driver)
+    ctx = await _seed_pair(driver)
+    out1 = await add_relation(ctx, "Ostive", "Bellac", "LIE_A", verbe="concerné par")
+    assert len(ctx.deps.ui_events) == 1
+    assert "Relation" in out1
+
+    ctx2 = _make_ctx(driver)
+    out2 = await add_relation(ctx2, "Bellac", "Ostive", "LIE_A", verbe="Machine concernée")
+    assert ctx2.deps.ui_events == [], "paraphrase → aucune 2e arête écrite"
+    assert ctx2.deps.write_log == []
+    assert "concerné par" in out2, "le refus liste le verbe déjà posé"
+
+    async with driver.session() as session:
+        result = await session.run(
+            "MATCH (:GenEntity {id: 'ostive', project: $p})"
+            "-[r:REL {rel_type: 'LIE_A'}]-(:GenEntity {id: 'bellac', project: $p})"
+            " RETURN count(r) AS n",
+            p=PROJ,
+        )
+        record = await result.single()
+    assert record["n"] == 1, "une seule arête en base malgré les 2 tentatives"
+
+
+@relation_reemission_suite.test()
+async def test_add_relation_autre_verbe_vraiment_different_cree_deux_aretes(
+    driver: Annotated[AsyncDriver, Use(_rel_driver)],
+) -> None:
+    """Un verbe VRAIMENT différent (pas une paraphrase) sur la même paire crée
+    une 2e arête — le garde-fou ne bloque que la paraphrase, pas le lien réel."""
+    await _wipe(driver)
+    ctx = await _seed_pair(driver)
+    await add_relation(ctx, "Ostive", "Bellac", "LIE_A", verbe="surveille")
+
+    ctx2 = _make_ctx(driver)
+    out2 = await add_relation(ctx2, "Ostive", "Bellac", "LIE_A", verbe="fuit")
+    assert len(ctx2.deps.ui_events) == 1, "verbe différent → nouvelle arête"
+    assert "Relation" in out2
+
+    async with driver.session() as session:
+        result = await session.run(
+            "MATCH (:GenEntity {id: 'ostive', project: $p})"
+            "-[r:REL {rel_type: 'LIE_A'}]-(:GenEntity {id: 'bellac', project: $p})"
+            " RETURN count(r) AS n",
+            p=PROJ,
+        )
+        record = await result.single()
+    assert record["n"] == 2, "deux arêtes distinctes en base"

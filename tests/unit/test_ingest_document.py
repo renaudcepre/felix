@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from protest import ProTestSuite, Use, fixture, tmp_path
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.test import TestModel
+from pypdf import PdfWriter
 from sse_starlette import ServerSentEvent
 
 from felix.api import deps as api_deps
@@ -32,10 +33,14 @@ from felix.ingest.document import (
     entity_pages,
     guess_title,
     ingest_document,
+    is_document_duplicate,
+    merge_document_duplicates,
     pages_mentioning,
     read_pages,
+    read_title,
     stream_ingest_document,
 )
+from felix.ingest.resolver import slugify
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -198,6 +203,17 @@ def test_chunk_prompt_page_range() -> None:
     assert "(pages 2-3/4)" in rendered
 
 
+@ingest_document_suite.test()
+def test_chunk_prompt_warns_against_recreating_the_document(  # bug #2b
+) -> None:
+    """Le prompt rappelle explicitement que le document est DÉJÀ une fiche en
+    base — sans ce rappel l'extracteur en recrée parfois une (bug vu en live)."""
+    chunk = Chunk(page_start=1, page_end=1, text="contenu")
+    rendered = chunk.prompt("Fiche de réglage presse à balles BX-9", 4)
+    assert "existe déjà dans la base" in rendered
+    assert "ne crée PAS de fiche pour le document lui-même" in rendered
+
+
 # ──────────────────── guess_title ────────────────────
 @ingest_document_suite.test()
 def test_guess_title_first_meaningful_line() -> None:
@@ -213,6 +229,99 @@ def test_guess_title_fallback_on_empty_pages() -> None:
 def test_guess_title_on_sx40_fixture() -> None:
     cleaned = clean_pages(read_pages(FIXTURE))
     assert guess_title(cleaned, "repli") == "Fiche réglage sertisseuse SX-40 — Version 3"
+
+
+@ingest_document_suite.test()
+def test_guess_title_skips_breadcrumb_and_export_metadata_lines() -> None:  # bug #2a
+    """Bug vu en live : un bandeau de catégorie (« Machines <client> Fabrique »,
+    invention ici : « Machines Atelier Fabrycom ») précédait le VRAI titre, et
+    l'entité `document` était créée sous ce bandeau au lieu du titre. guess_title
+    doit sauter le bandeau ET les métadonnées d'export (date de MAJ, créateur,
+    valideur, « Version N » seule) pour trouver la vraie première ligne de titre."""
+    pages = [
+        "Machines Atelier Fabrycom\n"
+        "Mis à jour le 10/01/2026\n"
+        "Créateur : R. Cepre\n"
+        "Valideur : L. Morel\n"
+        "Version 2\n"
+        "\n"
+        "Fiche de réglage presse à balles BX-9\n"
+        "\n"
+        "Cette fiche décrit le réglage courant."
+    ]
+    assert guess_title(pages, "repli") == "Fiche de réglage presse à balles BX-9"
+
+
+@ingest_document_suite.test()
+def test_guess_title_skips_very_short_lines() -> None:
+    assert (
+        guess_title(["Atelier\n\nFiche de réglage presse à balles BX-9"], "repli")
+        == "Fiche de réglage presse à balles BX-9"
+    )
+
+
+@ingest_document_suite.test()
+def test_guess_title_keeps_short_lowercase_line_not_a_breadcrumb() -> None:
+    """Une ligne courte contenant un mot-outil en minuscule (donc pas TOUT
+    capitalisée) n'est pas un fil d'Ariane — mais reste écartée si < 12
+    caractères (règle indépendante) ; ici elle passe les deux."""
+    assert guess_title(["la presse à balles"], "repli") == "la presse à balles"
+
+
+# ──────────────────── read_title (métadonnées PDF) ────────────────────
+@ingest_document_suite.test()
+def test_read_title_none_for_txt_md() -> None:
+    assert read_title(FIXTURE) is None  # sx40_fiche.txt n'a pas de métadonnées PDF
+
+
+@ingest_document_suite.test()
+def test_read_title_reads_pdf_metadata(tmp: Annotated[Path, Use(tmp_path)]) -> None:
+    pdf_writer = PdfWriter()
+    pdf_writer.add_blank_page(width=200, height=200)
+    pdf_writer.add_metadata({"/Title": "Fiche de réglage presse à balles BX-9"})
+    p = tmp / "fiche.pdf"
+    with p.open("wb") as f:
+        pdf_writer.write(f)
+    assert read_title(p) == "Fiche de réglage presse à balles BX-9"
+
+
+@ingest_document_suite.test()
+def test_read_title_ignores_generic_or_filename_title(
+    tmp: Annotated[Path, Use(tmp_path)],
+) -> None:
+    for title, filename in (
+        ("Untitled", "a.pdf"), ("Microsoft Word - fiche.docx", "b.pdf"), ("c", "c.pdf"),
+    ):
+        pdf_writer = PdfWriter()
+        pdf_writer.add_blank_page(width=200, height=200)
+        pdf_writer.add_metadata({"/Title": title})
+        p = tmp / filename
+        with p.open("wb") as f:
+            pdf_writer.write(f)
+        assert read_title(p) is None, title
+
+
+# ──────────────────── is_document_duplicate / merge_document_duplicates ────────────────────
+@ingest_document_suite.test()
+def test_is_document_duplicate_catches_reworded_title() -> None:  # bug #2c
+    title = "Fiche de réglage presse à balles BX-9"
+    assert is_document_duplicate(title, title)
+    assert is_document_duplicate("Fiche réglage presse à balles BX-9", title)
+
+
+@ingest_document_suite.test()
+def test_is_document_duplicate_spares_a_real_entity_named_like_a_title_substring() -> None:
+    """Mesuré : `token_set_ratio` seul donne 100 pour un nom de machine
+    simplement CONTENU dans le titre — `is_document_duplicate` ne doit PAS
+    fusionner la vraie fiche machine dans le document."""
+    title = "Fiche de réglage presse à balles BX-9"
+    assert not is_document_duplicate("presse à balles BX-9", title)
+
+
+@ingest_document_suite.test()
+def test_is_document_duplicate_empty_inputs() -> None:
+    assert not is_document_duplicate("", "un titre")
+    assert not is_document_duplicate("un nom", "")
 
 
 # ──────────────────── add_relation refuse DESCRIBED_IN (code_only_relations) ────
@@ -311,6 +420,96 @@ async def test_link_described_in_excludes_document_itself(
         )
         record = await result.single()
     assert record["n"] == 0
+
+
+# ──────────────────── merge_document_duplicates (Neo4j, bug #2c) ────────────────────
+@ingest_document_suite.test()
+async def test_merge_document_duplicates_merges_matching_entity_and_keeps_relations(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Bug vu en live : l'extracteur crée parfois une fiche à part pour le
+    document lui-même malgré la consigne du prompt (Chunk.prompt) — le doublon
+    est fusionné DANS le VRAI document, ses relations le suivent. Une VRAIE
+    fiche machine dont le nom est un sous-ensemble du titre n'est PAS touchée."""
+    await _wipe(driver)
+    title = "Fiche de réglage presse à balles BX-9"
+    document_id = slugify(title)
+    dup_id = "fiche-de-la-presse-bx-9"  # id distinct choisi par l'extracteur
+    machine_id = "presse-a-balles-bx-9"  # VRAIE machine, à ne PAS fusionner
+    async with driver.session() as session:
+        for eid, name, etype in (
+            (document_id, title, "document"),
+            (dup_id, "Fiche réglage presse à balles BX-9", "document"),
+            (machine_id, "presse à balles BX-9", "machine"),
+            ("butee-bx9", "butée BX-9", "organe"),
+        ):
+            await session.run(
+                "MERGE (e:GenEntity {id: $id, project: $project})"
+                " SET e.name = $name, e.entity_type = $type",
+                id=eid, name=name, type=etype, project=PROJ,
+            )
+        # Relation posée à tort vers le doublon au lieu du vrai document.
+        await session.run(
+            "MATCH (a:GenEntity {id: $a, project: $p}), (b:GenEntity {id: $b, project: $p})"
+            " MERGE (a)-[:REL {rel_type: 'APPLIES_TO'}]->(b)",
+            a="butee-bx9", b=dup_id, p=PROJ,
+        )
+
+    touched = {dup_id, machine_id}
+    remaining = await merge_document_duplicates(
+        driver, touched, document_id, title, project=PROJ,
+    )
+    assert remaining == {machine_id}, "le doublon disparaît de touched, la vraie machine reste"
+
+    async with driver.session() as session:
+        dup_still = await (
+            await session.run(
+                "MATCH (e:GenEntity {id: $id, project: $p}) RETURN e",
+                id=dup_id, p=PROJ,
+            )
+        ).single()
+        assert dup_still is None, "le doublon a été supprimé (DETACH DELETE, merge_entity_into)"
+
+        rel = await (
+            await session.run(
+                "MATCH (:GenEntity {id: 'butee-bx9', project: $p})"
+                "-[r:REL {rel_type: 'APPLIES_TO'}]->(:GenEntity {id: $doc, project: $p})"
+                " RETURN count(r) AS n",
+                p=PROJ, doc=document_id,
+            )
+        ).single()
+        assert rel["n"] == 1, "la relation suit désormais le document"
+
+        machine_still = await (
+            await session.run(
+                "MATCH (e:GenEntity {id: $id, project: $p}) RETURN e.entity_type AS t",
+                id=machine_id, p=PROJ,
+            )
+        ).single()
+        assert machine_still["t"] == "machine", "la vraie machine n'a pas été fusionnée"
+
+
+@ingest_document_suite.test()
+async def test_merge_document_duplicates_noop_when_nothing_matches(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    await _wipe(driver)
+    title = "Fiche de réglage presse à balles BX-9"
+    document_id = slugify(title)
+    async with driver.session() as session:
+        for eid, name, etype in (
+            (document_id, title, "document"),
+            ("butee-bx9", "butée BX-9", "organe"),
+        ):
+            await session.run(
+                "MERGE (e:GenEntity {id: $id, project: $project})"
+                " SET e.name = $name, e.entity_type = $type",
+                id=eid, name=name, type=etype, project=PROJ,
+            )
+    remaining = await merge_document_duplicates(
+        driver, {"butee-bx9"}, document_id, title, project=PROJ,
+    )
+    assert remaining == {"butee-bx9"}
 
 
 # ──────────────────── pages_mentioning : attribution de page en code ────────────────────
@@ -478,6 +677,42 @@ async def test_ingest_document_raises_if_generator_never_reports(
             except RuntimeError:
                 raised = True
             assert raised
+    finally:
+        await _wipe_stream_proj(driver)
+
+
+@ingest_document_suite.test()
+async def test_stream_ingest_document_prefers_pdf_metadata_title(  # bug #2a
+    driver: Annotated[AsyncDriver, Use(_driver)],
+    tmp: Annotated[Path, Use(tmp_path)],
+) -> None:
+    """Titre en métadonnées PDF disponible → il gagne sur `guess_title`, même
+    si la première ligne du texte est un bandeau de catégorie sans rapport
+    (bug vu en live : le titre créé en base était ce bandeau, pas le vrai
+    titre)."""
+    meta_title = "Fiche de réglage presse à balles BX-9"
+    pdf_writer = PdfWriter()
+    pdf_writer.add_blank_page(width=400, height=400)
+    pdf_writer.add_metadata({"/Title": meta_title})
+    p = tmp / "fiche.pdf"
+    with p.open("wb") as f:
+        pdf_writer.write(f)
+
+    await _wipe_stream_proj(driver)
+    try:
+        with (
+            patch("felix.ingest.document.read_pages", lambda _p: ["Machines Atelier Fabrycom"]),
+            patch("felix.ingest.document.run_extractors", _stub_run_extractors),
+        ):
+            events = [
+                ev async for ev in stream_ingest_document(
+                    driver, p, profile=MAINTENANCE_PROFILE,
+                    agent=MagicMock(), relation_agent=MagicMock(),
+                    chronicle_agent=MagicMock(), project=_STREAM_PROJ,
+                )
+            ]
+        report = IngestReport.model_validate_json(events[-1].data)
+        assert report.title == meta_title
     finally:
         await _wipe_stream_proj(driver)
 

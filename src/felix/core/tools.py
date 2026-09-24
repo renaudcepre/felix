@@ -33,6 +33,7 @@ from felix.core.graph import (
     touch_entities,
 )
 from felix.core.models import RelationRef, ToolCard
+from felix.core.schema_detector import content_tokens, verb_head
 from felix.ingest.resolver import slugify
 
 # ─────────────────────────── Helpers réordonnancement (#44) ─────────────────
@@ -625,6 +626,59 @@ async def retype_entity(
     return msg
 
 
+_MIN_HEAD_PREFIX_LEN = 4  # sous ce seuil un préfixe partagé est trop court pour être significatif
+
+
+def _same_head_or_prefix(a: str, b: str) -> bool:
+    """Vrai si `a` et `b` sont la MÊME tête, ou si la plus courte est un préfixe
+    de la plus longue (accord masculin/féminin, verbe/infinitif : « regle » est
+    un préfixe de « regler », « concerne » un préfixe de « concernee »). Le
+    garde-fou de longueur évite qu'une tête très courte matche n'importe quoi."""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    return len(shorter) >= _MIN_HEAD_PREFIX_LEN and longer.startswith(shorter)
+
+
+def same_narrative_link(new_verb: str, existing_verbs: list[str]) -> bool:
+    """Vrai si `new_verb` désigne le MÊME lien narratif (LIE_A) qu'un des
+    `existing_verbs` — une PARAPHRASE, pas un autre lien. Garde de add_relation
+    contre le bug vu en live : le même fait re-décrit avec des mots différents
+    (« concerné par » PUIS « Machine concernée ») crée deux arêtes au lieu d'une.
+
+    Comparaison sur la TÊTE du verbe (``verb_head``, cf. schema_detector) :
+    même tête → même lien. Sinon, la tête de l'un est comparée à CHAQUE token
+    substantiel de l'autre (``content_tokens``) — nécessaire car la tête ne
+    retient que le PREMIER token substantiel : « Machine concernée » a pour
+    tête « machine », mais c'est son second token, « concernee », qui se
+    rapproche de « concerne » (tête de « concerné par »). Une tête préfixe
+    d'un token (dans un sens OU l'autre, cf. ``_same_head_or_prefix``) compte
+    comme la même tête (accord, verbe/infinitif).
+
+    Deux verbes de sens clairement différents (« règle » / « signale »,
+    « lance » / « arrête ») rendent False : deux arêtes distinctes restent
+    légitimes. Pure, testable sans Neo4j.
+    """
+    new_head = verb_head(new_verb)
+    if not new_head:
+        return False
+    new_tokens = content_tokens(new_verb)
+    for existing in existing_verbs:
+        old_head = verb_head(existing)
+        if not old_head:
+            continue
+        if _same_head_or_prefix(new_head, old_head):
+            return True
+        old_tokens = content_tokens(existing)
+        if any(_same_head_or_prefix(new_head, t) for t in old_tokens):
+            return True
+        if any(_same_head_or_prefix(old_head, t) for t in new_tokens):
+            return True
+    return False
+
+
 async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas une prop enfouie (#68)
     ctx: RunContext[GenericDeps],
     from_name: str,
@@ -685,6 +739,40 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
     props = {k: v for k, v in (props or {}).items() if k not in REL_RESERVED_KEYS}
     verbe = verbe.strip()
     narrative = rel_type == NARRATIVE_REL and bool(verbe)
+
+    if narrative:
+        # Garde anti-paraphrase (bug vu en live sur une fiche réelle) : AVANT
+        # d'écrire, si la paire porte déjà un LIE_A — dans N'IMPORTE QUELLE
+        # direction — avec un verbe DIFFÉRENT que same_narrative_link juge être
+        # le MÊME lien (« concerné par » / « Machine concernée »), on refuse
+        # plutôt que de poser une 2e arête pour le même fait. Le verbe re-émis
+        # À L'IDENTIQUE (même verbe_slug) n'entre PAS ici : il suit le chemin
+        # normal ci-dessous, silencieux par le mécanisme #45.
+        async with ctx.deps.driver.session() as session:
+            existing_result = await session.run(
+                """
+                MATCH (a:GenEntity {id: $a, project: $project})
+                      -[r:REL {rel_type: $t}]-
+                      (b:GenEntity {id: $b, project: $project})
+                RETURN DISTINCT r.verbe AS verbe, r.verbe_slug AS verbe_slug
+                """,
+                a=a["id"], b=b["id"], t=rel_type, project=ctx.deps.project_id,
+            )
+            existing_rows = [dict(r) for r in await existing_result.data()]
+        new_slug = slugify(verbe)
+        other_verbs = sorted({
+            str(row["verbe"]) for row in existing_rows
+            if row["verbe_slug"] != new_slug and row["verbe"]
+        })
+        if other_verbs and same_narrative_link(verbe, other_verbs):
+            listed = ", ".join(f"« {v} »" for v in other_verbs)
+            return (
+                f"Un lien existe déjà entre {a['name']} et {b['name']} : {listed}. "
+                "Si c'est le même lien, n'écris rien ; si c'est vraiment un AUTRE "
+                "lien, choisis un verbe dont le sens diffère clairement (pas une "
+                "reformulation)."
+            )
+
     async with ctx.deps.driver.session() as session:
         if narrative:
             # Clé de MERGE = (paire, slug du verbe) : deux liens différents entre

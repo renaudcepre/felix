@@ -2,13 +2,16 @@
 procédure (PDF ou texte) devient un graphe interrogeable, chaque fiche du
 graphe traçable jusqu'à sa page source (DESCRIBED_IN {pages}).
 
-Trois fonctions PURES, testables sans Neo4j ni LLM (lecture, nettoyage,
-découpe), puis `stream_ingest_document` qui orchestre : crée l'entité
-`document` EN CODE, joue le pipeline d'extraction PARTAGÉ
-(felix.atelier.pipeline — `run_extractors`, le MÊME code que la route de chat)
-bloc par bloc — SANS gate ni maître, un document EST du contenu, pas une
-conversation à filtrer — pose DESCRIBED_IN en code sur les entités touchées de
-chaque bloc, puis lance le check de cohérence sur les candidats accumulés.
+Des fonctions PURES, testables sans Neo4j ni LLM (lecture, nettoyage, découpe,
+titre, détection de doublon du document), puis `stream_ingest_document` qui
+orchestre : crée l'entité `document` EN CODE (titre : métadonnées PDF si
+exploitables — `read_title` —, sinon `guess_title`), joue le pipeline
+d'extraction PARTAGÉ (felix.atelier.pipeline — `run_extractors`, le MÊME code
+que la route de chat) bloc par bloc — SANS gate ni maître, un document EST du
+contenu, pas une conversation à filtrer — fusionne les doublons du document
+dans le document (`merge_document_duplicates`, filet de sécurité), pose
+DESCRIBED_IN en code sur les entités touchées de chaque bloc, puis lance le
+check de cohérence sur les candidats accumulés.
 
 Une ingestion prend 1 à 3 min (plusieurs blocs x 2-3 passes LLM) — RAISON
 D'ÊTRE du streaming (#import) : `stream_ingest_document` est un générateur
@@ -39,6 +42,7 @@ from felix.core import (
     GenericDeps,
     create_entity,
     link_described_in,
+    merge_entity_into,
     recent_entities,
     record_cost_entry,
     render_recent_block,
@@ -92,6 +96,37 @@ def read_pages(path: str | Path) -> list[str]:
         return [page.extract_text() or "" for page in reader.pages]
     text = p.read_text(encoding="utf-8")
     return text.split("\f") if "\f" in text else [text]
+
+
+# Titres génériques d'export qui ne veulent RIEN dire (Word/scanner par défaut) —
+# un tel titre en métadonnées PDF n'est pas plus fiable que pas de titre du tout.
+_GENERIC_PDF_TITLE_PATTERNS = (
+    re.compile(r"^untitled", re.IGNORECASE),
+    re.compile(r"^microsoft word", re.IGNORECASE),
+    re.compile(r"^document\d*$", re.IGNORECASE),
+)
+
+
+def read_title(path: str | Path) -> str | None:
+    """Titre PDF depuis les métadonnées (`reader.metadata.title`) — PLUS
+    FIABLE que l'heuristique `guess_title` (première ligne exploitable) quand
+    il existe : source posée par l'auteur du document, pas devinée. Rend None
+    pour un `.txt`/`.md` (pas de métadonnées), un titre vide, égal au nom de
+    fichier (Word qui recopie le filename), ou générique d'export (« Untitled »,
+    « Microsoft Word - xxx.docx ») — `guess_title` prend alors le relais."""
+    p = Path(path)
+    if p.suffix.lower() != ".pdf":
+        return None
+    reader = PdfReader(str(p))
+    raw = reader.metadata.title if reader.metadata else None
+    if raw is None:
+        return None
+    title = raw.strip()
+    if not title or title == p.stem:
+        return None
+    if any(pat.search(title) for pat in _GENERIC_PDF_TITLE_PATTERNS):
+        return None
+    return title
 
 
 def clean_pages(pages: list[str]) -> list[str]:
@@ -152,13 +187,21 @@ class Chunk:
 
     def prompt(self, title: str, n_pages: int) -> str:
         """Préfixe le bloc pour l'extracteur : « Extrait du document « titre »
-        (page p/N) : ... » (ou « pages p-q/N » si le bloc couvre plusieurs pages)."""
+        (page p/N) : ... » (ou « pages p-q/N » si le bloc couvre plusieurs pages),
+        suivi d'un rappel explicite que le document EST déjà une fiche en base
+        (créée EN CODE, cf. `stream_ingest_document`) — sans lui, l'extracteur
+        recrée parfois une fiche à part pour le document lui-même (bug vu en
+        live) malgré le modeling_rule du profil qui le dit déjà en général."""
         pages_label = (
             f"page {self.page_start}/{n_pages}"
             if self.page_start == self.page_end
             else f"pages {self.page_start}-{self.page_end}/{n_pages}"
         )
-        return f"Extrait du document « {title} » ({pages_label}) : {self.text}"
+        return (
+            f"Extrait du document « {title} » ({pages_label}) : {self.text}\n\n"
+            f"Ce document existe déjà dans la base sous le nom « {title} » (type "
+            "document) : ne crée PAS de fiche pour le document lui-même."
+        )
 
 
 def _split_paragraphs(text: str, max_chars: int) -> list[str]:
@@ -281,15 +324,104 @@ def entity_pages(node: dict, pages: dict[int, str]) -> list[int]:
     return pages_mentioning(values, pages) or sorted(pages)
 
 
+# Lignes de métadonnées d'export qui précèdent parfois le VRAI titre sur la
+# page 1 (date de MAJ, créateur, valideur, « Version N » seule) — bruit
+# d'en-tête générique, jamais du contenu. Testées sur la ligne ENTIÈRE stripée.
+_HEADER_NOISE_PATTERNS = (
+    re.compile(r"^mis\s+à\s+jour\s+le\b", re.IGNORECASE),
+    re.compile(r"^cr[ée]ateur\s*:", re.IGNORECASE),
+    re.compile(r"^valideur\s*:", re.IGNORECASE),
+    re.compile(r"^version\s+\d+$", re.IGNORECASE),
+)
+# Une ligne plus courte que ça n'a pas la place d'être un vrai titre de fiche.
+_MIN_TITLE_LEN = 12
+# Un fil d'Ariane / bandeau de catégorie (« Machines Atelier Fabrique ») : peu
+# de mots, TOUS capitalisés, aucune ponctuation de titre — un vrai titre
+# contient toujours un mot-outil en minuscule ou une ponctuation
+# (« Fiche réglage presse à balles BX-9 — Version 3 »).
+_BREADCRUMB_MIN_WORDS = 2
+_BREADCRUMB_MAX_WORDS = 6
+_TITLE_PUNCTUATION = ":—-,;."
+
+
+def _is_breadcrumb_line(line: str) -> bool:
+    words = line.split()
+    if not (_BREADCRUMB_MIN_WORDS <= len(words) <= _BREADCRUMB_MAX_WORDS):
+        return False
+    if any(ch in line for ch in _TITLE_PUNCTUATION):
+        return False
+    return all(w[:1].isupper() for w in words if w[:1].isalpha())
+
+
+def _is_header_noise_line(line: str) -> bool:
+    """Vrai pour une ligne qui n'est manifestement PAS le titre : bruit de
+    métadonnées d'export, ligne trop courte, ou fil d'Ariane/catégorie."""
+    if len(line) < _MIN_TITLE_LEN:
+        return True
+    if any(p.match(line) for p in _HEADER_NOISE_PATTERNS):
+        return True
+    return _is_breadcrumb_line(line)
+
+
 def guess_title(pages: list[str], fallback: str) -> str:
-    """Première ligne non vide du document (en général le titre de la fiche),
-    sinon `fallback` (le nom de fichier, sans extension, côté appelant)."""
+    """Première ligne EXPLOITABLE du document (en général le titre de la
+    fiche), sinon `fallback` (le nom de fichier, sans extension, côté
+    appelant). Saute le bruit d'en-tête (`_is_header_noise_line`) qui précède
+    parfois le vrai titre — bug vu en live : un bandeau de catégorie pris pour
+    le titre. Appelée seulement si aucun titre n'a été trouvé dans les
+    métadonnées PDF (cf. `read_title`, prioritaire)."""
     for page in pages:
         for line in page.split("\n"):
             stripped = line.strip()
-            if stripped:
+            if stripped and not _is_header_noise_line(stripped):
                 return stripped
     return fallback
+
+
+# Deux mesures rapidfuzz COMBINÉES, pas une seule — `token_set_ratio` seul
+# sur-matche un nom de machine simplement CONTENU dans le titre (mesuré :
+# « presse à balles BX-9 » dans « Fiche de réglage presse à balles BX-9 » →
+# 100) ce qui fusionnerait à tort une VRAIE fiche machine dans le document ;
+# `ratio` (Levenshtein sur la chaîne entière) écarte ce cas (70, sous le seuil)
+# tout en acceptant un titre légèrement raccourci par l'extracteur (sans
+# « — Version 3 » → 84, au-dessus).
+_TITLE_FUZZY_TOKEN_THRESHOLD = 90
+_TITLE_FUZZY_RATIO_THRESHOLD = 80
+
+
+def is_document_duplicate(name: str, title: str) -> bool:
+    """Vrai si `name` ressemble assez au TITRE du document pour être une fiche
+    créée PAR ERREUR pour le document lui-même (bug vu en live : l'extracteur
+    ignore la consigne du prompt, cf. `Chunk.prompt`, et recrée une entité à
+    part). Pure, testable sans Neo4j."""
+    if not name or not title:
+        return False
+    return (
+        fuzz.token_set_ratio(name, title) >= _TITLE_FUZZY_TOKEN_THRESHOLD
+        and fuzz.ratio(name, title) >= _TITLE_FUZZY_RATIO_THRESHOLD
+    )
+
+
+async def merge_document_duplicates(
+    driver: AsyncDriver, touched: set[str], document_id: str, title: str, *, project: str,
+) -> set[str]:
+    """Fusionne DANS le document (`merge_entity_into`) toute entité `touched`
+    dont le nom matche le titre (`is_document_duplicate`) — filet de sécurité
+    du bug « document dupliqué » : la consigne du prompt (`Chunk.prompt`) ne
+    suffit pas toujours à empêcher l'extracteur de recréer une fiche pour le
+    document. Rend `touched` PURGÉ des ids fusionnés (le nœud source disparaît,
+    `DETACH DELETE` dans `merge_entity_into`) — l'appelant ne doit plus les
+    traiter (DESCRIBED_IN, check de cohérence…)."""
+    nodes = {
+        n["id"]: n for n in await all_entities(driver, project=project) if n["id"] in touched
+    }
+    remaining = set(touched)
+    for entity_id, node in nodes.items():
+        name = node.get("name", "")
+        if isinstance(name, str) and is_document_duplicate(name, title):
+            await merge_entity_into(driver, entity_id, document_id, project=project)
+            remaining.discard(entity_id)
+    return remaining
 
 
 class IngestReport(BaseModel):
@@ -361,12 +493,17 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
     if isinstance(path_or_pages, list):
         pages = path_or_pages
         source_name = "document"
+        meta_title = None
     else:
         pages = read_pages(path_or_pages)
         source_name = Path(path_or_pages).name
+        # Titre PDF déclaré par l'auteur (métadonnées) : PLUS FIABLE que la
+        # première ligne exploitable — None pour un .txt/.md ou un PDF sans
+        # titre exploitable, `guess_title` prend alors le relais ci-dessous.
+        meta_title = read_title(path_or_pages)
 
     pages = clean_pages(pages)
-    title = guess_title(pages, Path(source_name).stem)
+    title = meta_title or guess_title(pages, Path(source_name).stem)
     chunks = chunk_pages(pages, max_chars=max_chars)
     n_chunks = len(chunks)
 
@@ -424,6 +561,17 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
             errors.append(f"pages {chunk.page_start}-{chunk.page_end} : {exc}")
 
         touched = chunk_deps.touched_ids - {document_id}
+        # Filet de sécurité (bug « document dupliqué ») : la consigne du prompt
+        # (`Chunk.prompt`) ne suffit pas toujours — une entité dont le nom
+        # matche le titre est fusionnée DANS le document, ses relations le
+        # suivent. `merge_document_duplicates` purge les ids fusionnés de
+        # `touched` : ces nœuds n'existent plus (DETACH DELETE).
+        merged_before = set(touched)
+        touched = await merge_document_duplicates(
+            driver, touched, document_id, title, project=project,
+        )
+        chunk_deps.check_candidates -= (merged_before - touched)
+
         chunk_pages_text = {
             p: pages[p - 1] for p in range(chunk.page_start, chunk.page_end + 1)
         }
