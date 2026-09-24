@@ -17,11 +17,13 @@ from pydantic_ai.settings import ModelSettings
 
 from felix.core import (
     CHANTIER_PROFILE,
+    EMERGENT_SEED_PROFILE,
     MAINTENANCE_PROFILE,
     SCENARIO_PROFILE,
     create_core_agent,
 )
 from felix.core.agent import CHRONICLE_SYSTEM_PROMPT, RELATION_SYSTEM_PROMPT
+from felix.core.profile_store import load_project_profile
 from felix.core.tools import (
     add_entity,
     add_event,
@@ -48,6 +50,7 @@ RELATION_TOOLS = (describe_schema, find_entity, add_entity, add_relation)
 MASTER_TOOLS = (find_entity, list_entities)
 
 if TYPE_CHECKING:
+    from neo4j import AsyncDriver
     from pydantic_ai.models import Model
 
     from felix.core import GenericDeps, Profile
@@ -342,6 +345,14 @@ class AgentChoice:
     # non narratif (maintenance) porte la sienne, sinon il hériterait d'une voix
     # qui parle d'« histoire » à un technicien.
     master_persona: str = MASTER_PERSONA
+    # Vrai pour un domaine dont le PROFIL RÉEL n'est pas figé dans le code : il
+    # part du profil ci-dessus (le SEED) mais évolue par projet au fil des
+    # changements de schéma validés (#Étape 4-7), stocké en base
+    # (`core/profile_store.py`). Les dicts d'agents pré-construits au démarrage
+    # (`app.state.*_agents`) ne connaissent que le SEED — un choix évolutif exige
+    # de reconstruire ses 3 agents extracteurs pour le profil RÉSOLU du projet à
+    # chaque requête (cf. `resolve_profile` ci-dessous).
+    evolving: bool = False
 
 
 # Registre des modes proposés par le sélecteur de l'UI.
@@ -363,13 +374,45 @@ ATELIER_CHOICES: dict[str, AgentChoice] = {
         MAINTENANCE_MASTER_SYSTEM_PROMPT, MAINTENANCE_GATE_SYSTEM_PROMPT,
         master_persona=MAINTENANCE_PERSONA,
     ),
+    # Schéma ÉMERGENT (plan `maintenance_profile.md`) : part du noyau nu
+    # (EMERGENT_SEED_PROFILE) et apprend son vocabulaire au fil des documents —
+    # posture d'assistant documentaire (personas/prompts maintenance : factuel,
+    # ne comble jamais un trou par une valeur plausible), la seule qui convient
+    # à un domaine encore inconnu.
+    "emergent": AgentChoice(
+        "emergent", "Émergent (profil appris)", EMERGENT_SEED_PROFILE,
+        MAINTENANCE_PERSONA, MAINTENANCE_MASTER_SYSTEM_PROMPT,
+        MAINTENANCE_GATE_SYSTEM_PROMPT, master_persona=MAINTENANCE_PERSONA,
+        evolving=True,
+    ),
 }
 DEFAULT_PROFILE = "scenario"
 
 
-def build_atelier_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
-    """Noyau (5 tools) + list_entities (énumération de la bible), pour un profil donné."""
-    agent = create_core_agent(profile=choice.profile, persona=choice.persona)
+async def resolve_profile(
+    driver: AsyncDriver, choice: AgentChoice, *, project: str
+) -> Profile | None:
+    """Le profil RÉELLEMENT utilisé pour ce projet : pour un choix évolutif, le
+    profil STOCKÉ (évolué par les changements validés) s'il en existe déjà un,
+    sinon le profil de départ du choix (le seed). Pour un choix NON évolutif
+    (scénario, chantier, maintenance figée, noyau nu), toujours le même profil
+    qu'aujourd'hui — la base n'est même pas consultée."""
+    if not choice.evolving:
+        return choice.profile
+    stored = await load_project_profile(driver, project=project)
+    return stored if stored is not None else choice.profile
+
+
+def build_atelier_agent(
+    choice: AgentChoice, profile: Profile | None = None
+) -> Agent[GenericDeps, str]:
+    """Noyau (5 tools) + list_entities (énumération de la bible), pour un profil
+    donné. ``profile`` override ``choice.profile`` — nécessaire pour un choix
+    ÉVOLUTIF : le profil réel d'un projet vit en base, jamais dans ``choice``
+    (cf. ``resolve_profile``)."""
+    agent = create_core_agent(
+        profile=profile if profile is not None else choice.profile, persona=choice.persona
+    )
     agent.tool(list_entities)
     return agent
 
@@ -404,13 +447,16 @@ def create_master_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps
     return build_master_agent(ATELIER_CHOICES[profile_key])
 
 
-def build_relation_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
+def build_relation_agent(
+    choice: AgentChoice, profile: Profile | None = None
+) -> Agent[GenericDeps, str]:
     """2e passe « relieur » : outils RESTREINTS (RELATION_TOOLS = noyau sans
     update_entity) + discipline/persona qui priorisent add_relation. Sans
     update_entity, il ne PEUT plus re-toucher les props (fin du churn) ; il garde
-    add_entity en filet (backfill d'une entité ratée par la 1re passe)."""
+    add_entity en filet (backfill d'une entité ratée par la 1re passe).
+    ``profile`` override ``choice.profile`` (cf. build_atelier_agent)."""
     agent = create_core_agent(
-        profile=choice.profile,
+        profile=profile if profile is not None else choice.profile,
         persona=RELATION_PERSONA,
         system_prompt=RELATION_SYSTEM_PROMPT,
         tools=RELATION_TOOLS,
@@ -423,14 +469,17 @@ def create_relation_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDe
     return build_relation_agent(ATELIER_CHOICES[profile_key])
 
 
-def build_chronicle_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
+def build_chronicle_agent(
+    choice: AgentChoice, profile: Profile | None = None
+) -> Agent[GenericDeps, str]:
     """3e passe « chroniqueur » : transforme le beat en événements ordonnés. Outils
     RESTREINTS (lecture + add_event + move_event) — add_event absorbe les participants
     manquants, donc pas de boucle sur outil absent (contrairement au piège du relieur
     restreint qui réclamait add_entity). move_event corrige l'ordre des events déjà
-    notés (#44 : raconter dans le désordre)."""
+    notés (#44 : raconter dans le désordre). ``profile`` override ``choice.profile``
+    (cf. build_atelier_agent)."""
     agent = create_core_agent(
-        profile=choice.profile,
+        profile=profile if profile is not None else choice.profile,
         persona=CHRONICLE_PERSONA,
         system_prompt=CHRONICLE_SYSTEM_PROMPT,
         tools=(describe_schema, find_entity, add_event, move_event),

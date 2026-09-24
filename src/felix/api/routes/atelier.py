@@ -29,7 +29,14 @@ from felix.api.deps import (
 )
 from felix.api.history import window_history_by_tokens
 from felix.api.models import ChatRequest, ConversationMessageOut
-from felix.atelier.agent import ATELIER_CHOICES, DEFAULT_PROFILE
+from felix.atelier.agent import (
+    ATELIER_CHOICES,
+    DEFAULT_PROFILE,
+    build_atelier_agent,
+    build_chronicle_agent,
+    build_relation_agent,
+    resolve_profile,
+)
 from felix.atelier.pipeline import consistency_alerts, run_extractors, stream_pass
 from felix.config import settings
 from felix.core import (
@@ -115,11 +122,22 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
     choice = ATELIER_CHOICES.get(body.profile, ATELIER_CHOICES[DEFAULT_PROFILE])
     gate_agent = gate_agents[choice.key]
     master_agent = master_agents[choice.key]
-    agent = agents[choice.key]
-    relation_agent = relation_agents[choice.key]
-    chronicle_agent = chronicle_agents[choice.key]
+    # Profil RÉEL de ce projet : pour un choix évolutif (#Étape 6), le profil
+    # STOCKÉ (appris au fil des changements validés) s'il existe, sinon le seed —
+    # les dicts pré-construits ci-dessus ne connaissent QUE le seed, donc les 3
+    # agents extracteurs sont reconstruits À LA DEMANDE pour ce profil. Un choix
+    # non évolutif garde exactement le chemin d'aujourd'hui (dict pré-construit).
+    profile = await resolve_profile(driver, choice, project=body.project)
+    if choice.evolving:
+        agent = build_atelier_agent(choice, profile)
+        relation_agent = build_relation_agent(choice, profile)
+        chronicle_agent = build_chronicle_agent(choice, profile)
+    else:
+        agent = agents[choice.key]
+        relation_agent = relation_agents[choice.key]
+        chronicle_agent = chronicle_agents[choice.key]
     # Le projet/histoire courant vient du FRONT à chaque tour (stateless serveur).
-    deps = GenericDeps(driver=driver, profile=choice.profile, project_id=body.project)
+    deps = GenericDeps(driver=driver, profile=profile, project_id=body.project)
 
     message_history = None
     if body.message_history:
@@ -207,7 +225,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 async for ev in run_extractors(
                     agent, relation_agent, chronicle_agent,
                     extract_prompt, body.message, message_history,
-                    deps, choice.profile, usages,
+                    deps, profile, usages,
                 ):
                     yield ev
                     if ev.event == "tool":
@@ -217,7 +235,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 # extrait. Best-effort, isolé pour ne jamais bloquer le `done`.
                 yield ServerSentEvent(data="Felix vérifie la cohérence…", event="phase")
                 try:
-                    async for alert in consistency_alerts(driver, deps, choice.profile):
+                    async for alert in consistency_alerts(driver, deps, profile):
                         yield alert
                         turn_cards.append(("alert", alert.data))
                 except Exception:

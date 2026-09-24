@@ -1,0 +1,45 @@
+Fiche maintenance sertisseuse SX-40 — Procédure d'entretien
+Mis à jour le 10/02/2026
+Créateur : J. Vasseur
+Valideur : M. Ortiz
+
+Cette fiche décrit les opérations de maintenance courante de la sertisseuse
+SX-40 : graissage de la mâchoire, contrôle de la pression d'approche,
+remplacement de la matrice. Elle complète la fiche de réglage (boutons du
+pupitre, voyants de signalisation, paramètres).
+
+Page 1 sur 3
+Édité avec DocuFabGraissage de la mâchoire
+
+Avant toute intervention, placer le sélecteur de mode sur MANUEL et couper
+l'alimentation au pupitre.
+La mâchoire est l'organe qui referme la pièce lors du cycle de sertissage ;
+elle doit être graissée toutes les 500 heures de fonctionnement.
+Appliquer une graisse haute température sur les deux glissières de la
+mâchoire, puis presser le bouton RESET pour réarmer la machine.
+Ne jamais graisser la mâchoire moteur en marche : risque d'écrasement.
+
+Contrôle de la pression d'approche
+
+Le bouton START règle le déclenchement du cycle, mais c'est le voyant orange
+qui signale un dépassement de la pression d'approche avant le sertissage
+proprement dit.
+Vérifier que la pression d'approche reste dans la plage 2 à 6 bars ; en
+dehors de cette plage, le voyant orange signale l'anomalie en continu.
+Le sélecteur de mode règle également la course autorisée en mode REGLAGE
+(1 cran = 0,5 mm) : le placer sur REGLAGE avant tout contrôle fin.
+
+Page 2 sur 3
+Édité avec DocuFabRemplacement de la matrice
+
+Repasser le sélecteur de mode sur MANUEL, presser STOP puis RESET.
+Dévisser les deux vis de la matrice, retirer l'ancienne matrice usée,
+positionner la matrice neuve et resserrer au couple prescrit.
+Ne jamais remplacer la matrice sans avoir d'abord coupé l'alimentation au
+pupitre : consigne de sécurité impérative.
+Une fois la matrice reposée, lancer un cycle en mode REGLAGE pour vérifier
+que le voyant vert signale un cycle terminé conforme avant de repasser en
+mode AUTO.
+
+Page 3 sur 3
+Édité avec DocuFab

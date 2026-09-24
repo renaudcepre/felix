@@ -36,6 +36,7 @@ CYPHER_MODULES = [
     SRC / "core" / "alerts.py",     # méta-nœud :Alert (#50-a)
     SRC / "core" / "messages.py",  # brique #63 — :Message / :Thread
     SRC / "core" / "schema_changes.py",  # migration du passé — appliquer un schéma validé
+    SRC / "core" / "schema_detector.py",  # détecteur déterministe de propositions
     SRC / "api" / "routes" / "entities.py",
 ]
 
@@ -149,6 +150,25 @@ def test_alert_queries_are_project_scoped() -> None:
     assert not missing, (
         "Requêtes :Alert SANS filtre project (contamination inter-histoires "
         "possible) :\n" + "\n".join(missing)
+    )
+
+
+@project_scoping_suite.test()
+def test_project_profile_queries_are_project_scoped() -> None:
+    """Le méta-nœud :ProjectProfile (profil évolué par projet, Étape 3) est
+    scopé : le profil appris de l'histoire A ne doit jamais s'injecter dans
+    l'histoire B. L'assert path.exists() met la suite en rouge tant que
+    profile_store.py n'existe pas — état RED voulu de l'eval-first."""
+    path = SRC / "core" / "profile_store.py"
+    assert path.exists(), f"module attendu manquant : {path}"
+
+    queries = _cypher_strings(path, ":ProjectProfile")
+    assert queries, "aucune requête :ProjectProfile trouvée — le scan est cassé"
+
+    missing = [where for where, q in queries if "project" not in q]
+    assert not missing, (
+        "Requêtes :ProjectProfile SANS filtre project (contamination "
+        "inter-histoires possible) :\n" + "\n".join(missing)
     )
 
 

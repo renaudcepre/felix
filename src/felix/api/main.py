@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 setup_logfire()
 
 from felix.api.routes import atelier, entities, ingest, projects
+from felix.api.routes import schema as schema_routes
 from felix.api.routes import settings as settings_routes
 from felix.atelier.agent import (
     ATELIER_CHOICES,
@@ -83,6 +84,7 @@ app.include_router(atelier.router)
 app.include_router(entities.router)
 app.include_router(ingest.router)
 app.include_router(projects.router)
+app.include_router(schema_routes.router)
 app.include_router(settings_routes.router)
 
 

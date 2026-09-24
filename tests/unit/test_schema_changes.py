@@ -315,6 +315,53 @@ async def test_promote_etancheite_projet(
     assert await _narrative_count(driver, proj=PROJ_B) == 1, "projet B intact"
 
 
+@schema_changes_suite.test()
+async def test_promote_report_exposes_original_verbatim_verbs(
+    driver: Annotated[AsyncDriver, Use(_schema_driver)],
+) -> None:
+    """report.verbes porte les verbes VERBATIM d'origine, dédupliqués — matériau
+    de l'évolution du profil (core.profile_evolution.evolve_profile)."""
+    await _wipe(driver)
+    await _seed_bx9(driver)
+    await _seed_narrative(driver, "verin", "trappe", "règle")
+    await _seed_narrative(driver, "levier", "pression", "pilote")
+
+    change = PromoteVerbs(
+        verbe_slugs=[slugify("règle"), slugify("pilote")], rel_type="CONTROLS"
+    )
+    report = await apply_schema_change(driver, change, project=PROJ)
+
+    assert sorted(report.verbes) == ["pilote", "règle"]
+
+
+@schema_changes_suite.test()
+async def test_promote_report_verbes_deduplicated_same_pair(
+    driver: Annotated[AsyncDriver, Use(_schema_driver)],
+) -> None:
+    await _wipe(driver)
+    await _seed_bx9(driver)
+    await _seed_narrative(driver, "verin", "trappe", "règle")
+
+    change = PromoteVerbs(verbe_slugs=[slugify("règle")], rel_type="CONTROLS")
+    report = await apply_schema_change(driver, change, project=PROJ)
+
+    assert report.verbes == ["règle"]
+
+
+@schema_changes_suite.test()
+async def test_merge_types_report_has_no_verbes(
+    driver: Annotated[AsyncDriver, Use(_schema_driver)],
+) -> None:
+    """MergeTypes ne porte pas de verbes (champ par défaut vide, réservé à PromoteVerbs)."""
+    await _wipe(driver)
+    await _seed_entity(driver, "piston1", "Piston 1", "piston")
+
+    change = MergeTypes(sources=["piston"], target="organe")
+    report = await apply_schema_change(driver, change, project=PROJ)
+
+    assert report.verbes == []
+
+
 # ──────────────────── MergeTypes ────────────────────
 
 @schema_changes_suite.test()

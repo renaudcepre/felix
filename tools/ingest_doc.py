@@ -19,6 +19,7 @@ from felix.atelier.agent import (
     build_atelier_agent,
     build_chronicle_agent,
     build_relation_agent,
+    resolve_profile,
 )
 from felix.core.projects import DEFAULT_PROJECT
 from felix.graph.driver import get_driver, setup_constraints
@@ -48,12 +49,16 @@ async def main() -> int:
     driver = get_driver()
     try:
         await setup_constraints(driver)
+        # Profil RÉEL du projet (cf. felix.api.routes.ingest) : le seed pour un
+        # choix évolutif tant qu'aucun changement n'a encore été validé, sinon le
+        # profil stocké — les 3 agents sont construits pour LUI, pas pour le seed.
+        profile = await resolve_profile(driver, choice, project=args.project)
         report = await ingest_document(
             driver, args.path,
-            profile=choice.profile,
-            agent=build_atelier_agent(choice),
-            relation_agent=build_relation_agent(choice),
-            chronicle_agent=build_chronicle_agent(choice),
+            profile=profile,
+            agent=build_atelier_agent(choice, profile),
+            relation_agent=build_relation_agent(choice, profile),
+            chronicle_agent=build_chronicle_agent(choice, profile),
             project=args.project,
         )
     finally:

@@ -96,3 +96,15 @@ view-history *args:
 # (3 passes par bloc). Usage : just ingest-doc chemin/fiche.pdf --profile maintenance
 ingest-doc *args:
     uv run python tools/ingest_doc.py {{ args }}
+
+# CLI du schéma ÉMERGENT (Étape 7) — profil/proposals/apply/accept-all, DÉTERMINISTE
+# (aucun appel LLM). Usage : just schema proposals --project e2e-emergent
+schema *args:
+    uv run python tools/schema.py {{ args }}
+
+# E2E de la boucle profil ÉMERGENT (Étape 9) — ingestion fiche 1 → détection →
+# accept-all → ingestion fiche 2, mesure la réutilisation des types promus. Scopé
+# à SON projet (e2e-emergent), ne wipe pas les autres histoires. APPELLE LE LLM
+# (2 fiches × ~3 blocs) ; ne pas lancer avec l'API.
+e2e-emergent *args:
+    uv run python evals/maintenance/emergent_e2e.py {{ args }}

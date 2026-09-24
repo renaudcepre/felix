@@ -39,6 +39,7 @@ from felix.core.messages import (
 from felix.core.models import RelationRef, ToolCard
 from felix.core.profile import (
     CHANTIER_PROFILE,
+    EMERGENT_SEED_PROFILE,
     MAINTENANCE_PROFILE,
     SCENARIO_PROFILE,
     EntityType,
@@ -61,6 +62,7 @@ from felix.core.user_edits import (
 __all__ = [
     "CHANTIER_PROFILE",
     "DEFAULT_PROJECT",
+    "EMERGENT_SEED_PROFILE",
     "MAINTENANCE_PROFILE",
     "NARRATIVE_REL",
     "SCENARIO_PROFILE",

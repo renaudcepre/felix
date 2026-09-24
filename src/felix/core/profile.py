@@ -209,7 +209,7 @@ class Profile:
                 return "Une relation ne peut pas relier une entité à elle-même."
             return None
 
-        if not self.relation_vocabulary:
+        if not self.relation_vocabulary and not self.narrative_rel:
             return None  # profil ne gouverne pas les relations → tout permis
 
         spec = next((s for s in self.relation_vocabulary if s.name == rel_type), None)
@@ -218,6 +218,17 @@ class Profile:
             if self.narrative_rel:
                 # Plus de trou de vocab : le canal narratif est la sortie (#68).
                 # On garde le droit de se taire si le texte ne pose pas le lien.
+                # Vocabulaire ENCORE vide (profil émergent tout neuf) : pas de
+                # liste de types structurels à afficher, mais le canal narratif
+                # reste la sortie légale — c'est LUI le vocabulaire fermé ici.
+                if not self.relation_vocabulary:
+                    return (
+                        f"« {rel_type} » n'est pas (encore) un type structurel du "
+                        f"domaine « {self.name} » (aucun type appris pour l'instant). "
+                        f"Pour tout lien réel du texte, utilise rel_type="
+                        f"{self.narrative_rel} avec verbe=« les mots exacts de "
+                        f"l'auteur ». Si le texte ne pose pas ce lien, n'écris rien."
+                    )
                 return (
                     f"« {rel_type} » n'est pas un type du domaine « {self.name} ». "
                     f"Types STRUCTURELS exacts : {allowed}. Pour tout AUTRE lien "
@@ -484,6 +495,45 @@ MAINTENANCE_PROFILE = Profile(
             objects=("document",),
         ),
     ),
+    narrative_rel=NARRATIVE_REL,
+    manages_events=False,
+    code_only_relations=("DESCRIBED_IN",),
+)
+
+
+# Quatrième domaine (schéma ÉMERGENT, `plans/maintenance_profile.md`) — noyau NU
+# volontairement : aucun type d'entité, aucun vocabulaire de relation. Seul le
+# canal narratif (LIE_A + verbe verbatim) est ouvert dès le départ — c'est le
+# CAPTEUR : un verbe qui revient devient un type structurel proposé par le
+# détecteur (`core/schema_detector.py`), validé par un humain, et migré dans le
+# passé (`core/schema_changes.py`). Le profil RÉEL d'un projet évolue ensuite
+# (`core/profile_evolution.py`) et vit en base (`core/profile_store.py`) — ce
+# `EMERGENT_SEED_PROFILE` n'est que le POINT DE DÉPART, jamais modifié lui-même.
+EMERGENT_SEED_PROFILE = Profile(
+    name="documentation technique",
+    description="Tu tiens la documentation d'un objet ou d'un système, SANS "
+    "schéma présupposé : aucun type ni relation n'est encore défini — ils "
+    "émergent des documents au fil de l'ingestion.",
+    entity_types=(),
+    modeling_rules=(
+        "Une valeur, une unité ou une plage est une PROPRIÉTÉ VERBATIM (copiée "
+        "telle quelle de la source) : ne calcule et n'arrondis jamais rien.",
+        "Une mise en garde ou une interdiction est SA PROPRE entité, reliée par "
+        "LIE_A (verbe verbatim) à ce qu'elle concerne — pas une propriété noyée "
+        "ailleurs.",
+        "Le boilerplate (numéro de page, pied de page répété, légende d'image "
+        "vide) n'est ni une entité ni une propriété : ignore-le.",
+        "Une chose déjà connue qui réapparaît plus loin dans le document est la "
+        "MÊME entité : cherche-la (find_entity) avant d'en recréer une.",
+        "DESCRIBED_IN est posée PAR LE CODE à l'ingestion, jamais par toi : ne "
+        "crée pas cette relation toi-même.",
+    ),
+    consistency_rules=(
+        "Deux sources donnent une valeur, une unité ou une plage différente "
+        "pour la même chose.",
+        "Une règle ou une consigne en contredit une autre déjà posée.",
+    ),
+    relation_vocabulary=(),
     narrative_rel=NARRATIVE_REL,
     manages_events=False,
     code_only_relations=("DESCRIBED_IN",),

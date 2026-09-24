@@ -75,7 +75,10 @@ class ChangeReport(BaseModel):
     ``observed_pairs`` (subject entity_type, object entity_type) sert plus
     tard à amorcer le domaine/portée de la relation dans le profil. ``samples``
     porte jusqu'à 5 lignes lisibles par un humain (la file de validation les
-    montre avant le clic)."""
+    montre avant le clic). ``verbes`` (PromoteVerbs seulement) liste les verbes
+    VERBATIM d'origine, dédupliqués en ordre stable — c'est le matériau que
+    ``core.profile_evolution.evolve_profile`` utilise pour construire le
+    ``RelationSpec`` (gloss, examples) du type promu."""
 
     change: PromoteVerbs | MergeTypes
     edges_converted: int = 0
@@ -83,6 +86,7 @@ class ChangeReport(BaseModel):
     entities_retyped: int = 0
     observed_pairs: list[tuple[str, str]] = Field(default_factory=list)
     samples: list[str] = Field(default_factory=list)
+    verbes: list[str] = Field(default_factory=list)
 
 
 def _validate_change(change: PromoteVerbs | MergeTypes) -> None:
@@ -197,10 +201,21 @@ async def _delete_narrative_edge(
         )
 
 
+def _dedupe_verbes(rows: list[dict]) -> list[str]:
+    """Verbes VERBATIM d'origine, dédupliqués en ordre stable — matériau de
+    l'évolution du profil (gloss/examples du RelationSpec, cf. profile_evolution)."""
+    verbes: list[str] = []
+    for row in rows:
+        if row["verbe"] not in verbes:
+            verbes.append(row["verbe"])
+    return verbes
+
+
 async def _apply_promote_verbs(
     driver: AsyncDriver, change: PromoteVerbs, *, project: str, preview: bool
 ) -> ChangeReport:
     rows = await _fetch_matching_narrative_edges(driver, change.verbe_slugs, project=project)
+    verbes = _dedupe_verbes(rows)
 
     # Groupage par paire FINALE (après inversion éventuelle) : deux paraphrases
     # sur la même paire — ou une paraphrase qui retombe sur l'autre sens d'une
@@ -273,6 +288,7 @@ async def _apply_promote_verbs(
         edges_collapsed=edges_collapsed,
         observed_pairs=sorted(observed_pairs),
         samples=samples,
+        verbes=verbes,
     )
 
 
