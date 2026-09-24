@@ -94,6 +94,33 @@ def _light_suffix_strip(token: str) -> str:
     return token
 
 
+# Têtes de verbe qui sont en réalité des conjonctions/subordonnants — un
+# fragment de proposition subordonnée pris pour un verbe narratif (#81, bug vu
+# en DIRECT par l'utilisateur : « SINON … » — le repli conditionnel d'une
+# phrase, pas un lien du domaine — promu en cluster « SINON »).
+#
+# Volontairement un frozenset À PART de ``_STOPWORDS``, pas fusionné dedans :
+# ``_STOPWORDS`` retire des mots de fonction EN TÊTE avant de prendre le
+# premier token substantiel — si « sinon » y entrait, « sinon on bascule »
+# perdrait « sinon » (mot de fonction) PUIS « on » (déjà un stopword) et
+# retomberait sur « bascule », FUSIONNANT à tort avec le vrai cluster du verbe
+# « bascule ». On exclut donc le CLUSTER après coup, une fois sa tête déjà
+# calculée par ``verb_head`` (cf. ``cluster_verbs``), sans jamais toucher au
+# calcul de tête d'un vrai verbe.
+#
+# Construit via ``_light_suffix_strip`` sur l'orthographe brute pour matcher
+# la tête RÉELLEMENT produite par ``verb_head`` : « mais »/« puis » perdent
+# leur « s » final comme n'importe quel mot (→ « mai »/« pui »), et « lorsqu' »
+# élidé avec une apostrophe TYPOGRAPHIQUE (U+2019, copié-collé Word/Docs — pas
+# l'apostrophe droite ASCII que ``_normalize`` reconnaît) se scinde en
+# « lorsqu » + « il »/« elle » : la tête retombe pile sur « lorsqu ».
+_CONJUNCTION_WORDS = (
+    "sinon", "si", "quand", "lorsque", "lorsqu", "car", "donc", "mais",
+    "puis", "ou", "et", "comme",
+)
+_CONJUNCTION_HEADS = frozenset(_light_suffix_strip(w) for w in _CONJUNCTION_WORDS)
+
+
 def verb_head(verbe: str) -> str:
     """Tête normalisée d'un verbe narratif — la CLÉ DE CLUSTERING (distincte du
     nom suggéré, cf. ``suggest_rel_type``). « règle », « qui règle », « est
@@ -157,11 +184,12 @@ def cluster_verbs(edges: list[dict], *, min_count: int) -> dict[str, list[dict]]
     """Groupe des arêtes LIE_A (dicts avec au moins la clé ``verbe``) par tête de
     verbe — pure, testable sans Neo4j. Ne garde que les clusters atteignant
     ``min_count`` arêtes ; un verbe sans tête substantielle (pur mot de
-    fonction) n'entre dans aucun cluster."""
+    fonction) n'entre dans aucun cluster, ni un verbe dont la tête est en fait
+    une conjonction/subordonnant (#81, cf. ``_CONJUNCTION_HEADS``)."""
     clusters: dict[str, list[dict]] = {}
     for edge in edges:
         head = verb_head(str(edge.get("verbe", "")))
-        if not head:
+        if not head or head in _CONJUNCTION_HEADS:
             continue
         clusters.setdefault(head, []).append(edge)
     return {head: rows for head, rows in clusters.items() if len(rows) >= min_count}
@@ -230,12 +258,18 @@ class Proposal(BaseModel):
 
 
 async def _fetch_narrative_edges(driver: AsyncDriver, *, project: str) -> list[dict]:
+    """Arêtes LIE_A du projet — exclut celles dont la SOURCE OU LA CIBLE est le
+    nœud ``document`` (#81 : la moitié des propositions vues en direct étaient
+    du bruit — CONCERNE/COUVRE, des liens du nœud document VERS tout le
+    graphe, méta plutôt que domaine, posés en code par l'ingestion et jamais
+    des verbes narratifs candidats à une promotion de type)."""
     async with driver.session() as session:
         result = await session.run(
             """
             MATCH (a:GenEntity {project: $project})
                   -[r:REL {rel_type: $narr}]->
                   (b:GenEntity {project: $project})
+            WHERE a.entity_type <> 'document' AND b.entity_type <> 'document'
             RETURN r.verbe AS verbe, r.verbe_slug AS verbe_slug,
                    a.name AS from_name, b.name AS to_name
             ORDER BY r.verbe_slug, a.id, b.id

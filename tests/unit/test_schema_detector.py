@@ -208,6 +208,52 @@ def test_cluster_verbs_groups_infinitive_and_present_tense_together() -> None:
     assert len(clusters["bascule"]) == 2
 
 
+# ──────────────────── cluster_verbs : têtes conjonction/subordonnant (#81) ────────────────────
+# Vu en direct par l'utilisateur : « sinon … » (repli conditionnel d'une
+# phrase, pas un lien du domaine) promu en cluster « SINON ». « sinon » n'est
+# pas un mot de fonction générique (au sens du stoplist qui retire des mots
+# EN TÊTE d'un verbe réel) — c'est retiré APRÈS clustering, cf. schema_detector.
+
+@schema_detector_suite.test()
+def test_cluster_verbs_excludes_conjunction_head_sinon() -> None:
+    edges = [{"verbe": "sinon on bascule"}, {"verbe": "sinon rien ne se passe"}]
+    assert cluster_verbs(edges, min_count=2) == {}
+
+
+@schema_detector_suite.test()
+def test_cluster_verbs_excludes_conjunction_head_mais_puis() -> None:
+    """« mais »/« puis » perdent leur « s » final via _light_suffix_strip
+    (→ « mai »/« pui ») — le frozenset des conjonctions doit matcher la tête
+    RÉELLEMENT produite par verb_head, pas l'orthographe brute."""
+    edges_mais = [{"verbe": "mais rien ne change"}, {"verbe": "mais tout bascule"}]
+    assert cluster_verbs(edges_mais, min_count=2) == {}
+    edges_puis = [{"verbe": "puis il part"}, {"verbe": "puis elle revient"}]
+    assert cluster_verbs(edges_puis, min_count=2) == {}
+
+
+@schema_detector_suite.test()
+def test_cluster_verbs_excludes_conjunction_head_elided_lorsqu() -> None:
+    """Apostrophe TYPOGRAPHIQUE (U+2019, copié-collé Word/Docs — pas l'apostrophe
+    droite ASCII reconnue par _normalize) : « lorsqu » + « il » élidés se
+    scindent en deux tokens — la tête retombe pile sur la conjonction."""
+    curly_apostrophe = chr(0x2019)  # U+2019 — construit à part, RUF001 le flague en littéral
+    edges = [
+        {"verbe": f"lorsqu{curly_apostrophe}il bascule"},
+        {"verbe": f"lorsqu{curly_apostrophe}elle bascule"},
+    ]
+    assert cluster_verbs(edges, min_count=2) == {}
+
+
+@schema_detector_suite.test()
+def test_cluster_verbs_real_verb_not_excluded_by_conjunction_filter() -> None:
+    """Garde-fou : le filtre ne doit pas mordre sur un vrai verbe — aucune tête
+    de la liste des conjonctions n'est un préfixe/radical de « règle »."""
+    edges = [{"verbe": "règle"}, {"verbe": "est réglé par"}]
+    clusters = cluster_verbs(edges, min_count=2)
+    assert set(clusters) == {"regle"}
+    assert len(clusters["regle"]) == 2
+
+
 # ──────────────────── pair_near_duplicate_types (pur) ────────────────────
 
 @schema_detector_suite.test()
@@ -300,6 +346,28 @@ async def test_detect_proposals_below_min_count_yields_no_verb_proposal(
     await _seed_entity(driver, "verin", "Vérin", "organe")
     await _seed_entity(driver, "trappe", "Trappe", "organe")
     await _seed_narrative(driver, "verin", "trappe", "règle")
+
+    proposals = await detect_proposals(
+        driver, project=PROJ, profile=EMERGENT_SEED_PROFILE, min_count=2
+    )
+    assert not [p for p in proposals if isinstance(p.change, PromoteVerbs)]
+
+
+@schema_detector_suite.test()
+async def test_detect_proposals_excludes_document_edges_from_verb_clusters(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """#81 : la moitié des propositions vues en direct était du bruit —
+    CONCERNE/COUVRE, des LIE_A du nœud `document` (méta, posé par
+    l'ingestion) vers tout le graphe, jamais un lien du domaine. Un cluster
+    document→X ne doit produire AUCUNE proposition, même au-dessus de
+    min_count."""
+    await _wipe(driver)
+    await _seed_entity(driver, "doc1", "Fiche 1", "document")
+    await _seed_entity(driver, "verin", "Vérin", "organe")
+    await _seed_entity(driver, "trappe", "Trappe", "organe")
+    await _seed_narrative(driver, "doc1", "verin", "concerne")
+    await _seed_narrative(driver, "doc1", "trappe", "concerne")
 
     proposals = await detect_proposals(
         driver, project=PROJ, profile=EMERGENT_SEED_PROFILE, min_count=2
