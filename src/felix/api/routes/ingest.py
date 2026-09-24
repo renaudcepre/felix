@@ -37,9 +37,9 @@ from felix.atelier.agent import (
     resolve_profile,
 )
 from felix.atelier.pipeline import sse_text
-from felix.core import record_message
+from felix.core import link_produced, record_message
 from felix.core.projects import DEFAULT_PROJECT
-from felix.ingest.document import stream_ingest_document
+from felix.ingest.document import IngestReport, stream_ingest_document
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -96,8 +96,9 @@ async def post_ingest_document(  # noqa: PLR0913 — 3 deps d'agents + driver + 
                 shutil.copyfileobj(file.file, out)
             # Message utilisateur du tour d'import — persisté avant l'ingestion
             # (même loi que record_message côté chat : témoignage de la
-            # demande, indépendant de la réussite de ce qui suit).
-            await record_message(
+            # demande, indépendant de la réussite de ce qui suit). Son id sert
+            # plus bas à poser la provenance (#83).
+            user_msg_id = await record_message(
                 driver, "user", "text", f"Import : {safe_name}", project=project,
             )
             async for ev in stream_ingest_document(
@@ -121,6 +122,12 @@ async def post_ingest_document(  # noqa: PLR0913 — 3 deps d'agents + driver + 
                 await record_message(
                     driver, "felix", "report", "", payload=report_json, project=project,
                 )
+                # Provenance (#83) : MÊME helper que le chat
+                # (felix.atelier.routes.atelier → link_produced sur deps.touched_ids) —
+                # le message « Import : <fichier> » a produit les entités touchées
+                # par l'ingestion. Scoping fort porté par link_produced lui-même.
+                touched = set(IngestReport.model_validate_json(report_json).touched_ids)
+                await link_produced(driver, user_msg_id, touched, project=project)
             yield ServerSentEvent(data="", event="done")
         except Exception as e:
             logger.exception("import de document échoué")

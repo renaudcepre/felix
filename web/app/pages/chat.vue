@@ -75,6 +75,12 @@ async function onProjectChange(e: Event) {
 const importing = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
+// Libellé statique tant qu'aucune phase n'est encore arrivée du flux SSE
+// (#83) — le bouton bascule ensuite sur `phase` en direct (« Bloc 2/3 :
+// liens… »), le MÊME ref que la ligne de frappe sous le fil (useAtelier.phase).
+const IMPORT_FALLBACK_LABEL = 'Lecture de la fiche… (1 à 3 min)'
+const importButtonLabel = computed(() => phase.value ?? IMPORT_FALLBACK_LABEL)
+
 function triggerImport() {
   if (importing.value) return
   fileInputRef.value?.click()
@@ -87,6 +93,10 @@ async function onFileSelected(e: Event) {
   if (!file) return
 
   importing.value = true
+  // Repli garanti (#83) : `phase` est un ref PARTAGÉ avec le chat (useAtelier) —
+  // sans ce reset, une valeur laissée par un tour précédent pourrait fuiter
+  // dans le bouton avant le premier event `phase` de CET import.
+  phase.value = null
   try {
     // Même flux SSE que le chat (#import) : phases + cartes live pendant les
     // 1 à 3 min d'ingestion, plus un JSON one-shot après un long silence —
@@ -218,7 +228,7 @@ function onKeydown(e: KeyboardEvent) {
         <button class="btn btn-outline" :disabled="importing" @click="triggerImport">
           <template v-if="importing">
             <span class="btn-typing"><span /><span /><span /></span>
-            Lecture de la fiche… (1 à 3 min)
+            {{ importButtonLabel }}
           </template>
           <template v-else>
             <AtelierIcon name="fiche" :size="16" />Importer une fiche

@@ -581,6 +581,21 @@ async def _stub_run_extractors(*_args: object, **_kwargs: object):
     yield ServerSentEvent(data="Felix relie les fiches…", event="phase")
 
 
+def _make_touch_stub(entity_id: str):
+    """Variante de `_stub_run_extractors` qui peuple aussi `chunk_deps.touched_ids`
+    (#83) — `run_extractors` est appelé par `stream_ingest_document` en positionnel
+    (agent, relation_agent, chronicle_agent, extract_prompt, chunk_prompt,
+    message_history, chunk_deps, profile) : `args[6]` est `chunk_deps`. Nécessaire
+    pour vérifier que `IngestReport.touched_ids`/la provenance PRODUCED reflètent
+    de VRAIES entités touchées, sans dépendre d'un modèle réel."""
+    async def _stub(*args: object, **_kwargs: object):
+        args[6].touched_ids.add(entity_id)  # type: ignore[attr-defined]
+        yield ServerSentEvent(data="Felix met à jour la bible…", event="phase")
+        yield ServerSentEvent(data=json.dumps(_STUB_TOOL_CARD), event="tool")
+        yield ServerSentEvent(data="Felix relie les fiches…", event="phase")
+    return _stub
+
+
 _STREAM_PROJ = "test-ingest-stream-v1"
 
 
@@ -764,6 +779,117 @@ async def test_ingest_route_streams_text_event_stream(
     finally:
         async with driver.session() as session:
             await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
+
+
+# ──────────────── provenance (#83) : PRODUCED depuis le message d'import ────────────────
+
+@ingest_document_suite.test()
+async def test_stream_ingest_document_report_exposes_touched_ids(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """`IngestReport.touched_ids` porte les entités RÉELLEMENT touchées par
+    l'ingestion (hors document lui-même) — la route s'en sert pour poser la
+    provenance PRODUCED (#83), même convention que `deps.touched_ids` côté chat."""
+    await _wipe_stream_proj(driver)
+    entity_id = "stub-touched-entity"
+    async with driver.session() as session:
+        await session.run(
+            "MERGE (e:GenEntity {id: $id, project: $p})"
+            " SET e.name = 'Stub touchée', e.entity_type = 'organe'",
+            id=entity_id, p=_STREAM_PROJ,
+        )
+    try:
+        with patch("felix.ingest.document.run_extractors", _make_touch_stub(entity_id)):
+            events = [
+                ev async for ev in stream_ingest_document(
+                    driver, ["Une page avec du contenu de test."],
+                    profile=MAINTENANCE_PROFILE,
+                    agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                    project=_STREAM_PROJ,
+                )
+            ]
+        report = IngestReport.model_validate_json(events[-1].data)
+        assert report.touched_ids == [entity_id]
+    finally:
+        await _wipe_stream_proj(driver)
+
+
+@ingest_document_suite.test()
+async def test_ingest_route_links_produced_from_import_message(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """La route pose la provenance (#83) : le message « Import : <fichier> »
+    PRODUCED les entités touchées — MÊME helper que le chat
+    (felix.core.messages.link_produced), scoping fort par projet. Pipeline
+    d'extraction stubbé (pas de LLM réel) mais touche une VRAIE entité en base,
+    pour vérifier l'arête posée plutôt que juste sa plomberie."""
+    proj = "test-ingest-provenance-v1"
+    other_proj = "test-ingest-provenance-other-v1"
+    # MÊME id d'entité dans les deux projets (#60) : vérifie que le scoping fort
+    # de link_produced (MATCH ... project: $project) ne peut pas se tromper de nœud.
+    entity_id = "stub-provenance-entity"
+    async with driver.session() as session:
+        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
+        await session.run("MATCH (m:Message {project: $p}) DETACH DELETE m", p=proj)
+        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=other_proj)
+        await session.run(
+            "MERGE (e:GenEntity {id: $id, project: $p})"
+            " SET e.name = 'Stub provenance', e.entity_type = 'organe'",
+            id=entity_id, p=proj,
+        )
+        # Même id, projet DIFFÉRENT : ne doit recevoir AUCUNE arête (le message
+        # importé appartient à `proj`, jamais à `other_proj`).
+        await session.run(
+            "MERGE (e:GenEntity {id: $id, project: $p})"
+            " SET e.name = 'Stub autre projet', e.entity_type = 'organe'",
+            id=entity_id, p=other_proj,
+        )
+
+    stub_agent = Agent(TestModel())
+    test_app = FastAPI()
+    test_app.include_router(ingest_routes.router)
+    test_app.dependency_overrides[api_deps.get_driver] = lambda: driver
+    test_app.dependency_overrides[api_deps.get_atelier_agents] = lambda: {"maintenance": stub_agent}
+    test_app.dependency_overrides[api_deps.get_relation_agents] = lambda: {"maintenance": stub_agent}
+    test_app.dependency_overrides[api_deps.get_chronicle_agents] = lambda: {"maintenance": stub_agent}
+    try:
+        with patch("felix.ingest.document.run_extractors", _make_touch_stub(entity_id)):
+            transport = httpx.ASGITransport(app=test_app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/ingest/document",
+                    files={"file": ("note.txt", b"Une fiche de test minimaliste.", "text/plain")},
+                    data={"profile": "maintenance", "project": proj},
+                )
+        assert response.status_code == 200
+        assert "event: report" in response.text, response.text
+
+        async with driver.session() as session:
+            result = await session.run(
+                "MATCH (m:Message {project: $p, role: 'user'})"
+                "-[:PRODUCED]->(e:GenEntity {id: $id, project: $p})"
+                " RETURN m.body AS body",
+                p=proj, id=entity_id,
+            )
+            record = await result.single()
+            assert record is not None, "aucune arête PRODUCED posée"
+            assert record["body"] == "Import : note.txt"
+
+            # Scoping fort (#60) : aucune arête ne fuit vers le nœud de MÊME id
+            # dans l'AUTRE projet.
+            leak = await (
+                await session.run(
+                    "MATCH (:Message)-[:PRODUCED]->(e:GenEntity {id: $id, project: $p})"
+                    " RETURN count(e) AS n",
+                    p=other_proj, id=entity_id,
+                )
+            ).single()
+            assert leak["n"] == 0
+    finally:
+        async with driver.session() as session:
+            await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
+            await session.run("MATCH (m:Message {project: $p}) DETACH DELETE m", p=proj)
+            await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=other_proj)
 
 
 @ingest_document_suite.test()

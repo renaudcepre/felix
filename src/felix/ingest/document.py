@@ -517,6 +517,12 @@ class IngestReport(BaseModel):
     by_model: list[ModelCost] = []
     # Un bloc en échec (best-effort, cf. run_extractors) : "pages p-q : erreur".
     errors: list[str] = []
+    # Ids des entités touchées par l'ingestion (hors document, #83) : sert à
+    # poser la provenance PRODUCED depuis le message « Import : <fichier> »
+    # (felix.core.messages.link_produced, MÊME helper que le chat côté route).
+    # Défaut vide : les appelants existants (CLI, e2e) qui ignorent le champ ne
+    # sont pas cassés.
+    touched_ids: list[str] = []
 
 
 # Traduction des events `phase` génériques de `run_extractors` (« Felix met à
@@ -703,6 +709,7 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         cost_usd=cost_summary.cost_usd,
         by_model=cost_summary.by_model,
         errors=errors,
+        touched_ids=sorted(totals.touched_ids - {document_id}),
     )
     yield ServerSentEvent(data=report.model_dump_json(), event="report")
 
