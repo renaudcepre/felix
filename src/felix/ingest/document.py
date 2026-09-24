@@ -31,7 +31,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+from pydantic_ai.settings import ModelSettings
 from pypdf import PdfReader
 from rapidfuzz import fuzz
 from sse_starlette import ServerSentEvent
@@ -50,15 +52,17 @@ from felix.core import (
 from felix.core.graph import all_entities
 from felix.core.projects import create_project
 from felix.cost import (
-    ModelCost,  # noqa: TC001 — champ pydantic (IngestReport), résolu au runtime
+    CostLedger,
+    ModelCost,
+    agent_model_name,
 )
 from felix.ingest.resolver import slugify
+from felix.llm import build_gate_model
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
     from neo4j import AsyncDriver
-    from pydantic_ai import Agent
 
     from felix.core import Profile
 
@@ -122,7 +126,9 @@ def read_title(path: str | Path) -> str | None:
     if raw is None:
         return None
     title = raw.strip()
-    if not title or title == p.stem:
+    # Trop court pour être un titre (vu en live : /Title = « M », posé par un
+    # logiciel de facturation) — même seuil que les lignes de `guess_title`.
+    if not title or title == p.stem or len(title) < _MIN_TITLE_LEN:
         return None
     if any(pat.search(title) for pat in _GENERIC_PDF_TITLE_PATTERNS):
         return None
@@ -335,6 +341,8 @@ _HEADER_NOISE_PATTERNS = (
 )
 # Une ligne plus courte que ça n'a pas la place d'être un vrai titre de fiche.
 _MIN_TITLE_LEN = 12
+_DATED_LINE_MAX_LEN = 40
+_DATE_RE = re.compile(r"\b\d{1,2}/\d{1,2}/\d{2,4}\b")
 # Un fil d'Ariane / bandeau de catégorie (« Machines Atelier Fabrique ») : peu
 # de mots, TOUS capitalisés, aucune ponctuation de titre — un vrai titre
 # contient toujours un mot-outil en minuscule ou une ponctuation
@@ -358,9 +366,71 @@ def _is_header_noise_line(line: str) -> bool:
     métadonnées d'export, ligne trop courte, ou fil d'Ariane/catégorie."""
     if len(line) < _MIN_TITLE_LEN:
         return True
+    # Adresse, code postal, montant, date : un titre ne commence pas par un
+    # chiffre (vu en live : l'adresse du chantier d'une facture prise pour titre).
+    if line[0].isdigit():
+        return True
+    # Ligne COURTE portant une date (« VALENCE, le 03/02/2026 ») : en-tête de
+    # courrier ou de facture. Un vrai titre daté est plus long et garde sa place.
+    if len(line) < _DATED_LINE_MAX_LEN and _DATE_RE.search(line):
+        return True
     if any(p.match(line) for p in _HEADER_NOISE_PATTERNS):
         return True
     return _is_breadcrumb_line(line)
+
+
+class _TitleGuess(BaseModel):
+    titre: str = Field(description="le titre du document, tel qu'écrit dedans ; "
+                       "chaîne vide s'il n'y en a pas")
+
+
+_TITLE_PROMPT = """\
+Voici le début d'un document. Donne son TITRE : l'intitulé qui dit ce qu'est ce
+document (ex. « Fiche de réglage presse PL-7 », « Facture N° 1234 »), recopié
+tel qu'il apparaît. Pas une adresse, pas une date, pas un nom de personne ou
+d'entreprise seul. S'il n'y a aucun intitulé, renvoie une chaîne vide.
+
+{excerpt}
+"""
+_TITLE_EXCERPT_CHARS = 1500
+_TITLE_MAX_LEN = 150
+
+
+async def llm_title(pages: list[str], fallback: str, ledger: CostLedger) -> str:
+    """Titre d'un document SANS métadonnées exploitables : un appel court au
+    modèle du gate (~1k tokens, compté dans `ledger`), sinon `fallback` (le nom
+    du fichier, choisi par un humain). Remplace une pile d'heuristiques sur la
+    « première ligne » qui cassait à chaque nouveau type de document (bandeau
+    de catégorie, adresse de chantier, « lieu, le date », « Adresse du
+    chantier »…). Best-effort : une erreur LLM ne bloque pas l'import."""
+    excerpt = "\n".join(pages)[:_TITLE_EXCERPT_CHARS]
+    if not excerpt.strip():
+        return fallback
+    titler = Agent(build_gate_model(), output_type=_TitleGuess,
+                   model_settings=ModelSettings(temperature=0.0), retries=2)
+    try:
+        run = await titler.run(_TITLE_PROMPT.format(excerpt=excerpt))
+    except Exception:
+        logger.exception("titrage LLM échoué — repli sur le nom de fichier")
+        return fallback
+    ledger.add_usage(agent_model_name(titler), run.usage())
+    title = run.output.titre.strip()
+    if not title or len(title) > _TITLE_MAX_LEN:
+        return fallback
+    return title
+
+
+async def _resolve_title(
+    meta_title: str | None, pages: list[str], fallback: str, ledger: CostLedger,
+    *, from_caller: bool,
+) -> str:
+    """Métadonnées PDF d'abord ; pages fournies par l'appelant (tests,
+    extraction maison) → heuristique, pas d'appel LLM caché ; sinon titrage LLM."""
+    if meta_title:
+        return meta_title
+    if from_caller:
+        return guess_title(pages, fallback)
+    return await llm_title(pages, fallback, ledger)
 
 
 def guess_title(pages: list[str], fallback: str) -> str:
@@ -503,7 +573,13 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         meta_title = read_title(path_or_pages)
 
     pages = clean_pages(pages)
-    title = meta_title or guess_title(pages, Path(source_name).stem)
+    # Ledger du document créé AVANT le titre : l'appel de titrage est un appel
+    # LLM comme les autres, il se paie et s'affiche (cf. CostLedger).
+    totals = GenericDeps(driver=driver, profile=profile, project_id=project)
+    title = await _resolve_title(
+        meta_title, pages, Path(source_name).stem, totals.cost_ledger,
+        from_caller=isinstance(path_or_pages, list),
+    )
     chunks = chunk_pages(pages, max_chars=max_chars)
     n_chunks = len(chunks)
 
@@ -521,7 +597,6 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
     # bloc a les SIENNES, fraîches, pour une attribution de page correcte) mais
     # accumulent touched_ids/check_candidates/write_log pour le résumé et le
     # check de cohérence final, qui porte sur le document ENTIER.
-    totals = GenericDeps(driver=driver, profile=profile, project_id=project)
     errors: list[str] = []
     relations_count = 0
 

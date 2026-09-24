@@ -291,6 +291,8 @@ def test_read_title_ignores_generic_or_filename_title(
 ) -> None:
     for title, filename in (
         ("Untitled", "a.pdf"), ("Microsoft Word - fiche.docx", "b.pdf"), ("c", "c.pdf"),
+        # Vu en live sur une facture exportée par un logiciel de gestion : /Title = « M ».
+        ("M", "facture.pdf"),
     ):
         pdf_writer = PdfWriter()
         pdf_writer.add_blank_page(width=200, height=200)
@@ -762,3 +764,17 @@ async def test_ingest_route_streams_text_event_stream(
     finally:
         async with driver.session() as session:
             await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
+
+
+@ingest_document_suite.test()
+def test_guess_title_skips_lines_starting_with_a_number() -> None:
+    # Vu en live sur une facture : l'adresse du chantier prise pour le titre.
+    page = "12, rue des Presses\n26000 VALENCE\nFacture N° BX-0042 — presse à balles"
+    assert guess_title([page], "fallback") == "Facture N° BX-0042 — presse à balles"
+
+
+@ingest_document_suite.test()
+def test_guess_title_skips_short_place_and_date_lines() -> None:
+    # « VALENCE, le 03/02/2026 » : lieu + date d'un courrier/facture, pas un titre.
+    page = "VALENCE, le 03/02/2026\nFacture N° BX-0042 — presse à balles"
+    assert guess_title([page], "fallback") == "Facture N° BX-0042 — presse à balles"
