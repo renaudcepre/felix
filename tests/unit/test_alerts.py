@@ -168,3 +168,43 @@ def test_no_test_names_in_prompts() -> None:
             if re.search(rf"\b{re.escape(name)}\b", text, re.IGNORECASE):
                 leaked.append(f"{name} dans {py.relative_to(src.parent.parent)}")
     assert not leaked, f"noms de test présents dans les sources : {leaked}"
+
+
+# ─────────── dédup des verdicts : une contradiction, une carte ───────────
+# Le juge tourne PAR entité candidate : une même contradiction entre Korvax et
+# Weldra remonte depuis chacune, reformulée → la clé « texte exact » ne dédupe
+# pas (9 cartes quasi identiques vues en ingestion). La clé est l'ensemble des
+# SUJETS impliqués ; un ensemble inclus dans un autre = même contradiction.
+from felix.core.check import CheckVerdict, distinct_contradictions  # noqa: E402
+
+
+def _v(message: str, sujets: list[str], *, contradiction: bool = True) -> CheckVerdict:
+    return CheckVerdict(reason="r", contradiction=contradiction, message=message,
+                        sujets=sujets)
+
+
+@alerts_suite.test()
+def test_distinct_contradictions_merges_same_subjects_rephrased() -> None:
+    kept = distinct_contradictions([
+        _v("Korvax ne peut pas dépasser Weldra.", ["Korvax", "Weldra"]),
+        _v("La valeur de Weldra rend Korvax impossible.", ["weldra", "Korvax "]),
+        _v("Korvax, Weldra et Thyren s'excluent.", ["Korvax", "Weldra", "Thyren"]),
+    ])
+    assert [k.message for k in kept] == ["Korvax ne peut pas dépasser Weldra."]
+
+
+@alerts_suite.test()
+def test_distinct_contradictions_keeps_disjoint_and_drops_non_contradictions() -> None:
+    kept = distinct_contradictions([
+        _v("A", ["Korvax", "Weldra"]),
+        _v("B", ["Thyren"]),
+        _v("C", ["Korvax"], contradiction=False),
+    ])
+    assert [k.message for k in kept] == ["A", "B"]
+
+
+@alerts_suite.test()
+def test_distinct_contradictions_without_subjects_falls_back_to_text() -> None:
+    kept = distinct_contradictions([_v("Même phrase", []), _v("même phrase ", []),
+                                    _v("Autre", [])])
+    assert [k.message for k in kept] == ["Même phrase", "Autre"]

@@ -169,6 +169,30 @@ function submitFree() {
         </div>
       </div>
 
+      <!-- résumé d'import de fiche (Étape 3, plans/maintenance_profile.md) -->
+      <div v-else-if="msg.kind === 'report' && msg.report" class="tool-card report-card">
+        <div class="tool-head">
+          <span class="tool-ic"><AtelierIcon name="fiche" :size="15" /></span>
+          <span class="tool-label">Fiche importée</span>
+          <span class="tool-spacer" />
+          <NuxtLink class="tool-link" to="/entities">Voir les fiches <AtelierIcon name="arrow" :size="13" /></NuxtLink>
+        </div>
+        <div class="tool-body">
+          <div class="report-title">{{ msg.report.title }}</div>
+          <div class="report-stats">
+            <span class="report-stat"><strong>{{ msg.report.chunks }}</strong> blocs lus</span>
+            <span class="report-stat"><strong>{{ msg.report.entities_touched }}</strong> entités</span>
+            <span class="report-stat"><strong>{{ msg.report.relations }}</strong> relations</span>
+          </div>
+          <ul v-if="msg.report.alerts.length" class="report-list report-alerts">
+            <li v-for="(a, i) in msg.report.alerts" :key="`alert-${i}`">{{ a }}</li>
+          </ul>
+          <ul v-if="msg.report.errors.length" class="report-list report-errors">
+            <li v-for="(err, i) in msg.report.errors" :key="`err-${i}`">{{ err }}</li>
+          </ul>
+        </div>
+      </div>
+
       <!-- choix multiple + champ libre -->
       <div v-else-if="msg.kind === 'choice'" class="choice-card" :class="{ 'is-done': msg.answered }">
         <div class="choice-q">{{ msg.question }}</div>

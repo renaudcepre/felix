@@ -21,6 +21,16 @@ from dataclasses import dataclass
 from felix.core.graph import NARRATIVE_REL
 
 
+def runs_chronicle(profile: Profile | None) -> bool:
+    """Vrai si le domaine du profil tient une CHRONOLOGIE d'événements — la passe
+    chroniqueur (add_event/move_event) n'a de sens que là. Faux pour le noyau nu
+    (``profile=None``) ou un domaine sans notion d'événement (ex. maintenance :
+    une fiche technique décrit un état stable, pas un déroulé dans le temps).
+    Règle SYSTÉMIQUE unique, importée à la fois par la route et par l'ingestion
+    de document (#Étape 2) — pas de copie du même test à deux endroits."""
+    return profile is not None and profile.manages_events
+
+
 def _or_types(types: tuple[str, ...]) -> str:
     """« personnage », « personnage ou groupe », « a, b ou c » — pour les messages guidants."""
     if not types:
@@ -93,6 +103,13 @@ class Profile:
     # add_entity refuse alors d'en créer un comme entité plate (sinon node hors
     # chaîne, hors chronologie). False = domaine sans chronologie dédiée.
     manages_events: bool = False
+    # Types de relations posés PAR LE CODE seulement (ex. DESCRIBED_IN, posée par
+    # l'ingestion de document, #Étape 2) : le LLM n'a pas le droit de les créer
+    # via add_relation, même si `validate_relation` les accepte structurellement
+    # (elles restent dans relation_vocabulary pour le typage domaine/portée).
+    # add_relation (felix.core.tools) refuse ces types avec un message guidant —
+    # AVANT même de consulter validate_relation. Vide = aucune relation réservée.
+    code_only_relations: tuple[str, ...] = ()
 
     def render_prompt_block(self) -> str:
         """Bloc concaténé au system prompt — volontairement compact (petit modèle)."""
@@ -355,4 +372,119 @@ CHANTIER_PROFILE = Profile(
         "Les dates (achat, coulage, livraison) doivent être cohérentes entre elles.",
         "Une quantité ou un prix ne peut pas être négatif.",
     ),
+)
+
+
+# Troisième domaine concret (documentation technique de maintenance) — chat
+# multi-domaine (Étape 1) puis ingestion de fiches procédure (Étape 2, à venir).
+# manages_events=False : une fiche technique décrit un état STABLE (organes,
+# réglages, consignes), pas un déroulé dans le temps — cf. runs_chronicle.
+MAINTENANCE_PROFILE = Profile(
+    name="maintenance",
+    description="Tu tiens la documentation technique d'une machine : ses organes, "
+    "commandes, réglages, modes de fonctionnement et consignes de sécurité.",
+    entity_types=(
+        EntityType(
+            "machine", ("modele", "reperes", "fabricant", "site"),
+            "La machine documentée (ex. une presse plieuse). `reperes` est UNE "
+            "propriété qui liste tous les repères machine, jamais une entité "
+            "par repère.",
+        ),
+        EntityType(
+            "organe", ("fonction", "emplacement"),
+            "Un sous-ensemble physique de la machine (tablier, butée arrière, "
+            "pédale) ; sa fonction et son emplacement sont des propriétés.",
+        ),
+        EntityType(
+            "commande", ("nature", "role", "emplacement"),
+            "Un bouton, un voyant ou un sélecteur ; `nature` précise lequel des "
+            "trois, `role` ce qu'il déclenche ou signale.",
+        ),
+        EntityType(
+            "parametre", ("unite", "plage", "valeur_usuelle", "contrainte"),
+            "Un réglage numérique (force de pliage, vitesse d'approche). Unité, "
+            "plage et valeur sont VERBATIM (copiées de la fiche), jamais calculées.",
+        ),
+        EntityType(
+            "mode", ("description", "usage"),
+            "Un mode de fonctionnement de la machine (manuel, automatique, réglage).",
+        ),
+        EntityType(
+            "consigne", ("texte", "gravite", "motif"),
+            "Une mise en garde ou une interdiction. `texte` est le VERBATIM de la "
+            "fiche, jamais paraphrasé.",
+        ),
+        EntityType(
+            "document", ("titre", "version", "date_maj", "auteur", "valideur"),
+            "La fiche technique source. Créée EN CODE à l'ingestion, jamais par toi.",
+        ),
+    ),
+    modeling_rules=(
+        "Une valeur, une unité ou une plage est une PROPRIÉTÉ VERBATIM (copiée "
+        "telle quelle de la fiche) : ne calcule et n'arrondis jamais rien.",
+        "La liste des repères d'une machine est UNE propriété `reperes` (ex. "
+        "'A12, B04, C7'), jamais une entité par repère.",
+        "Une mise en garde ou une interdiction est une entité `consigne` reliée "
+        "par APPLIES_TO à ce qu'elle concerne — pas une propriété noyée ailleurs.",
+        "Le boilerplate (numéro de page, pied de page répété, légende d'image "
+        "vide) n'est ni une entité ni une propriété : ignore-le.",
+        "Un paramètre ou un organe déjà connu qui réapparaît plus loin dans la "
+        "fiche est la MÊME entité : cherche-le (find_entity) avant d'en recréer un.",
+        "DESCRIBED_IN est posée PAR LE CODE à l'ingestion, jamais par toi : ne "
+        "crée pas cette relation toi-même.",
+    ),
+    consistency_rules=(
+        "Deux sources donnent une unité, une plage ou une valeur différente pour "
+        "le même paramètre.",
+        "Une consigne interdit ce qu'une autre recommande.",
+        "Une valeur déclarée viole une contrainte déclarée par ailleurs (ex. une "
+        "borne haute inférieure à une borne basse).",
+    ),
+    # Noyau STRUCTUREL (#68) : les seuls types dont le sens est typé sujet/objet.
+    # DESCRIBED_IN est POSÉE PAR LE CODE (ingestion, Étape 2) — listée ici pour que
+    # validate_relation l'accepte, mais le modeling_rule ci-dessus dit au modèle de
+    # ne jamais la créer lui-même.
+    relation_vocabulary=(
+        RelationSpec(
+            "PART_OF", "fait partie d'un ensemble physique plus grand",
+            subjects=("organe", "commande"), objects=("machine", "organe"),
+            examples="le tablier fait partie de la PL-7, la pédale fait partie "
+                     "du pupitre de commande",
+        ),
+        RelationSpec(
+            "CONTROLS", "commande / pilote un réglage, un mode ou un organe",
+            subjects=("commande",), objects=("parametre", "mode", "organe"),
+            examples="la pédale commande la vitesse d'approche, le sélecteur "
+                     "pilote le mode automatique",
+        ),
+        RelationSpec(
+            "INDICATES", "signale l'état d'un organe, d'un réglage ou d'un mode",
+            subjects=("commande",), objects=("organe", "parametre", "mode"),
+            examples="le voyant rouge indique le dépassement de la force de "
+                     "pliage, le voyant vert indique le mode automatique actif",
+        ),
+        RelationSpec(
+            "APPLIES_TO",
+            "concerne / s'applique à une machine, un organe, une commande ou "
+            "un réglage",
+            subjects=("consigne", "mode", "parametre", "document"),
+            objects=("machine", "organe", "commande", "parametre"),
+            examples="la consigne de sécurité s'applique à la butée arrière, "
+                     "le mode réglage s'applique à la PL-7",
+        ),
+        RelationSpec(
+            "DEPENDS_ON", "dépend de la valeur d'un autre réglage",
+            subjects=("parametre",), objects=("parametre",),
+            examples="la vitesse d'approche dépend de la force de pliage réglée",
+        ),
+        RelationSpec(
+            "DESCRIBED_IN", "décrit dans un document source (posée par le code)",
+            subjects=("machine", "organe", "commande", "parametre", "mode",
+                      "consigne", "document"),
+            objects=("document",),
+        ),
+    ),
+    narrative_rel=NARRATIVE_REL,
+    manages_events=False,
+    code_only_relations=("DESCRIBED_IN",),
 )

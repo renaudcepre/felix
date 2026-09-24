@@ -1,18 +1,27 @@
 <script setup lang="ts">
-import type { AtelierMsg, ChoiceOption, ResolveOption } from '~/types/atelier'
+import type { AtelierMsg, ChoiceOption, IngestReportPayload, ResolveOption } from '~/types/atelier'
 
 // Page autonome (pas le layout cyan de l'app de référence).
 definePageMeta({ layout: false })
 useHead({ title: 'Felix — Atelier · Rivière basse' })
 
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
-const { messages, typing, phase, sendMessage, silentSession, newConversation } = useAtelier()
+const { messages, typing, phase, sendMessage, silentSession, newConversation, pushSystemMessage } = useAtelier()
 
 // Histoire courante (#60) : sélecteur d'histoire + « Nouvelle histoire » — le
 // fil de conversation ET la bible suivent (useAtelier persiste par projet, les
 // fetchs d'entités portent le projet).
 const { currentProject, projects, refreshProjects, switchProject, createProject } = useProject()
 onMounted(() => { void refreshProjects() })
+
+// Mode du bot (Étape 3, plans/maintenance_profile.md) : sélecteur de la
+// topbar, envoyé comme `profile` à chaque tour par useAtelier.
+const { currentProfile, profiles, refreshProfiles, switchProfile } = useAtelierProfile()
+onMounted(() => { void refreshProfiles() })
+
+function onProfileChange(e: Event) {
+  switchProfile((e.target as HTMLSelectElement).value)
+}
 
 async function onProjectChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value
@@ -28,6 +37,50 @@ async function onProjectChange(e: Event) {
   else {
     // Annulé : le select doit revenir sur l'histoire courante.
     (e.target as HTMLSelectElement).value = currentProject.value
+  }
+}
+
+// ───────── Import de fiche (Étape 3, plans/maintenance_profile.md) ─────────
+// Upload PDF/txt/md → POST /api/ingest/document (même profil + histoire que le
+// chat). L'appel prend 1 à 3 min (lecture + extraction bloc par bloc) : on le
+// dit dans le bouton plutôt que de laisser l'auteur devant un silence. Visible
+// dans tous les modes — un document EST du contenu, quel que soit le mode.
+const importing = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+function triggerImport() {
+  if (importing.value) return
+  fileInputRef.value?.click()
+}
+
+async function onFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // permet de réimporter le même fichier juste après une erreur
+  if (!file) return
+
+  importing.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('profile', currentProfile.value)
+    form.append('project', currentProject.value)
+    const report = await $fetch<IngestReportPayload>('/api/ingest/document', {
+      method: 'POST',
+      body: form,
+    })
+    pushSystemMessage({ role: 'felix', kind: 'report', report })
+    // La liste d'entités (page /entities) cache sa réponse par appel : sans
+    // ça, revenir dessus après un import montrerait encore l'ancien état.
+    clearNuxtData()
+  }
+  catch (err) {
+    const detail = (err as { data?: { detail?: string } } | undefined)?.data?.detail
+    const msg = detail ?? (err instanceof Error ? err.message : 'Erreur inconnue')
+    pushSystemMessage({ role: 'felix', kind: 'text', body: `Erreur à l'import de la fiche : ${msg}` })
+  }
+  finally {
+    importing.value = false
   }
 }
 
@@ -128,9 +181,29 @@ function onKeydown(e: KeyboardEvent) {
           <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
           <option value="__new__">＋ Nouvelle histoire…</option>
         </select>
+        <span class="tb-sep" />
+        <select class="tb-project tb-project-select" title="Mode de Felix" :value="currentProfile" @change="onProfileChange">
+          <option v-for="p in profiles" :key="p.key" :value="p.key">{{ p.label }}</option>
+        </select>
       </div>
       <div class="tb-right">
         <span class="tb-save"><span class="save-dot" />Enregistré</span>
+        <button class="btn btn-outline" :disabled="importing" @click="triggerImport">
+          <template v-if="importing">
+            <span class="btn-typing"><span /><span /><span /></span>
+            Lecture de la fiche… (1 à 3 min)
+          </template>
+          <template v-else>
+            <AtelierIcon name="fiche" :size="16" />Importer une fiche
+          </template>
+        </button>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept=".pdf,.txt,.md"
+          style="display: none"
+          @change="onFileSelected"
+        >
         <button class="btn btn-ghost" :class="{ confirming: confirmNew }" @click="clickNewConversation">
           <AtelierIcon name="plus" :size="16" />{{ confirmNew ? 'Confirmer ?' : 'Nouvelle conversation' }}
         </button>
@@ -287,6 +360,12 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .btn-ghost { color: var(--ink-2); }
 .felix-atelier .btn-ghost:hover { background: var(--card-2); color: var(--ink); }
 .felix-atelier .btn.confirming { color: var(--terra); border-color: var(--terra-line); background: var(--terra-soft); }
+/* État occupé du bouton d'import (Étape 3) — mêmes puces que l'indicateur de
+   frappe (.typing), en miniature, dans le bouton lui-même. */
+.felix-atelier .btn-typing { display: inline-flex; gap: 3px; }
+.felix-atelier .btn-typing span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: felix-bob 1.2s infinite ease-in-out; }
+.felix-atelier .btn-typing span:nth-child(2) { animation-delay: .15s; }
+.felix-atelier .btn-typing span:nth-child(3) { animation-delay: .3s; }
 
 /* Monogramme */
 .felix-atelier .mono-avatar {
@@ -405,6 +484,16 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .tool-added { display: flex; gap: 10px; padding: 9px 11px; background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 6px; }
 .felix-atelier .tool-plus { font-family: var(--mono); font-size: 11px; color: var(--sage); flex: none; margin-top: 2px; }
 .felix-atelier .tool-text { font-family: var(--serif); font-size: 15px; line-height: 1.5; color: var(--ink); }
+
+/* Résumé d'import de fiche (Étape 3, plans/maintenance_profile.md) — même
+   habit que .tool-card (carte outil), pas une nouvelle famille de couleurs. */
+.felix-atelier .report-title { font-family: var(--sans); font-weight: 700; font-size: 14.5px; color: var(--ink); margin-bottom: 9px; }
+.felix-atelier .report-stats { display: flex; flex-wrap: wrap; gap: 14px; }
+.felix-atelier .report-stat { font-family: var(--sans); font-size: 13px; color: var(--ink-2); }
+.felix-atelier .report-stat strong { color: var(--gold-deep); font-weight: 700; }
+.felix-atelier .report-list { margin: 11px 0 0; padding-left: 19px; font-family: var(--serif); font-size: 14.5px; line-height: 1.5; }
+.felix-atelier .report-alerts { color: var(--terra); }
+.felix-atelier .report-errors { color: var(--ink-2); }
 
 /* Actions ✎/🗑 des cartes (#61) — l'auteur corrige Felix sans quitter le fil */
 .felix-atelier .tool-act { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 6px; border: 1px solid transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12px; font-weight: 600; transition: color .14s ease, background .14s ease, border-color .14s ease; }

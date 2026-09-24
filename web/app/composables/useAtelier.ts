@@ -1,5 +1,6 @@
 import type { AtelierMsg } from '~/types/atelier'
 import { parseSSEStream } from '~/utils/parseSSE'
+import { currentProfile } from './useAtelierProfile'
 import { currentProject } from './useProject'
 
 // Carte tool émise par le backend (event SSE `tool`) — cf. felix/core/models.py
@@ -236,6 +237,9 @@ export function useAtelier() {
           // Les evals/e2e qui fournissent message_history dans le body continuent
           // à fonctionner côté backend sans aucune modification.
           project: currentProject.value,
+          // Mode courant (Étape 3, plans/maintenance_profile.md) — sélecteur de
+          // la topbar, persisté par useAtelierProfile. Défaut backend = scenario.
+          profile: currentProfile.value,
         }),
       })
 
@@ -311,5 +315,11 @@ export function useAtelier() {
     }
   }
 
-  return { messages, typing, phase, sendMessage, silentSession, newConversation }
+  // Poste un message côté client sans passer par le tour de chat (SSE) — sert
+  // à afficher le résultat d'un import de fiche (Étape 3) : carte de résumé en
+  // succès, texte d'erreur sinon. Même helper `append` que le stream, donc
+  // même id de rendu (pas une deuxième fonction qui ferait la même chose).
+  const pushSystemMessage = append
+
+  return { messages, typing, phase, sendMessage, silentSession, newConversation, pushSystemMessage }
 }

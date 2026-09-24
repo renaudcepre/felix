@@ -15,7 +15,12 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
-from felix.core import CHANTIER_PROFILE, SCENARIO_PROFILE, create_core_agent
+from felix.core import (
+    CHANTIER_PROFILE,
+    MAINTENANCE_PROFILE,
+    SCENARIO_PROFILE,
+    create_core_agent,
+)
 from felix.core.agent import CHRONICLE_SYSTEM_PROMPT, RELATION_SYSTEM_PROMPT
 from felix.core.tools import (
     add_entity,
@@ -75,6 +80,15 @@ brièvement chaque écriture. Pour répondre à une question sur le contenu de l
 base, consulte-le d'abord (list_entities, find_entity) — ne devine jamais.
 """
 
+MAINTENANCE_PERSONA = """\
+Tu es Felix, assistant de documentation technique de maintenance. Tu tiens à
+jour la base de connaissance d'une machine (organes, commandes, réglages,
+modes, consignes) au fil de la discussion avec l'opérateur ou le technicien.
+Ton factuel et concret. Pour répondre à une question sur la machine, consulte
+d'abord la base (list_entities, find_entity) — ne devine et n'invente jamais
+une valeur ou une unité.
+"""
+
 # ─────────── MAÎTRE (passe 0) : BLOC-NOTES, pas interviewer ───────────
 # Retour utilisateur (2026-06-10) : « relance avec UNE question » à chaque tour est
 # insupportable — l'auteur veut un BLOC-NOTES qui écoute et RÉAGIT, pas un coach qui
@@ -112,6 +126,30 @@ L'auteur déroule son histoire ; tu la reçois.
   list_entities) — ne devine jamais.
 
 Réponds en français, une phrase, très bref.
+"""
+
+
+# ─────────── Maître MAINTENANCE : Q/R en lecture seule sur la doc ───────────
+# Domaine différent, posture différente : pas de « bloc-notes » qui accompagne
+# un récit, mais un assistant documentaire qui RÉPOND depuis la base et refuse
+# de combler un trou par une valeur plausible (cf. modeling_rules de
+# MAINTENANCE_PROFILE : valeur/unité/plage VERBATIM, jamais calculées).
+MAINTENANCE_MASTER_SYSTEM_PROMPT = """\
+Tu es un assistant de documentation technique de maintenance. Un opérateur ou un
+technicien te pose des questions sur une machine ; tu réponds UNIQUEMENT depuis
+la base de connaissance (find_entity, list_entities) — jamais de mémoire, jamais
+de supposition.
+
+- Consulte la base AVANT de répondre. Si l'information n'y est pas, dis
+  clairement « ce n'est pas dans la documentation » — ne comble jamais le trou
+  par une valeur plausible.
+- N'INVENTE jamais une valeur, une unité, une plage ou une procédure : si la
+  fiche ne la donne pas, tu ne la donnes pas non plus.
+- Réponds COURT et factuel, en citant la valeur ou l'unité VERBATIM telle
+  qu'elle est enregistrée.
+- Tu ne modifies rien : tu n'as pas d'outil d'écriture.
+
+Réponds en français, aussi bref que possible.
 """
 
 
@@ -196,15 +234,67 @@ Exemples (un univers d'illustration — la règle vaut pour toute histoire) :
 """
 
 
-def build_gate_agent() -> Agent[None, RouteDecision]:
+# Gate MAINTENANCE : même posture stateless/reason-first, mais le CONTENU à
+# repérer change de nature — un fait TECHNIQUE (organe, commande, réglage,
+# procédure, consigne), pas un fait de récit. Univers d'exemples PL-7 (presse
+# plieuse), distinct des fixtures de test SX-40 (anti-leakage).
+MAINTENANCE_GATE_SYSTEM_PROMPT = """\
+Tu es le filtre d'enregistrement d'un assistant de documentation technique de
+maintenance. On te donne UN message, seul, hors contexte. Décide s'il AFFIRME un
+fait technique sur une machine (organe, commande, réglage, mode, procédure,
+consigne de sécurité) à enregistrer dans la base.
+
+NOTER (noter=true) si le message AFFIRME ou PRÉCISE un fait technique :
+- une caractéristique d'un organe, d'une commande ou d'un réglage (emplacement,
+  fonction, rôle, unité, plage, valeur) ;
+- une consigne de sécurité ou une interdiction ;
+- une procédure ou un mode de fonctionnement ;
+- une CORRECTION d'un fait déjà enregistré.
+
+NE PAS NOTER (noter=false) :
+- une salutation, un remerciement, une réaction (« ok », « merci ») ;
+- une QUESTION sur la machine, même technique (« à combien est réglée la force
+  de pliage ? », « c'est quoi la butée arrière ? ») — lire n'est pas écrire ;
+- une remarque MÉTA sur l'outil ou la fiche (« tu as bien noté la pédale ? »)
+  SANS valeur corrigée.
+
+Le `fait` reprend les MOTS du message, VERBATIM. Ne calcule JAMAIS rien (une
+conversion d'unité, une moyenne, une plage déduite) : aucune valeur qui n'est
+pas dans le message.
+
+Exemples (univers d'illustration — presse plieuse PL-7) :
+- « bonjour » / « merci » / « ok, compris » → noter=false, fait="".
+- « à combien est réglée la force de pliage sur la PL-7 ? » → noter=false,
+  fait="" (question : lire n'est pas écrire).
+- « c'est quoi le rôle de la butée arrière ? » → noter=false, fait="".
+- « la pédale commande la vitesse d'approche du tablier » → noter=true,
+  fait="la pédale commande la vitesse d'approche du tablier".
+- « la force de pliage max sur la PL-7 est de 40 tonnes » → noter=true,
+  fait="la force de pliage max sur la PL-7 est de 40 tonnes" (VERBATIM : pas de
+  conversion, pas d'arrondi).
+- « attention, ne jamais dépasser 40 tonnes sinon la butée se déforme » →
+  noter=true, fait="ne jamais dépasser 40 tonnes de force de pliage, sinon la "
+  "butée se déforme".
+- « tu as bien noté que la pédale commande la vitesse ? » → noter=false, fait=""
+  (remarque méta sans valeur corrigée).
+- « non, en fait la vitesse d'approche est pilotée par le sélecteur, pas la
+  pédale » → noter=true, fait="correction : la vitesse d'approche est pilotée "
+  "par le sélecteur, pas la pédale".
+"""
+
+
+def build_gate_agent(choice: AgentChoice) -> Agent[None, RouteDecision]:
     """Gate de routage : un appel court, SANS outils ni deps, sortie structurée.
 
-    Appelé par la route avec le message du tour SEUL (jamais d'historique) : la
-    fraîcheur de la décision est la propriété qui tue l'ornière — ne pas lui
-    passer de message_history."""
+    Construit PAR PROFIL (cf. app.state.gate_agents) : la QUESTION posée à
+    chaque tour — « est-ce un fait de récit ? », « est-ce un fait technique ? »
+    — dépend du domaine, comme le maître et les extracteurs. Appelé par la
+    route avec le message du tour SEUL (jamais d'historique) : la fraîcheur de
+    la décision est la propriété qui tue l'ornière — ne pas lui passer de
+    message_history."""
     return Agent(
         build_gate_model(),
-        instructions=GATE_SYSTEM_PROMPT,
+        instructions=choice.gate_prompt,
         output_type=RouteDecision,
         model_settings=ModelSettings(temperature=0.0),
         retries=3,
@@ -242,13 +332,37 @@ class AgentChoice:
     label: str
     profile: Profile | None
     persona: str
+    # Prompts du maître (passe 0) et du gate (routage) — un couple par choix,
+    # au lieu des deux constantes MASTER_SYSTEM_PROMPT/GATE_SYSTEM_PROMPT
+    # codées en dur pour tous les domaines : chaque profil pose une QUESTION
+    # différente à son gate et attend une posture différente de son maître.
+    master_prompt: str
+    gate_prompt: str
+    # Persona du maître : le « bloc-notes de l'auteur » par défaut ; un domaine
+    # non narratif (maintenance) porte la sienne, sinon il hériterait d'une voix
+    # qui parle d'« histoire » à un technicien.
+    master_persona: str = MASTER_PERSONA
 
 
 # Registre des modes proposés par le sélecteur de l'UI.
 ATELIER_CHOICES: dict[str, AgentChoice] = {
-    "scenario": AgentChoice("scenario", "Scénario", SCENARIO_PROFILE, ATELIER_PERSONA),
-    "chantier": AgentChoice("chantier", "Chantier", CHANTIER_PROFILE, CHANTIER_PERSONA),
-    "none": AgentChoice("none", "Aucun (noyau nu)", None, NEUTRAL_PERSONA),
+    "scenario": AgentChoice(
+        "scenario", "Scénario", SCENARIO_PROFILE, ATELIER_PERSONA,
+        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+    ),
+    "chantier": AgentChoice(
+        "chantier", "Chantier", CHANTIER_PROFILE, CHANTIER_PERSONA,
+        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+    ),
+    "none": AgentChoice(
+        "none", "Aucun (noyau nu)", None, NEUTRAL_PERSONA,
+        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+    ),
+    "maintenance": AgentChoice(
+        "maintenance", "Maintenance", MAINTENANCE_PROFILE, MAINTENANCE_PERSONA,
+        MAINTENANCE_MASTER_SYSTEM_PROMPT, MAINTENANCE_GATE_SYSTEM_PROMPT,
+        master_persona=MAINTENANCE_PERSONA,
+    ),
 }
 DEFAULT_PROFILE = "scenario"
 
@@ -279,8 +393,8 @@ def build_master_agent(
     sémantique conversationnel — premier candidat à monter en tier (cf. bug #62)."""
     return create_core_agent(
         profile=choice.profile,
-        persona=MASTER_PERSONA,
-        system_prompt=MASTER_SYSTEM_PROMPT,
+        persona=choice.master_persona,
+        system_prompt=choice.master_prompt,
         tools=MASTER_TOOLS,
         model=model,
     )

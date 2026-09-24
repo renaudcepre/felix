@@ -24,6 +24,7 @@ from felix.core.graph import (
     RESERVED_KEYS,
     all_entities,
     all_relations,
+    create_entity,
     find_node,
     find_non_event,
     fmt_props,
@@ -347,14 +348,11 @@ async def add_entity(
     clean = {k: v for k, v in (props or {}).items() if k not in RESERVED_KEYS}
     # Clé composite {id, project} (#60) : deux histoires ont chacune leur
     # « camille » — l'unicité vit dans la clé de MERGE, pas dans une contrainte.
-    async with ctx.deps.driver.session() as session:
-        await session.run(
-            "MERGE (e:GenEntity {id: $id, project: $project})"
-            " ON CREATE SET e.name = $name, e.entity_type = $type"
-            " SET e += $props",
-            id=entity_id, name=name, type=entity_type, props=clean,
-            project=ctx.deps.project_id,
-        )
+    # create_entity est le chemin PARTAGÉ avec l'ingestion de document EN CODE
+    # (#Étape 2) : même forme de nœud, une seule requête.
+    await create_entity(
+        ctx.deps.driver, entity_id, name, entity_type, clean, project=ctx.deps.project_id,
+    )
     ctx.deps.ui_events.append(
         ToolCard(title="Entité créée", subject=name, field=entity_type,
                  added=fmt_props(clean, skip_reserved=False), entity_id=entity_id)
@@ -653,6 +651,15 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
     # Résolution HORS événements : une relation entre entités ne doit jamais avoir
     # un node événement pour extrémité (sinon « Vance [se bat contre] [event] »…).
     # Les événements ne se relient qu'via add_event (INVOLVES/NEXT/LOCATED_AT).
+    # Relations réservées AU CODE (ex. DESCRIBED_IN, posée par l'ingestion de
+    # document, #Étape 2) : refusée AVANT toute résolution d'entité — le modèle
+    # n'a pas à savoir si les extrémités existent pour comprendre que ce type
+    # ne lui appartient pas.
+    if ctx.deps.profile is not None and rel_type in ctx.deps.profile.code_only_relations:
+        return (
+            f"« {rel_type} » est posée automatiquement par le code, n'y touche pas."
+        )
+
     a = await find_non_event(ctx.deps.driver, from_name, project=ctx.deps.project_id)
     b = await find_non_event(ctx.deps.driver, to_name, project=ctx.deps.project_id)
     if not a or not b:

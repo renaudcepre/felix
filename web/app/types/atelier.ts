@@ -15,11 +15,31 @@ export interface ResolveOption {
 
 export type AlertStatus = 'open' | 'resolving' | 'resolved' | 'dismissed'
 
+// Mode du bot (Étape 3, plans/maintenance_profile.md) — cf. GET /api/atelier/profiles.
+export interface AtelierProfile {
+  key: string
+  label: string
+}
+
+// Résumé d'un import de fiche (Étape 3) — miroir d'IngestReport (API), cf.
+// felix.ingest.document.IngestReport.
+export interface IngestReportPayload {
+  document_id: string
+  title: string
+  chunks: number
+  entities_touched: number
+  relations: number
+  alerts: string[]
+  errors: string[]
+}
+
 export interface AtelierMsg {
   id: number
   role: 'user' | 'felix'
-  kind?: 'text' | 'tool' | 'choice' | 'cite' | 'alert'
+  kind?: 'text' | 'tool' | 'choice' | 'cite' | 'alert' | 'report'
   body?: string
+  // report (import de fiche)
+  report?: IngestReportPayload
   // tool
   tool?: 'fiche' | 'people'
   title?: string

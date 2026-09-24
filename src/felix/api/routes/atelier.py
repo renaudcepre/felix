@@ -16,14 +16,13 @@ import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Query
-from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessagesTypeAdapter
 from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from felix.api.deps import (
     AtelierAgentsDep,
     ChronicleAgentsDep,
-    GateAgentDep,
+    GateAgentsDep,
     MasterAgentsDep,
     Neo4jDriver,
     RelationAgentsDep,
@@ -31,11 +30,11 @@ from felix.api.deps import (
 from felix.api.history import window_history_by_tokens
 from felix.api.models import ChatRequest, ConversationMessageOut
 from felix.atelier.agent import ATELIER_CHOICES, DEFAULT_PROFILE
+from felix.atelier.pipeline import consistency_alerts, run_extractors, stream_pass
 from felix.config import settings
 from felix.core import (
     GenericDeps,
     archive_conversation,
-    consistency_check,
     consume_unnotified_alerts,
     consume_unnotified_edits,
     conversation_messages,
@@ -43,7 +42,6 @@ from felix.core import (
     load_llm_history,
     recent_entities,
     recent_user_edits,
-    record_alert,
     record_message,
     render_alerts_block,
     render_recent_block,
@@ -57,88 +55,9 @@ if TYPE_CHECKING:
 
     from neo4j import AsyncDriver
 
-    from felix.core import Profile
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/atelier", tags=["atelier"])
-
-
-async def _consistency_alerts(
-    driver: AsyncDriver, deps: GenericDeps, profile: Profile | None
-) -> AsyncGenerator[ServerSentEvent]:
-    """Carte `alert` par contradiction DISTINCTE sur les entités touchées ce tour.
-
-    Dédupliqué : une même incohérence remonte souvent de plusieurs entités voisines
-    (voisinages qui se recouvrent) → une seule carte par tour. `message` = phrase
-    courte pour l'auteur ; `reason` (brouillon du judge) sert de filet de secours.
-    """
-    # On ne juge QUE les entités où une contradiction est possible ce tour
-    # (relation / événement / valeur écrasée — cf. deps.check_candidates), pas
-    # chaque entité touchée : un juge par entité touchée = ~20-30 appels/tour. Les
-    # checks prouvés (temporel, spatial) sont tous portés par une relation ou un
-    # événement → couverts. Et on lance les juges EN PARALLÈLE (gather) : le blanc
-    # de fin de tour passe de Σ(appels) à max(appels) — Small encaisse (5M tok/min).
-    ids = list(deps.check_candidates)
-    if not ids:
-        return
-    verdicts = await asyncio.gather(
-        *(consistency_check(driver, i, deps.write_log, profile,
-                            project=deps.project_id) for i in ids),
-        return_exceptions=True,
-    )
-    seen: set[str] = set()
-    for verdict in verdicts:
-        if isinstance(verdict, BaseException):
-            logger.warning("un check a échoué (ignoré) : %r", verdict)
-            continue
-        if not verdict.contradiction:
-            continue
-        alert_body = verdict.message.strip() or verdict.reason
-        key = alert_body.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        yield ServerSentEvent(
-            data=json.dumps({
-                "kind": "alert",
-                "title": "Incohérence possible",
-                "body": alert_body,
-                "status": "open",
-            }),
-            event="alert",
-        )
-        # Persist pour le tour suivant (#50-a) : le maître recevra ce bloc
-        # au prochain appel via consume_unnotified_alerts dans _master_prompt.
-        await record_alert(driver, alert_body, project=deps.project_id)
-
-
-async def _stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + historique + deps partagés
-    sub_agent: Agent, prompt: str, history: list | None, deps: GenericDeps,
-    *, stream_text: bool, holder: dict
-) -> AsyncGenerator[ServerSentEvent]:
-    """Joue une passe via `.iter()` : draine les cartes des tools EN LIVE (à
-    chaque node) et, si `stream_text`, streame le texte. Stocke `usage` +
-    `messages` dans `holder` (un générateur ne peut pas « return »). Factorisé
-    pour les 4 passes : maître (texte streamé) ; extracteurs (cartes live, pas
-    de texte → une seule bulle). `prompt` varie : message nu pour le maître et
-    le chroniqueur, message préfixé du working set pour entités/relieur."""
-    async with sub_agent.iter(
-        prompt, deps=deps, message_history=history
-    ) as run:
-        async for node in run:
-            for card in deps.ui_events:
-                yield ServerSentEvent(data=card.model_dump_json(), event="tool")
-            deps.ui_events.clear()
-            if stream_text and Agent.is_model_request_node(node):
-                async with node.stream(run.ctx) as request_stream:
-                    async for text in request_stream.stream_text(delta=True):
-                        yield ServerSentEvent(data=text, event="text")
-        for card in deps.ui_events:
-            yield ServerSentEvent(data=card.model_dump_json(), event="tool")
-        deps.ui_events.clear()
-        holder["usage"] = run.usage()
-        holder["messages"] = run.all_messages()
 
 
 async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str:
@@ -186,7 +105,7 @@ async def atelier_profiles() -> list[dict[str, str]]:
 @router.post("/chat")
 async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup avant le générateur
     body: ChatRequest,
-    gate_agent: GateAgentDep,
+    gate_agents: GateAgentsDep,
     master_agents: MasterAgentsDep,
     agents: AtelierAgentsDep,
     relation_agents: RelationAgentsDep,
@@ -194,6 +113,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
     driver: Neo4jDriver,
 ) -> EventSourceResponse:
     choice = ATELIER_CHOICES.get(body.profile, ATELIER_CHOICES[DEFAULT_PROFILE])
+    gate_agent = gate_agents[choice.key]
     master_agent = master_agents[choice.key]
     agent = agents[choice.key]
     relation_agent = relation_agents[choice.key]
@@ -220,7 +140,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             full = ModelMessagesTypeAdapter.validate_python(json.loads(raw))
             message_history = window_history_by_tokens(full, settings.history_token_budget)
 
-    async def event_generator() -> AsyncGenerator[ServerSentEvent]:  # noqa: PLR0912 — branches = phases du tour (gate/extracteurs/checks), toutes intentionnelles
+    async def event_generator() -> AsyncGenerator[ServerSentEvent]:
         # Persistance du message utilisateur dès l'entrée du tour (#63) : si une
         # passe LLM crashe ensuite, la question reste en base — c'est voulu (témoi-
         # gnage que la question a été posée, indépendamment du succès de la réponse).
@@ -242,7 +162,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             # La décision d'extraire ne lui appartient plus (cf. gate ci-dessus).
             yield ServerSentEvent(data="Felix répond…", event="phase")
             master: dict = {}
-            async for ev in _stream_pass(
+            async for ev in stream_pass(
                 master_agent, await _master_prompt(driver, body.message, body.project),
                 message_history, deps, stream_text=True, holder=master
             ):
@@ -281,32 +201,23 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 extract_prompt = "\n\n".join(
                     part for part in (edits_block, block, body.message) if part
                 )
-                for sub_agent, label, prompt, hist, phase_text in (
-                    (agent, "entités", extract_prompt, message_history,
-                     "Felix met à jour la bible…"),
-                    (relation_agent, "relations", extract_prompt, message_history,
-                     "Felix relie les fiches…"),
-                    (chronicle_agent, "événements", body.message, None,
-                     "Felix note les événements…"),
+                # Boucle d'extraction PARTAGÉE (route ET ingestion) — cf.
+                # felix.atelier.pipeline. Le chroniqueur (si le domaine en tient
+                # un) reçoit le message NU, sans historique (sinon re-chronique).
+                async for ev in run_extractors(
+                    agent, relation_agent, chronicle_agent,
+                    extract_prompt, body.message, message_history,
+                    deps, choice.profile, usages,
                 ):
-                    try:
-                        yield ServerSentEvent(data=phase_text, event="phase")
-                        sub: dict = {}
-                        async for ev in _stream_pass(
-                            sub_agent, prompt, hist, deps, stream_text=False, holder=sub
-                        ):
-                            yield ev
-                            if ev.event == "tool":
-                                turn_cards.append(("tool", ev.data))
-                        usages.append(sub["usage"])
-                    except Exception:
-                        logger.exception("passe %s échouée (tour non bloqué)", label)
+                    yield ev
+                    if ev.event == "tool":
+                        turn_cards.append(("tool", ev.data))
 
                 # Check de cohérence (sur deps.check_candidates) — seulement si on a
                 # extrait. Best-effort, isolé pour ne jamais bloquer le `done`.
                 yield ServerSentEvent(data="Felix vérifie la cohérence…", event="phase")
                 try:
-                    async for alert in _consistency_alerts(driver, deps, choice.profile):
+                    async for alert in consistency_alerts(driver, deps, choice.profile):
                         yield alert
                         turn_cards.append(("alert", alert.data))
                 except Exception:

@@ -91,3 +91,8 @@ db-archive:
 # View a .jsonl history file
 view-history *args:
     python3 tools/view_history.py {{ args }}
+
+# Ingestion d'un document (Étape 2, fiche technique → graphe) — APPELLE LE LLM
+# (3 passes par bloc). Usage : just ingest-doc chemin/fiche.pdf --profile maintenance
+ingest-doc *args:
+    uv run python tools/ingest_doc.py {{ args }}

@@ -4,7 +4,8 @@ Le dogfood 2026-06-11 a montré le gate router la conversation SUR l'outil comme
 du récit : « tu mets pas à jour mon âge ? tu as écrit 32 » → {"fait": "l'âge du
 personnage est 33", "noter": true} — fait recalculé de tête, cascade d'alertes.
 
-Cette sonde appelle build_gate_agent() en direct (stateless, 1 appel/cas) et
+Cette sonde appelle build_gate_agent() en direct sur le profil scénario
+(stateless, 1 appel/cas) et
 vérifie les deux lois de #69 :
 - le registre MÉTA (remarque/question sur la fiche, plan de narration) est MUET ;
 - quand on note, le `fait` est VERBATIM : jamais d'âge calculé depuis une année,
@@ -20,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import re
 
-from felix.atelier.agent import build_gate_agent
+from felix.atelier.agent import ATELIER_CHOICES, build_gate_agent
 
 N = 3  # runs par cas ; un cas est vert à la majorité (≥ MAJORITY/N)
 MAJORITY = 2
@@ -104,7 +105,7 @@ def _verdict(
 
 
 async def main() -> int:
-    agent = build_gate_agent()
+    agent = build_gate_agent(ATELIER_CHOICES["scenario"])
     failed_cases = 0
     for label, message, expect_noter, must_contain, must_not in CASES:
         print(f"\n── {label}\n   «{message[:74]}»")

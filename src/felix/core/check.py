@@ -29,6 +29,10 @@ class CheckVerdict(BaseModel):
     # message APRÈS le verdict : la phrase montrée à l'auteur, écrite une fois la
     # décision prise. `reason` reste le brouillon interne et n'est jamais affiché.
     message: str = ""
+    # Noms EXACTS des entités qui s'opposent — clé de dédup : le juge tourne par
+    # entité candidate, une même contradiction remonte donc de chacune de ses
+    # parties, reformulée (cf. distinct_contradictions).
+    sujets: list[str] = []
 
 
 CHECK_PROMPT = """\
@@ -73,7 +77,36 @@ Enfin, si `contradiction` est vrai, écris dans `message` UNE phrase courte et
 concrète pour l'auteur : nomme les deux faits qui s'opposent, sans numérotation
 ni vocabulaire d'analyse (« écriture récente », « propriété », « entité »…).
 Sinon, laisse `message` vide.
+Si `contradiction` est vrai, liste dans `sujets` les NOMS exacts des entités
+dont les faits s'opposent (tels qu'écrits dans l'état actuel). Sinon, liste vide.
 """
+
+
+def _subject_key(verdict: CheckVerdict) -> frozenset[str]:
+    return frozenset(s.strip().lower() for s in verdict.sujets if s.strip())
+
+
+def distinct_contradictions(verdicts: list[CheckVerdict]) -> list[CheckVerdict]:
+    """Une carte par contradiction DISTINCTE. Deux verdicts sont la même
+    contradiction si leurs ensembles de sujets s'incluent l'un dans l'autre
+    (vue depuis Korvax, vue depuis Weldra, vue depuis la consigne qui les lie) ;
+    sans sujets, repli sur le texte normalisé. Le premier verdict gagne."""
+    kept: list[CheckVerdict] = []
+    kept_keys: list[frozenset[str]] = []
+    seen_texts: set[str] = set()
+    for verdict in verdicts:
+        if not verdict.contradiction:
+            continue
+        text = (verdict.message.strip() or verdict.reason).lower()
+        key = _subject_key(verdict)
+        if text in seen_texts:
+            continue
+        if key and any(key <= k or k <= key for k in kept_keys if k):
+            continue
+        seen_texts.add(text)
+        kept_keys.append(key)
+        kept.append(verdict)
+    return kept
 
 
 async def consistency_check(

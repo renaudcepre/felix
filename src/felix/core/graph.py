@@ -366,6 +366,53 @@ async def rename_or_merge(
                          new_name=new_name, final_id=new_id)
 
 
+async def create_entity(  # noqa: PLR0913 — chemin de création partagé, un champ par colonne du nœud
+    driver: AsyncDriver, entity_id: str, name: str, entity_type: str,
+    props: dict[str, str], *, project: str,
+) -> None:
+    """MERGE d'une entité :GenEntity — le chemin de création PARTAGÉ entre le
+    tool `add_entity` (LLM) et l'ingestion de document EN CODE (#Étape 2) : même
+    forme de nœud, une seule requête (`props` déjà filtré des clés réservées par
+    l'appelant). Idempotent sur `{id, project}` (#60) : ré-ingérer un document ne
+    duplique pas l'entité `document` elle-même."""
+    async with driver.session() as session:
+        await session.run(
+            "MERGE (e:GenEntity {id: $id, project: $project})"
+            " ON CREATE SET e.name = $name, e.entity_type = $type"
+            " SET e += $props",
+            id=entity_id, name=name, type=entity_type, props=props, project=project,
+        )
+
+
+async def link_described_in(
+    driver: AsyncDriver, entity_ids: Iterable[str], document_id: str, page: int,
+    *, project: str,
+) -> None:
+    """Pose EN CODE la relation DESCRIBED_IN {entité → document} à l'ingestion
+    (#Étape 2, ``felix.ingest.document.ingest_document``) : chaque entité
+    touchée par un bloc du document est reliée à sa source, avec la PAGE où elle
+    apparaît. `pages` est une liste CUMULATIVE — MERGE + append idempotent : la
+    même page rejouée (un bloc réingéré, une entité réapparue sur deux blocs de
+    la même page) n'ajoute pas de doublon. Le document lui-même est exclu par
+    l'appelant (il ne se décrit pas dans lui-même)."""
+    ids = [i for i in entity_ids if i and i != document_id]
+    if not ids:
+        return
+    async with driver.session() as session:
+        await session.run(
+            """
+            MATCH (e:GenEntity {project: $project}) WHERE e.id IN $ids
+            MATCH (d:GenEntity {id: $doc, project: $project})
+            MERGE (e)-[r:REL {rel_type: 'DESCRIBED_IN'}]->(d)
+            SET r.pages = CASE
+                WHEN $page IN coalesce(r.pages, []) THEN coalesce(r.pages, [])
+                ELSE coalesce(r.pages, []) + $page
+            END
+            """,
+            ids=ids, doc=document_id, page=page, project=project,
+        )
+
+
 async def all_entities(driver: AsyncDriver, *, project: str) -> list[dict]:
     async with driver.session() as session:
         result = await session.run(

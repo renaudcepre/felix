@@ -20,6 +20,8 @@ from felix.core.graph import (
     NARRATIVE_REL,
     all_entities,
     all_relations,
+    create_entity,
+    link_described_in,
     merge_entity_into,
     recent_entities,
     rel_label,
@@ -35,7 +37,14 @@ from felix.core.messages import (
     save_llm_history,
 )
 from felix.core.models import RelationRef, ToolCard
-from felix.core.profile import CHANTIER_PROFILE, SCENARIO_PROFILE, EntityType, Profile
+from felix.core.profile import (
+    CHANTIER_PROFILE,
+    MAINTENANCE_PROFILE,
+    SCENARIO_PROFILE,
+    EntityType,
+    Profile,
+    runs_chronicle,
+)
 from felix.core.projects import (
     DEFAULT_PROJECT,
     create_project,
@@ -52,6 +61,7 @@ from felix.core.user_edits import (
 __all__ = [
     "CHANTIER_PROFILE",
     "DEFAULT_PROJECT",
+    "MAINTENANCE_PROFILE",
     "NARRATIVE_REL",
     "SCENARIO_PROFILE",
     "SYSTEM_PROMPT",
@@ -69,8 +79,10 @@ __all__ = [
     "consume_unnotified_edits",
     "conversation_messages",
     "create_core_agent",
+    "create_entity",
     "create_project",
     "ensure_project_scoping",
+    "link_described_in",
     "link_produced",
     "list_projects",
     "load_llm_history",
@@ -85,5 +97,6 @@ __all__ = [
     "render_alerts_block",
     "render_recent_block",
     "render_user_edits_block",
+    "runs_chronicle",
     "save_llm_history",
 ]

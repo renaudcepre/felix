@@ -27,6 +27,7 @@
     ]
   },
   "devDependencies": {
+    "eslint": "^10.0.3",
     "typescript": "^5.9.3",
     "vue-tsc": "^3.2.5"
   }

@@ -5,7 +5,9 @@ from tests.unit.test_backoff import backoff_suite
 from tests.unit.test_conductor import conductor_suite
 from tests.unit.test_event_reorder import event_reorder_suite
 from tests.unit.test_history_window import history_window_suite
+from tests.unit.test_ingest_document import ingest_document_suite
 from tests.unit.test_llm_timeout import llm_timeout_suite
+from tests.unit.test_maintenance_profile import maintenance_profile_suite
 from tests.unit.test_modeling_quality import modeling_quality_suite
 from tests.unit.test_project_scoping import project_scoping_suite
 from tests.unit.test_recent_entities import recent_entities_suite
@@ -37,3 +39,5 @@ session.add_suite(llm_timeout_suite)
 session.add_suite(event_reorder_suite)
 session.add_suite(relation_reemission_suite)
 session.add_suite(retype_entity_suite)
+session.add_suite(maintenance_profile_suite)
+session.add_suite(ingest_document_suite)
