@@ -523,8 +523,14 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .tool-fdot { width: 3px; height: 3px; border-radius: 50%; background: var(--line-2); }
 .felix-atelier .tool-field { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
 .felix-atelier .tool-added { display: flex; gap: 10px; padding: 9px 11px; background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 6px; }
+.felix-atelier .tool-added + .tool-added { margin-top: 8px; }
 .felix-atelier .tool-plus { font-family: var(--mono); font-size: 11px; color: var(--sage); flex: none; margin-top: 2px; }
 .felix-atelier .tool-text { font-family: var(--serif); font-size: 15px; line-height: 1.5; color: var(--ink); }
+/* Champs modifiés (#72) : une ligne par champ, valeur avant en sourdine/barrée
+   (mêmes tokens que .tool-card.is-removed), aucune couleur neuve. */
+.felix-atelier .tool-change-row + .tool-change-row { margin-top: 3px; }
+.felix-atelier .tool-change-field { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.felix-atelier .tool-old { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--ink-3); }
 
 /* Résumé d'import de fiche (Étape 3, plans/maintenance_profile.md) — même
    habit que .tool-card (carte outil), pas une nouvelle famille de couleurs. */

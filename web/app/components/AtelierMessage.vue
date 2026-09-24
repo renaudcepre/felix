@@ -165,7 +165,19 @@ function submitFree() {
               <span v-if="msg.edited === 'renamed'" class="tool-edited-tag">corrigé par toi</span>
             </template>
           </div>
-          <div class="tool-added">
+          <!-- champs MODIFIÉS (#72) : avant → après, au lieu de « + ajouté » -->
+          <div v-if="msg.changes && msg.changes.length" class="tool-added">
+            <span class="tool-plus">modifié</span>
+            <div class="tool-text tool-changes">
+              <div v-for="c in msg.changes" :key="c.field" class="tool-change-row">
+                <span class="tool-change-field">{{ c.field }}</span> :
+                <span class="tool-old">{{ c.before }}</span>
+                <span>→</span>
+                <span>{{ c.after }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-if="msg.added" class="tool-added">
             <span class="tool-plus">+ ajouté</span>
             <span class="tool-text">{{ msg.added }}</span>
           </div>

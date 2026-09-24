@@ -15,6 +15,15 @@ export interface ResolveOption {
   desc: string
 }
 
+// Champ MODIFIÉ (pas ajouté) par update_entity — avant/après (#72). Miroir de
+// felix.core.models.PropChange. La carte l'affiche « champ : avant → après »
+// au lieu de « + ajouté ».
+export interface PropChange {
+  field: string
+  before: string
+  after: string
+}
+
 export type AlertStatus = 'open' | 'resolving' | 'resolved' | 'dismissed'
 
 // Origine de l'incohérence, tranchée par le vérificateur source
@@ -68,6 +77,9 @@ export interface AtelierMsg {
   subject?: string
   field?: string
   added?: string
+  // champs MODIFIÉS ce tour (#72) — distincts de `added` (qui ne porte plus
+  // que les ajouts) ; absent/vide : rien n'a été modifié, que des ajouts.
+  changes?: PropChange[]
   // cible de la carte pour les actions ✎/🗑 (#61) — absente : pas d'action
   entityId?: string
   relation?: { from_id: string, to_id: string, rel_type: string, verbe_slug?: string | null }

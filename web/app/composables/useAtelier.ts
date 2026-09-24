@@ -1,4 +1,4 @@
-import type { AlertSourceKind, AtelierMsg, IngestReportPayload } from '~/types/atelier'
+import type { AlertSourceKind, AtelierMsg, IngestReportPayload, PropChange } from '~/types/atelier'
 import type { CostSummaryPayload } from '~/types/costs'
 import { parseSSEStream } from '~/utils/parseSSE'
 import { currentProfile, profiles as atelierProfiles, useAtelierProfile } from './useAtelierProfile'
@@ -13,6 +13,8 @@ interface ToolCardPayload {
   subject: string
   field: string
   added: string
+  // champs MODIFIÉS ce tour (#72), null si aucun — cf. felix.core.models.PropChange
+  changes: PropChange[] | null
   // cible de la carte (#61) : id de fiche/événement, ou référence de relation
   entity_id: string | null
   relation: { from_id: string, to_id: string, rel_type: string, verbe_slug?: string | null } | null
@@ -132,6 +134,7 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       subject: p.subject,
       field: p.field,
       added: p.added,
+      changes: p.changes ?? undefined,
       entityId: p.entity_id ?? undefined,
       relation: p.relation ?? undefined,
       cost: extractCost(m.payload),
@@ -275,6 +278,7 @@ export function useAtelier() {
       subject: card.subject,
       field: card.field,
       added: card.added,
+      changes: card.changes ?? undefined,
       entityId: card.entity_id ?? undefined,
       relation: card.relation ?? undefined,
     })

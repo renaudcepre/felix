@@ -32,7 +32,7 @@ from felix.core.graph import (
     rename_or_merge,
     touch_entities,
 )
-from felix.core.models import RelationRef, ToolCard
+from felix.core.models import PropChange, RelationRef, ToolCard
 from felix.core.schema_detector import content_tokens, verb_head
 from felix.ingest.resolver import slugify
 
@@ -436,15 +436,23 @@ async def update_entity(
 
     # Journal du delta AVANT application — un écrasement (de correction) est une
     # information que le check de cohérence doit voir (finding round 1).
+    # `changes` (#72) nourrit la carte : uniquement les vraies MODIFICATIONS
+    # (valeur déjà présente ET différente) — jamais un ajout, jamais une valeur
+    # reposée à l'identique. `added_only` = le reste de to_set (ajouts/inchangé),
+    # pour que la carte n'affiche pas deux fois le même champ.
     replaced = []
+    changes: list[PropChange] = []
+    added_only: dict[str, str] = {}
     for key, value in to_set.items():
         old = node.get(key)
         if old is not None and str(old) != "" and str(old) != str(value):
             ctx.deps.write_log.append(
                 f"{node['id']}.{key} : {old!r} REMPLACÉ PAR {value!r} (correction)")
             replaced.append(f"{key} (remplaçait : {old!r})")
+            changes.append(PropChange(field=key, before=str(old), after=str(value)))
         else:
             ctx.deps.write_log.append(f"{node['id']}.{key} = {value!r} (nouveau)")
+            added_only[key] = value
 
     if to_set:
         async with ctx.deps.driver.session() as session:
@@ -455,7 +463,8 @@ async def update_entity(
         ctx.deps.ui_events.append(
             ToolCard(title="Entité mise à jour", subject=node["name"],
                      field=node.get("entity_type", "?"),
-                     added=fmt_props(to_set, skip_reserved=False), entity_id=node["id"])
+                     added=fmt_props(added_only, skip_reserved=False) if added_only else "",
+                     changes=changes or None, entity_id=node["id"])
         )
         ctx.deps.touched_ids.add(node["id"])
         await touch_entities(ctx.deps.driver, [node["id"]], project=ctx.deps.project_id)
