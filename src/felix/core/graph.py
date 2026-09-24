@@ -23,6 +23,15 @@ if TYPE_CHECKING:
 
 RESERVED_KEYS = {"id", "name", "entity_type", "project"}
 
+# Propriétés posées EN CODE, jamais par l'auteur ni le LLM, et sans valeur pour
+# lui (#73) : pure comptabilité interne. `last_touched` (touch_entities) sert
+# le working set des extracteurs, pas la fiche. Seule entrée à ce jour — les
+# autres props code-only rencontrées (`titre`/`pages`/`source` posées par
+# l'ingestion sur les nœuds `document`, `ordre`/`resume` sur les événements)
+# décrivent le NŒUD lui-même et restent utiles à l'auteur, donc pas filtrées
+# ici. À COMPLÉTER si un futur writer pose une autre prop de pure machinerie.
+INTERNAL_PROPS = frozenset({"last_touched"})
+
 # Type GÉNÉRIQUE des relations narratives (#68) : le lien porte le verbe VERBATIM
 # de l'auteur en propriété `verbe` (+ `verbe_slug`, sa forme normalisée qui sert
 # de clé de MERGE — deux verbes différents entre la même paire = deux arêtes,
@@ -434,6 +443,49 @@ async def all_relations(driver: AsyncDriver, *, project: str) -> list[dict]:
             project=project,
         )
         return [dict(r) for r in await result.data()]
+
+
+async def entity_relation_counts(
+    driver: AsyncDriver, *, project: str, excluded_rel_types: Iterable[str],
+) -> dict[str, int]:
+    """Nombre de relations par entité, hors types exclus (#73 : la carte compte
+    les LIENS utiles pour choisir une fiche, pas la machinerie chronologie/
+    provenance — le choix de ce qui est « machinerie » vit côté appelant, cf.
+    `_EVENT_RELS`/DESCRIBED_IN dans `routes.entities`).
+
+    UNE requête pour tout le projet (pas un aller-retour par carte) : la liste
+    peut compter des centaines d'entités, jamais une requête par ligne."""
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:GenEntity {project: $project})
+            OPTIONAL MATCH (e)-[r:REL]-(:GenEntity {project: $project})
+              WHERE NOT r.rel_type IN $excluded
+            RETURN e.id AS id, count(r) AS n
+            """,
+            project=project, excluded=list(excluded_rel_types),
+        )
+        return {row["id"]: row["n"] for row in await result.data()}
+
+
+async def entity_primary_sources(driver: AsyncDriver, *, project: str) -> dict[str, dict]:
+    """Premier document DESCRIBED_IN de chaque entité (titre + pages), une seule
+    requête pour tout le projet. Une entité peut décrire plusieurs documents —
+    on ne garde QUE le premier (id document trié, déterministe) : la carte
+    montre une provenance, pas toutes (#73)."""
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:GenEntity {project: $project})
+                  -[dr:REL {rel_type: 'DESCRIBED_IN'}]->(d:GenEntity {project: $project})
+            WITH e, d, dr
+            ORDER BY e.id, d.id
+            WITH e.id AS id, collect({title: d.name, pages: dr.pages})[0] AS source
+            RETURN id, source
+            """,
+            project=project,
+        )
+        return {row["id"]: row["source"] for row in await result.data()}
 
 
 def fmt_props(props: dict, *, skip_reserved: bool = True) -> str:

@@ -19,15 +19,19 @@ from felix.api.models import (
     EntityPatch,
     EntityRef,
     EntityRelationOut,
+    EntitySource,
     EntitySummary,
 )
 from felix.core.graph import (
+    INTERNAL_PROPS,
     RESERVED_KEYS,
     all_entities,
     all_relations,
     delete_entity,
     delete_relation,
     entity_events,
+    entity_primary_sources,
+    entity_relation_counts,
     find_node,
     rename_or_merge,
     touch_entities,
@@ -42,9 +46,21 @@ router = APIRouter(prefix="/api/entities", tags=["entities"])
 # chronologie de l'entité les restitue déjà, ordonnées, dans `events`.
 _EVENT_RELS = {"INVOLVES", "NEXT", "LOCATED_AT"}
 
+# Types de relations qui ne comptent PAS comme un « lien » sur la carte (#73) :
+# la machinerie chronologie (_EVENT_RELS, déjà restituée par `events`) et la
+# provenance (DESCRIBED_IN, affichée à part comme `source`, pas comme un lien
+# de plus).
+_CARD_EXCLUDED_RELS = _EVENT_RELS | {"DESCRIBED_IN"}
+
+# Clés jamais montrées ni éditables depuis l'UI : réservées (id/name/...) et
+# internes (#73, posées EN CODE — cf. `felix.core.graph.INTERNAL_PROPS`). Une
+# seule définition, réutilisée par la lecture (`_props`) et l'écriture manuelle
+# (`patch_entity`) — le front n'a pas sa propre liste à tenir à jour.
+_NON_DISPLAY_KEYS = RESERVED_KEYS | INTERNAL_PROPS
+
 
 def _props(entity: dict) -> dict:
-    return {k: v for k, v in entity.items() if k not in RESERVED_KEYS}
+    return {k: v for k, v in entity.items() if k not in _NON_DISPLAY_KEYS}
 
 
 @router.get("")
@@ -54,8 +70,17 @@ async def list_entities(
     project: str = Query(default=DEFAULT_PROJECT),  # histoire courante (#60)
 ) -> list[EntitySummary]:
     """Entités filtrées par `entity_type`. Sans filtre : tout sauf les événements
-    (la chronologie n'est pas une liste de fiches)."""
+    (la chronologie n'est pas une liste de fiches).
+
+    Chaque carte porte `prop_count`/`relation_count`/`source` (#73) au lieu
+    d'une prop arbitraire — calculés par DEUX requêtes pour tout le projet
+    (`entity_relation_counts`/`entity_primary_sources`), jamais un
+    aller-retour par carte."""
     entities = await all_entities(driver, project=project)
+    relation_counts = await entity_relation_counts(
+        driver, project=project, excluded_rel_types=_CARD_EXCLUDED_RELS,
+    )
+    sources = await entity_primary_sources(driver, project=project)
     summaries = []
     for e in entities:
         etype = e.get("entity_type")
@@ -64,12 +89,19 @@ async def list_entities(
                 continue
         elif etype != type:
             continue
+        raw_source = sources.get(e["id"])
+        source = (
+            EntitySource(title=raw_source["title"], pages=sorted(raw_source.get("pages") or []))
+            if raw_source else None
+        )
         summaries.append(
             EntitySummary(
                 id=e["id"],
                 name=e.get("name", e["id"]),
                 entity_type=etype,
-                props=_props(e),
+                prop_count=len(_props(e)),
+                relation_count=relation_counts.get(e["id"], 0),
+                source=source,
             )
         )
     return summaries
@@ -180,7 +212,7 @@ async def patch_entity(
         )
         await record_user_edit(driver, "correction", out.new_name, detail, project=project)
 
-    to_set = {k: v for k, v in patch.props.items() if k not in RESERVED_KEYS}
+    to_set = {k: v for k, v in patch.props.items() if k not in _NON_DISPLAY_KEYS}
     if to_set:
         async with driver.session() as session:
             await session.run(
@@ -197,7 +229,7 @@ async def patch_entity(
             )
             await record_user_edit(driver, "correction", name, detail, project=project)
 
-    to_remove = [k for k in patch.remove_props if k not in RESERVED_KEYS]
+    to_remove = [k for k in patch.remove_props if k not in _NON_DISPLAY_KEYS]
     if to_remove:
         async with driver.session() as session:
             for key in to_remove:

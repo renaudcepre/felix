@@ -69,11 +69,25 @@ class EntityRef(BaseModel):
     entity_type: str | None = None
 
 
+class EntitySource(BaseModel):
+    """Premier document DESCRIBED_IN d'une entité — titre + pages où elle
+    apparaît (#73, carte de la liste : « <titre>, p. N »)."""
+
+    title: str
+    pages: list[int] = []
+
+
 class EntitySummary(BaseModel):
+    """Résumé d'une entité pour la liste (#73) : pas de `props` libres — la
+    carte affiche des compteurs, pas une prop arbitraire. La fiche complète
+    (`EntityDetail`) reste l'endroit où lire les propriétés."""
+
     id: str
     name: str
     entity_type: str | None = None
-    props: dict[str, Any] = {}
+    prop_count: int = 0
+    relation_count: int = 0
+    source: EntitySource | None = None
 
 
 class EntityRelationOut(BaseModel):
