@@ -26,6 +26,27 @@
 
 **Pointeurs** : noyau `src/felix/core/` (graph.py `entity_timeline` + tie-break `find_node`, check.py `consistency_check` concatène la timeline + `CHECK_PROMPT` temporel, agent.py `CHRONICLE_SYSTEM_PROMPT` « mort = événement », profile.py `consistency_rules` rule 1 + `manages_events`, tools.py `add_event`/`find_non_event`, deps.py `event_seq_lock`) ; route **3 passes** `src/felix/api/routes/atelier.py` ; evals `evals/atelier/` (cas `check_death_then_act`/`check_act_then_death` A/B + `event_chrono` + `roue_de_sang`). Harness checker isolé `/tmp/check_temporal.py` (juge sur graphe fixe, 1 appel/cas — robuste aux transients) et `/tmp/compare_checker.py` (6 scénarios, non-régression faux positifs). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## 2026-09-24 — chore: qualification de la branche maintenance/émergent + PR (#85)
+
+**Contexte** : la route chat avait été refactorée (pipeline d'extraction partagé chat+ingestion, gate/maître par profil, garde anti-paraphrase sur `add_relation`, coût/trace, `RecordingDriver`) sans rejouer les e2e. Qualification avant ouverture de la PR vers `main` (85 fichiers, +10891/-518 sur 21 commits depuis `f99a936`).
+
+**Protection des données** : tout tourné sur un Neo4j JETABLE (`docker run … -p 7688:7687 neo4j:5.24-community`, image alignée sur `docker-compose.yml`), jamais sur le 7687 dev. Vérifié AVANT le premier e2e que `FLX_NEO4J_URI=bolt://localhost:7688` est bien lu (`uv run python -c "from felix.config import settings; print(settings.neo4j_uri)"`). Conteneur stoppé/supprimé en fin de tâche ; API (:8000) et front (:3007) dev jamais touchés.
+
+**Résultats** :
+- `just test` : **418/418** verts.
+- `just web-check` (typecheck + lint + build) : vert (1 warning eslint préexistant `v-html`, pas une erreur).
+- `just e2e-atelier` (« Le Nadir ») : **5/5 invariants verts**, 0 tour en erreur, 13 events / 75 relations.
+- `just e2e-emergent` : **4/4 invariants verts** (zéro LIE_A résiduel sur les slugs promus, profil stocké versionné et porte les nouveaux `RelationSpec`, aucune arête hors vocabulaire évolué). Ratio de réutilisation typé/LIE_A à 0 % sur les deux fiches — informatif, pas un invariant : la fiche 2 n'a pas réutilisé de type fraîchement promu dans cette qualification.
+- `just e2e-conductor` : session MÊLÉE **4/4 checks verts** (0 hallucination, 0 placeholder, 0 réponse vide, recall). Session ORNIÈRE **rouge 2×/2×** sur les 2 mêmes checks (« tour 1 hedgé+contenu routé » et recall 3/3) — cf. pivot ci-dessous.
+
+**Pivot — diagnostic de l'échec ornière (pas de fix, confirmé PAS une régression).** Le tour 1 de la session ornière (« franchement je sais pas trop… peut-être une histoire avec une luthière… ») n'écrit rien deux fois de suite, contrairement à ce que ce test garde depuis #43. Plutôt que de re-lancer une 3ᵉ fois (budget de re-run épuisé), diagnostic ciblé façon JOURNAL 2026-09 (« gate sondé sur le message exact ») :
+1. **Le gate seul, sondé 5×** sur le message exact : `noter=True` 5/5 — le routage lui-même est correct, la fuite est en aval.
+2. **Le tour rejoué en isolation** (route complète, DB jetable fraîchement wipée) : le gate déclenche bien les 3 passes d'extraction (phases « bible/relie/note » émises), mais **aucun tool n'est appelé** — l'extracteur d'entités décide lui-même de ne rien écrire face à ce message hédgé, reproductible 2/2.
+3. **Même sonde rejouée sur `main`** (`git worktree add`, même `.env`, même modèle `devstral-2512`, même Neo4j jetable wipé) : **identique** — zéro tool appelé. Aucun diff de code entre `main` et cette branche sur `core/agent.py` (SYSTEM_PROMPT) ni sur `GATE_SYSTEM_PROMPT` — confirmé par `git diff`.
+→ **Conclusion : comportement pré-existant du couple modèle/prompt (`devstral-2512`), pas une régression de ce chantier.** Non corrigé ici (hors périmètre #85, chantier `project_modeling_quality`) ; laissé en limite connue de la PR. Worktree de vérification supprimé après usage (`git worktree remove`).
+
+**`.env.example`** : variables manquantes ajoutées (noms + commentaire FR, aucune valeur réelle copiée) — `OPENROUTER_API_KEY`, `FLX_LLM_CHECKER_MODEL/_BASE_URL`, `FLX_LLM_CHAT_MODEL/_BASE_URL`, `FLX_LLM_GATE_MODEL/_BASE_URL`, `FLX_LLM_VERIFIER_MODEL/_BASE_URL`, `FLX_PRICING_JSON`, `FLX_SEGMENTER_EMBEDDING_MODEL`, `FLX_LOG_LEVEL`, `FLX_HISTORY_TOKEN_BUDGET`, `FLX_RECENT_ENTITIES_LIMIT`, `FLX_USER_EDITS_LIMIT`, `FLX_USER_EDITS_TTL_MINUTES` — dette signalée dans l'entrée #84 ci-dessus, soldée ici.
+
 ## 2026-09-24 — docs: README réécrit pour l'outil générique documents+conversation → graphe (#84)
 
 **Fait** : `README.md` entièrement réécrit en anglais (repo public). L'ancien README décrivait encore un assistant de continuité de scénario avec CLI `felix` interactive chat (supprimée depuis, cf. `reference_felix_cli.md` en mémoire) et un pipeline ChromaDB (`search_scenes`) qui n'existe plus dans `core/tools.py` — vérifié par grep avant d'écrire, aucune route ne consomme plus la dépendance `Collection`.
