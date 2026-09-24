@@ -36,6 +36,16 @@
 
 **Piège évité** : `fastapi.testclient.TestClient` plante avec le driver Neo4j de la fixture (« Future attached to a different loop » — TestClient tourne dans un thread à part, sa propre event loop) → basculé sur `httpx.AsyncClient` + `ASGITransport`, qui reste sur la loop du test.
 
+## 2026-09-24 — feat: import en flux SSE, anti-doublons, panneau Propositions lisible (retours d'usage de Renaud)
+
+**Retours d'usage, dans l'ordre où Renaud les a eus en cliquant :** (1) l'import restait 1 à 3 min sur un spinner muet → import en SSE, MÊME protocole et même client que le chat (phases « Bloc i/N », cartes live, rapport final avec coût), persisté dans la conversation. (2) Doublons sur la fiche d'entité : deux LIE_A paraphrasés sur la même paire (« concerné par » / « Machine concernée ») → `same_narrative_link` : `add_relation` refuse un LIE_A si un lien de même tête existe déjà sur la paire (dans les deux sens), refus guidant qui cite l'existant ; et le document existait deux fois (nœud `document` au titre faux tiré d'une ligne d'en-tête + fiche créée par le LLM pour la fiche elle-même) → titre depuis les métadonnées PDF puis 1re vraie ligne de titre, consigne dans le prompt de bloc, fusion défensive en code. L'agent a durci ma règle de fusion (token_set_ratio seul aurait avalé une vraie machine dont le nom est inclus dans le titre, mesuré à 100) : ajout de `ratio ≥ 80`. (3) Le panneau Propositions était illisible : nom proposé « UNE » (les articles manquaient à la liste de mots-outils) et échantillons « avant → après » en jargon. Liste de mots-outils étendue, clé de cluster séparée du nom proposé (`suggest_rel_type`, un token de sens : EVOLUTION, SIGNALE, SITUE, BASCULE ; bascule/basculer enfin dans le même cluster), panneau réécrit en phrases (« Le lien « … » apparaît 4 fois. En faire un type officiel ? », exemples A → B, types reliés expliqués).
+
+**Idée produit notée (Renaud, « évol, pas important du tout »)** : un DEGRÉ D'ASSISTANAT par projet. 0 % = tout auto-validé (docs simples, non critiques), 100 % = demande à chaque action, même évidente. Piste : score de confiance déterministe par proposition (occurrences, homogénéité des paires, qualité du nom) comparé au seuil du curseur ; le 100 % exige aussi une file pour les FICHES elles-mêmes (aujourd'hui l'extraction écrit directement) — le seul vrai chantier.
+
+**Remarque** : Renaud a importé la vraie fiche client depuis la page (sa décision). Aucun de ses contenus n'entre dans le code ni les tests : univers SX-40 / BX-9 / slogan public.
+
+**Qualification** : unit 352/352, front typecheck/lint/build verts, serveurs de dev rechargés à chaud sans casse.
+
 ## 2026-09-24 — feat(web): tout depuis la page — vocabulaire par mode, file de validation, coût tokens + $ partout
 
 **Demandes de Renaud** : repartir d'une base vide et tout faire depuis la page ; virer le vocabulaire scénario codé en dur (« Raconte-moi ton histoire… » affiché en mode maintenance) ; afficher TOUJOURS le coût en tokens et en prix (« c'est un POC, c'est une donnée que je peux pas rater »).

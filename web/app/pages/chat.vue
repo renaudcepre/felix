@@ -633,6 +633,7 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .schema-panel-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); background: rgba(243, 237, 225, .9); }
 .felix-atelier .schema-panel-title { font-family: var(--serif); font-weight: 600; font-size: 17px; color: var(--ink); }
 .felix-atelier .schema-panel-body { flex: 1; overflow-y: auto; padding: 16px 18px 26px; }
+.felix-atelier .schema-panel-intro { font-family: var(--serif); font-size: 13.5px; line-height: 1.5; color: var(--ink-2); margin: 0 0 20px; }
 .felix-atelier .schema-section { margin-bottom: 22px; }
 .felix-atelier .schema-section-title { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 700; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); text-transform: uppercase; margin: 0 0 10px; }
 .felix-atelier .schema-version { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
@@ -645,14 +646,16 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .schema-vocab-pairs { flex-basis: 100%; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
 .felix-atelier .schema-proposal-list { display: flex; flex-direction: column; gap: 12px; }
 .felix-atelier .schema-proposal { padding: 12px 13px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-sm); }
-.felix-atelier .schema-proposal-head { margin-bottom: 8px; }
-.felix-atelier .schema-samples { margin: 0 0 8px; padding-left: 18px; font-family: var(--serif); font-size: 13.5px; line-height: 1.5; color: var(--ink); }
-.felix-atelier .schema-samples li { margin: 2px 0; }
-.felix-atelier .schema-pairs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
-.felix-atelier .schema-pair-chip { font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); background: var(--card-2); border: 1px solid var(--line-2); border-radius: 100px; padding: 2px 8px; }
+.felix-atelier .schema-proposal-sentence { margin: 0 0 10px; font-family: var(--serif); font-size: 14.5px; line-height: 1.45; color: var(--ink); }
+.felix-atelier .schema-examples { margin: 0 0 8px; }
+.felix-atelier .schema-examples-title { margin: 0 0 3px; font-family: var(--sans); font-weight: 600; font-size: 11.5px; letter-spacing: .02em; color: var(--ink-3); text-transform: uppercase; }
+.felix-atelier .schema-example-line { margin: 2px 0; font-family: var(--serif); font-size: 13.5px; line-height: 1.4; color: var(--ink); }
+.felix-atelier .schema-relie { margin: 0 0 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.felix-atelier .schema-relie-hint { color: var(--ink-3); }
 .felix-atelier .schema-edit-row { margin-bottom: 8px; }
 .felix-atelier .schema-edit-input { width: 100%; font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); padding: 7px 10px; border: 1px solid var(--gold-line); border-radius: 6px; background: #fff; outline: none; }
 .felix-atelier .schema-edit-input:focus { border-color: var(--gold); }
+.felix-atelier .schema-edit-hint { margin: 4px 0 0; font-family: var(--sans); font-size: 11.5px; line-height: 1.4; color: var(--ink-3); }
 .felix-atelier .schema-actions { display: flex; gap: 8px; }
 .felix-atelier .schema-actions .btn { padding: 7px 12px; font-size: 13px; }
 

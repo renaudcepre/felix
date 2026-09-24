@@ -15,8 +15,10 @@ from felix.core.profile_store import save_rejected_change
 from felix.core.schema_changes import MergeTypes, PromoteVerbs
 from felix.core.schema_detector import (
     cluster_verbs,
+    content_tokens,
     detect_proposals,
     pair_near_duplicate_types,
+    suggest_rel_type,
     verb_head,
 )
 from felix.graph.driver import get_driver, setup_constraints
@@ -108,6 +110,72 @@ def test_verb_head_case_and_accent_insensitive() -> None:
     assert verb_head("RÈGLE") == verb_head("regle")
 
 
+# ──────────────────── stoplist étendu (bug live 2026-09-24 : cluster « UNE ») ────────────────────
+# Vu en direct par l'utilisateur : « est UNE évolution du slogan pour » se
+# voyait promu en rel_type « UNE » — l'article n'était pas dans le stoplist,
+# qui ne retirait que « est ».
+
+@schema_detector_suite.test()
+def test_verb_head_strips_indefinite_article() -> None:
+    assert verb_head("est une évolution du slogan pour") == "evolution"
+
+
+@schema_detector_suite.test()
+def test_verb_head_strips_que() -> None:
+    assert verb_head("signale que la") == "signale"
+
+
+@schema_detector_suite.test()
+def test_verb_head_strips_locative_preposition() -> None:
+    assert verb_head("est situé à gauche du") == "situe"
+
+
+@schema_detector_suite.test()
+def test_verb_head_unifies_infinitive_and_present_tense() -> None:
+    """« basculer »/« bascule » retombent sur la même tête — même cluster."""
+    assert verb_head("permet de basculer vers") == verb_head("bascule entre")
+
+
+@schema_detector_suite.test()
+def test_content_tokens_strips_extended_stopwords() -> None:
+    assert content_tokens("est une évolution du slogan pour") == ["evolution", "slogan"]
+
+
+# ──────────────────── suggest_rel_type (nom suggéré, distinct de la clé de cluster) ────────────────────
+
+@schema_detector_suite.test()
+def test_suggest_rel_type_evolution_slogan() -> None:
+    assert suggest_rel_type("est une évolution du slogan pour") == "EVOLUTION"
+
+
+@schema_detector_suite.test()
+def test_suggest_rel_type_signale() -> None:
+    assert suggest_rel_type("signale que la") == "SIGNALE"
+
+
+@schema_detector_suite.test()
+def test_suggest_rel_type_situe() -> None:
+    assert suggest_rel_type("est situé à gauche du") == "SITUE"
+
+
+@schema_detector_suite.test()
+def test_suggest_rel_type_bascule_same_for_both_phrasings() -> None:
+    assert suggest_rel_type("permet de basculer vers") == "BASCULE"
+    assert suggest_rel_type("bascule entre") == "BASCULE"
+
+
+@schema_detector_suite.test()
+def test_suggest_rel_type_short_head_gets_second_token() -> None:
+    """Premier token < 4 caractères (« vu ») : peu lisible seul, on complète
+    avec le second token substantiel."""
+    assert suggest_rel_type("vu dans le rapport") == "VU_RAPPORT"
+
+
+@schema_detector_suite.test()
+def test_suggest_rel_type_empty_verb_is_empty() -> None:
+    assert suggest_rel_type("est pour") == ""
+
+
 # ──────────────────── cluster_verbs (pur) ────────────────────
 
 @schema_detector_suite.test()
@@ -128,6 +196,16 @@ def test_cluster_verbs_below_threshold_excluded() -> None:
 def test_cluster_verbs_ignores_empty_head() -> None:
     edges = [{"verbe": "est pour"}, {"verbe": "est pour"}]
     assert cluster_verbs(edges, min_count=2) == {}
+
+
+@schema_detector_suite.test()
+def test_cluster_verbs_groups_infinitive_and_present_tense_together() -> None:
+    """« permet de basculer vers » et « bascule entre » : même verbe, deux
+    formes — un seul cluster (pas deux clusters de taille 1 sous le seuil)."""
+    edges = [{"verbe": "permet de basculer vers"}, {"verbe": "bascule entre"}]
+    clusters = cluster_verbs(edges, min_count=2)
+    assert set(clusters) == {"bascule"}
+    assert len(clusters["bascule"]) == 2
 
 
 # ──────────────────── pair_near_duplicate_types (pur) ────────────────────
@@ -184,6 +262,34 @@ async def test_detect_proposals_verb_cluster(
     assert sorted(promote[0].report.observed_pairs) == [
         ("commande", "organe"), ("commande", "parametre"),
     ]
+
+
+@schema_detector_suite.test()
+async def test_detect_proposals_verb_cluster_payload_for_humans(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Étape 5bis (2026-09-24, après le retour « je ne comprends rien ») : le
+    panneau a besoin d'occurrences/phrases/exemples/pairs_readable pour ne
+    plus montrer du jargon (« UNE », des chips non expliqués)."""
+    await _wipe(driver)
+    await _seed_entity(driver, "verin", "Vérin", "organe")
+    await _seed_entity(driver, "trappe", "Trappe", "organe")
+    await _seed_entity(driver, "levier", "Levier", "commande")
+    await _seed_narrative(driver, "levier", "verin", "règle")
+    await _seed_narrative(driver, "levier", "trappe", "règle")
+
+    proposals = await detect_proposals(
+        driver, project=PROJ, profile=EMERGENT_SEED_PROFILE, min_count=2
+    )
+    promote = [p for p in proposals if isinstance(p.change, PromoteVerbs)]
+    assert len(promote) == 1
+    proposal = promote[0]
+    assert proposal.occurrences == 2
+    assert proposal.phrases == ["règle"]
+    assert len(proposal.examples) == 2
+    assert {e["from"] for e in proposal.examples} == {"Levier"}
+    assert {e["to"] for e in proposal.examples} == {"Vérin", "Trappe"}
+    assert proposal.pairs_readable == "commande → organe"
 
 
 @schema_detector_suite.test()

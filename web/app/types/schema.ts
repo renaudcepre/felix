@@ -27,9 +27,24 @@ export interface ChangeReport {
   verbes: string[]
 }
 
+// Un exemple concret d'arête du cluster — {from, verb, to} verbatim, pour
+// l'humain (le panneau affiche « {from} → {to} », le verbe déjà dit dans la
+// phrase d'accroche de la proposition).
+export interface ProposalExample {
+  from: string
+  verb: string
+  to: string
+}
+
 export interface Proposal {
   change: SchemaChange
   report: ChangeReport
+  // Habillage humain (Étape 8 réécrite le 2026-09-24) — peuplés pour
+  // promote_verbs seulement ; vides/zéro pour merge_types (texte dédié).
+  occurrences: number
+  phrases: string[]
+  examples: ProposalExample[]
+  pairs_readable: string
 }
 
 // Un type de relation appris (felix.core.profile.RelationSpec, sérialisé).

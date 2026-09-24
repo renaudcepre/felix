@@ -17,7 +17,7 @@ import re
 import unicodedata
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from rapidfuzz import fuzz
 
 from felix.core.graph import NARRATIVE_REL
@@ -40,11 +40,36 @@ if TYPE_CHECKING:
 # petit et plat (frozenset module-level) : c'est une heuristique de CLUSTERING,
 # pas une lemmatisation — elle n'a besoin d'être ni exhaustive ni linguistiquement
 # savante, seulement stable et déterministe.
+#
+# Étendu le 2026-09-24 (bug live vu par l'utilisateur) : « est UNE évolution du
+# slogan pour » ne perdait que « est » et se voyait promu en rel_type « UNE » —
+# aucun article/déterminant n'était dans la liste. Ajout des familles qui
+# manquaient : articles/déterminants, prépositions simples, formes courantes
+# d'être/avoir, et quelques verbes-relais (même veine que permet/permettent).
 _STOPWORDS = frozenset({
+    # Déjà présent : auxiliaires courts, négation, pronoms, locutions vues en
+    # clustering réel.
     "est", "sont", "a", "ont", "se", "s", "ne", "n", "pour", "permet",
     "permettent", "de", "d", "l", "la", "le", "les", "en", "y", "qui", "il",
-    "elle", "on",
+    "elle", "on", "que",
+    # Articles indéfinis / déterminants (le bug du 2026-09-24 : « une »).
+    "un", "une", "des", "du", "au", "aux",
+    # Prépositions simples (« à » perd son accent → « a », déjà listé ci-dessus).
+    "par", "sur", "dans", "avec", "vers", "entre",
+    # Être, formes courantes (est/sont déjà listés).
+    "suis", "es", "sommes", "etes", "etait", "etaient", "sera", "serons",
+    "serez", "seront", "ete", "fut", "furent", "etant",
+    # Avoir, formes courantes (a/ont déjà listés).
+    "ai", "as", "avons", "avez", "avait", "avaient", "aura", "aurons",
+    "aurez", "auront", "eu", "ayant",
+    # Verbes-relais quasi fonctionnels, même veine que permet/permettent.
+    "peut", "peuvent", "doit", "doivent", "fait",
 })
+
+# Sous ce seuil, retirer un suffixe casserait le radical (« as » n'est pas
+# retiré de « pas », etc.) — cf. _light_suffix_strip.
+_MIN_STEM_LEN = 3
+
 
 def _normalize(text: str) -> str:
     """Minuscules, sans accents, ponctuation → espaces (cf. felix.ingest.document)."""
@@ -53,14 +78,31 @@ def _normalize(text: str) -> str:
     return re.sub(r"[^a-z0-9']+", " ", bare).strip()
 
 
+def _light_suffix_strip(token: str) -> str:
+    """Réduction LÉGÈRE d'un suffixe verbal — pluriel (« s »), 3e personne du
+    pluriel présent (« ent ») et infinitif (« er », ramené à la même forme que
+    le présent : « basculer » → « bascule ») — pour que les formes conjuguées
+    d'un même verbe retombent sur le même radical (cluster ET nom suggéré).
+    Best-effort, pas une lemmatisation : un mot ne matche qu'UN SEUL de ces
+    suffixes, celui trouvé en premier ci-dessous."""
+    if token.endswith("ent") and len(token) > _MIN_STEM_LEN + 3:
+        return token[:-3]
+    if token.endswith("er") and len(token) > _MIN_STEM_LEN + 1:
+        return token[:-1]
+    if token.endswith("s") and len(token) > 1:
+        return token[:-1]
+    return token
+
+
 def verb_head(verbe: str) -> str:
-    """Tête normalisée d'un verbe narratif — la clé de clustering. « règle »,
-    « qui règle », « est réglé par » retombent tous sur « regle ». Vide si le
-    verbe ne contient QUE des mots de fonction (rien de substantiel)."""
+    """Tête normalisée d'un verbe narratif — la CLÉ DE CLUSTERING (distincte du
+    nom suggéré, cf. ``suggest_rel_type``). « règle », « qui règle », « est
+    réglé par », « permet de basculer » retombent tous sur le même radical.
+    Vide si le verbe ne contient QUE des mots de fonction (rien de substantiel)."""
     for token in _normalize(verbe).split():
         cleaned = token.strip("'")
         if cleaned and cleaned not in _STOPWORDS:
-            return cleaned[:-1] if cleaned.endswith("s") and len(cleaned) > 1 else cleaned
+            return _light_suffix_strip(cleaned)
     return ""
 
 
@@ -76,6 +118,39 @@ def content_tokens(verbe: str) -> list[str]:
         for token in _normalize(verbe).split()
         if (cleaned := token.strip("'")) and cleaned not in _STOPWORDS
     ]
+
+
+# En dessous de cette longueur, le premier token seul est peu lisible comme
+# nom de type (« va », « dit », « vu ») : on complète avec le second token
+# substantiel, quand il existe.
+_MIN_SUGGESTED_TOKEN_LEN = 4
+
+
+def suggest_rel_type(verbe: str) -> str:
+    """Nom de type de relation SUGGÉRÉ pour un verbe narratif verbatim — proposé
+    à l'humain dans la file de validation, jamais appliqué sans son accord (le
+    champ reste éditable, cf. ``SchemaProposalsPanel.vue``).
+
+    DISTINCT de ``verb_head`` (la clé de clustering, toujours un seul token) :
+    règle choisie, simple et déterministe — UN token substantiel normalisé
+    (``_light_suffix_strip``), et SEULEMENT s'il fait moins de 4 caractères on
+    y ajoute le second token substantiel. On ne tente PAS de deviner quel
+    complément est « sémantiquement » utile (« évolution du slogan » → le
+    slogan compte ; « situé à gauche du » → le complément de lieu n'ajoute
+    rien) : cette distinction demanderait de la vraie linguistique, hors
+    scope d'une heuristique de clustering. Un seul token, presque toujours
+    déjà clair, reste le choix le plus lisible et le plus stable ; l'humain
+    corrige le nom à la marge s'il veut plus précis.
+
+    Exemples vus en live : « est une évolution du slogan pour » → EVOLUTION ;
+    « signale que la » → SIGNALE ; « est situé à gauche du » → SITUE ;
+    « permet de basculer vers » et « bascule entre » (même cluster) → BASCULE.
+    """
+    tokens = [_light_suffix_strip(t) for t in content_tokens(verbe)]
+    if not tokens:
+        return ""
+    chosen = tokens[:1] if len(tokens[0]) >= _MIN_SUGGESTED_TOKEN_LEN else tokens[:2]
+    return "_".join(chosen).upper()
 
 
 def cluster_verbs(edges: list[dict], *, min_count: int) -> dict[str, list[dict]]:
@@ -138,21 +213,32 @@ def _rejection_signature(change: dict) -> tuple[str, frozenset[str]]:
 
 class Proposal(BaseModel):
     """Une proposition de changement de schéma, avec son rapport en PREVIEW —
-    ce que montrerait la file de validation avant le clic « accepter »."""
+    ce que montrerait la file de validation avant le clic « accepter ».
+
+    ``occurrences``/``phrases``/``examples``/``pairs_readable`` habillent la
+    proposition pour un humain (panneau, Étape 8 réécrite le 2026-09-24 après
+    le retour « je ne comprends rien » : cluster « UNE », chips non
+    expliqués) — peuplés pour ``PromoteVerbs`` seulement, le panneau bascule
+    sur un texte dédié pour ``MergeTypes`` (pas de valeur inventée sinon)."""
 
     change: SchemaChange
     report: ChangeReport
+    occurrences: int = 0
+    phrases: list[str] = Field(default_factory=list)
+    examples: list[dict[str, str]] = Field(default_factory=list)
+    pairs_readable: str = ""
 
 
 async def _fetch_narrative_edges(driver: AsyncDriver, *, project: str) -> list[dict]:
     async with driver.session() as session:
         result = await session.run(
             """
-            MATCH (:GenEntity {project: $project})
+            MATCH (a:GenEntity {project: $project})
                   -[r:REL {rel_type: $narr}]->
-                  (:GenEntity {project: $project})
-            RETURN r.verbe AS verbe, r.verbe_slug AS verbe_slug
-            ORDER BY r.verbe_slug
+                  (b:GenEntity {project: $project})
+            RETURN r.verbe AS verbe, r.verbe_slug AS verbe_slug,
+                   a.name AS from_name, b.name AS to_name
+            ORDER BY r.verbe_slug, a.id, b.id
             """,
             project=project, narr=NARRATIVE_REL,
         )
@@ -182,7 +268,13 @@ async def _verb_proposals(
     proposals: list[Proposal] = []
     for head in sorted(clusters):
         rows = clusters[head]
-        rel_type = head.upper()
+        # Phrases verbatim distinctes, triées — matériau lisible du panneau
+        # (« Le lien « X » apparaît N fois »), et base du nom suggéré : la
+        # PREMIÈRE en ordre alphabétique sert de représentante déterministe
+        # (peu importe laquelle, cf. suggest_rel_type — un seul token le plus
+        # souvent, donc stable d'une phrase à l'autre du même cluster).
+        phrases = sorted({str(row["verbe"]) for row in rows if row.get("verbe")})
+        rel_type = suggest_rel_type(phrases[0]) if phrases else head.upper()
         slugs = sorted({row["verbe_slug"] for row in rows})
         change = PromoteVerbs(verbe_slugs=slugs, rel_type=rel_type)
         try:
@@ -191,7 +283,15 @@ async def _verb_proposals(
             # rel_type dérivé invalide (machinerie, vide…) — pas une proposition
             # exploitable ; on ne réimplémente pas ici la garde de schema_changes.
             continue
-        proposals.append(Proposal(change=change, report=report))
+        examples = [
+            {"from": str(row["from_name"]), "verb": str(row["verbe"]), "to": str(row["to_name"])}
+            for row in rows[:3]
+        ]
+        pairs_readable = ", ".join(f"{a} → {b}" for a, b in report.observed_pairs)
+        proposals.append(Proposal(
+            change=change, report=report, occurrences=len(rows),
+            phrases=phrases, examples=examples, pairs_readable=pairs_readable,
+        ))
     return proposals
 
 
