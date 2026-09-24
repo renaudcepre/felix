@@ -37,6 +37,7 @@ CYPHER_MODULES = [
     SRC / "core" / "messages.py",  # brique #63 — :Message / :Thread
     SRC / "core" / "schema_changes.py",  # migration du passé — appliquer un schéma validé
     SRC / "core" / "schema_detector.py",  # détecteur déterministe de propositions
+    SRC / "core" / "source_pages.py",  # :SourcePage — texte source persisté (#vérif-source)
     SRC / "api" / "routes" / "entities.py",
 ]
 
@@ -187,6 +188,26 @@ def test_cost_entry_queries_are_project_scoped() -> None:
     missing = [where for where, q in queries if "project" not in q]
     assert not missing, (
         "Requêtes :CostEntry SANS filtre project (contamination inter-histoires "
+        "possible) :\n" + "\n".join(missing)
+    )
+
+
+@project_scoping_suite.test()
+def test_source_page_queries_are_project_scoped() -> None:
+    """Le méta-nœud :SourcePage (texte source persisté, #vérif-source) est
+    scopé : le texte d'un document de l'histoire A ne doit jamais alimenter
+    la vérification d'une alerte de l'histoire B. L'assert path.exists() met
+    la suite en rouge tant que source_pages.py n'existe pas — état RED voulu
+    de l'eval-first."""
+    path = SRC / "core" / "source_pages.py"
+    assert path.exists(), f"module attendu manquant : {path}"
+
+    queries = _cypher_strings(path, ":SourcePage")
+    assert queries, "aucune requête :SourcePage trouvée — le scan est cassé"
+
+    missing = [where for where, q in queries if "project" not in q]
+    assert not missing, (
+        "Requêtes :SourcePage SANS filtre project (contamination inter-histoires "
         "possible) :\n" + "\n".join(missing)
     )
 

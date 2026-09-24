@@ -260,12 +260,15 @@ function submitFree() {
           <p class="alert-body">{{ msg.resolution }}</p>
         </div>
 
-        <div v-else class="alert-card">
+        <div v-else class="alert-card" :class="{ 'is-extraction': msg.source_kind === 'extraction' }">
           <div class="alert-head">
-            <span class="alert-ic"><AtelierIcon name="alert" :size="15" /></span>
+            <span class="alert-ic" :class="{ verify: msg.source_kind === 'extraction' }">
+              <AtelierIcon :name="msg.source_kind === 'extraction' ? 'verify' : 'alert'" :size="15" />
+            </span>
             <span class="alert-title">{{ msg.title }}</span>
           </div>
           <p class="alert-body">{{ msg.body }}</p>
+          <p v-if="msg.correction" class="alert-correction">{{ msg.correction }}</p>
           <div v-if="msg.status === 'resolving'" class="alert-resolves">
             <button v-for="r in msg.resolves" :key="r.id" class="resolve-opt" @click="emit('resolve', msg, r)">
               <span class="ro-label">{{ r.label }}</span>

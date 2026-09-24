@@ -1,6 +1,9 @@
 """Ingestion de document (Étape 2 du plan `maintenance_profile`) — une fiche
 procédure (PDF ou texte) devient un graphe interrogeable, chaque fiche du
-graphe traçable jusqu'à sa page source (DESCRIBED_IN {pages}).
+graphe traçable jusqu'à sa page source (DESCRIBED_IN {pages}), et le texte de
+chaque page SURVIT en base (:SourcePage, `felix.core.source_pages`) : c'est ce
+qui permet à une alerte de cohérence levée bien après l'ingestion d'être
+relue contre sa source (cf. `felix.core.check.verify_against_source`).
 
 Des fonctions PURES, testables sans Neo4j ni LLM (lecture, nettoyage, découpe,
 titre, détection de doublon du document), puis `stream_ingest_document` qui
@@ -45,6 +48,7 @@ from felix.core import (
     create_entity,
     link_described_in,
     merge_entity_into,
+    persist_source_pages,
     recent_entities,
     record_cost_entry,
     render_recent_block,
@@ -592,6 +596,11 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         {"titre": title, "pages": str(len(pages)), "source": source_name},
         project=project,
     )
+    # Texte source persisté PAGE PAR PAGE (:SourcePage) — au-delà de cette
+    # ingestion, c'est ce qui permet à une alerte levée PLUS TARD (tour de
+    # chat sur une fiche déjà en base) d'être vérifiée contre sa source
+    # (cf. felix.core.check.verify_against_source).
+    await persist_source_pages(driver, document_id, pages, project=project)
 
     # Deps globales du document — jamais passées à un run_extractors (chaque
     # bloc a les SIENNES, fraîches, pour une attribution de page correcte) mais

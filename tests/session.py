@@ -22,6 +22,8 @@ from tests.unit.test_resolver import resolver_suite
 from tests.unit.test_retype_entity import retype_entity_suite
 from tests.unit.test_schema_changes import schema_changes_suite
 from tests.unit.test_schema_detector import schema_detector_suite
+from tests.unit.test_source_pages import source_pages_suite
+from tests.unit.test_source_verify import source_verify_suite
 from tests.unit.test_update_event_guard import update_event_guard_suite
 from tests.unit.test_user_edits import user_edits_suite
 from tests.unit.test_vectorstore import vectorstore_suite
@@ -53,3 +55,5 @@ session.add_suite(profile_store_suite)
 session.add_suite(profile_evolution_suite)
 session.add_suite(schema_detector_suite)
 session.add_suite(cost_suite)
+session.add_suite(source_pages_suite)
+session.add_suite(source_verify_suite)

@@ -17,8 +17,13 @@ from typing import TYPE_CHECKING
 from pydantic_ai import Agent
 from sse_starlette import ServerSentEvent
 
-from felix.core import consistency_check, record_alert, runs_chronicle
-from felix.core.check import CheckVerdict, distinct_contradictions
+from felix.core import consistency_check, record_alert, runs_chronicle, source_pages_for
+from felix.core.check import (
+    CheckVerdict,
+    distinct_contradictions,
+    verify_against_source,
+)
+from felix.core.graph import find_node
 from felix.cost import agent_model_name
 
 if TYPE_CHECKING:
@@ -114,6 +119,31 @@ async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profi
             logger.exception("passe %s échouée (tour non bloqué)", label)
 
 
+# Titre affiché selon le verdict du vérificateur source (cf. verify_against_source) —
+# « document » = vraie anomalie métier, « extraction »/« unverifiable » restent
+# une incohérence POSSIBLE (source non prouvée fautive, ou pas de source du tout).
+_ALERT_TITLES = {
+    "document": "Incohérence dans le document",
+    "extraction": "Felix a peut-être mal lu le document",
+}
+_DEFAULT_ALERT_TITLE = "Incohérence possible"
+
+
+async def _source_pages_for_subjects(
+    driver: AsyncDriver, sujets: list[str], *, project: str
+) -> list[tuple[str, int, str]]:
+    """Résout les NOMS de sujets d'un verdict (cf. CheckVerdict.sujets) vers
+    leurs pages sources. Un sujet non résolu (nom légèrement reformulé par le
+    judge) n'apporte simplement aucune page — `verify_against_source` retombe
+    alors sur `unverifiable`, sans cas particulier à gérer ici."""
+    ids = []
+    for name in sujets:
+        node = await find_node(driver, name, project=project)
+        if node:
+            ids.append(node["id"])
+    return await source_pages_for(driver, ids, project=project)
+
+
 async def consistency_alerts(
     driver: AsyncDriver, deps: GenericDeps, profile: Profile | None
 ) -> AsyncGenerator[ServerSentEvent]:
@@ -122,6 +152,13 @@ async def consistency_alerts(
     Dédupliqué : une même incohérence remonte souvent de plusieurs entités voisines
     (voisinages qui se recouvrent) → une seule carte par tour. `message` = phrase
     courte pour l'auteur ; `reason` (brouillon du judge) sert de filet de secours.
+
+    Chaque contradiction DISTINCTE est ensuite passée à `verify_against_source`
+    (UN appel LLM par alerte, jamais par entité — cf. la boucle ci-dessous, après
+    `distinct_contradictions`) pour distinguer une vraie incohérence du DOCUMENT
+    d'une mauvaise LECTURE de Felix à l'extraction : la carte porte alors
+    `source_kind` (document/extraction/unverifiable) et une `correction` si le
+    vérificateur peut l'énoncer.
     """
     # On ne juge QUE les entités où une contradiction est possible ce tour
     # (relation / événement / valeur écrasée — cf. deps.check_candidates), pas
@@ -146,12 +183,22 @@ async def consistency_alerts(
         ok.append(verdict)
     for verdict in distinct_contradictions(ok):
         alert_body = verdict.message.strip() or verdict.reason
+        # UN appel LLM par alerte DISTINCTE (jamais par entité) — coût compté
+        # dans deps.cost_ledger comme toute autre passe (cf. CLAUDE.md « des
+        # systèmes, pas du cas par cas »).
+        pages = await _source_pages_for_subjects(
+            driver, verdict.sujets, project=deps.project_id
+        )
+        source_verdict = await verify_against_source(verdict, pages, deps.cost_ledger)
+        title = _ALERT_TITLES.get(source_verdict.kind, _DEFAULT_ALERT_TITLE)
         yield ServerSentEvent(
             data=json.dumps({
                 "kind": "alert",
-                "title": "Incohérence possible",
+                "title": title,
                 "body": alert_body,
                 "status": "open",
+                "source_kind": source_verdict.kind,
+                "correction": source_verdict.correction,
             }),
             event="alert",
         )

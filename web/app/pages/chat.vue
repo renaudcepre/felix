@@ -605,6 +605,15 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .alert-card.resolved { border-color: var(--sage-line); background: var(--sage-soft); }
 .felix-atelier .alert-card.resolved .alert-title { color: var(--sage); }
 .felix-atelier .alert-dismissed { display: flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 13px; color: var(--ink-3); }
+/* Incohérence « à vérifier » (#vérif-source) : la source semble cohérente, Felix
+   l'a peut-être mal lue — ton plus calme (gold, déjà utilisé ailleurs pour du
+   contexte de lecture) que la vraie anomalie document (terra). */
+.felix-atelier .alert-card.is-extraction { border-color: var(--gold-line); background: var(--gold-soft); }
+.felix-atelier .alert-card.is-extraction .alert-title { color: var(--gold-deep); }
+.felix-atelier .alert-card.is-extraction .alert-ic.verify { background: var(--gold); }
+.felix-atelier .alert-card.is-extraction .alert-btn { border-color: var(--gold-line) !important; color: var(--gold-deep) !important; }
+.felix-atelier .alert-card.is-extraction .alert-btn:hover { border-color: var(--gold) !important; background: var(--gold-soft) !important; }
+.felix-atelier .alert-correction { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--ink-2); margin: 8px 0 0; }
 .felix-atelier .redo { background: none; border: none; color: var(--gold-deep); font-weight: 600; font-size: 13px; text-decoration: underline; padding: 0; cursor: pointer; }
 
 /* Composer */

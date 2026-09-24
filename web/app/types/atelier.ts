@@ -17,6 +17,13 @@ export interface ResolveOption {
 
 export type AlertStatus = 'open' | 'resolving' | 'resolved' | 'dismissed'
 
+// Origine de l'incohérence, tranchée par le vérificateur source
+// (felix.core.check.verify_against_source) : 'document' = le document source
+// se contredit vraiment (anomalie métier) ; 'extraction' = le document est
+// cohérent, Felix l'a mal lu (la carte porte alors une correction) ;
+// 'unverifiable' = pas de texte source disponible (fait de chat).
+export type AlertSourceKind = 'document' | 'extraction' | 'unverifiable'
+
 // Mode du bot (Étape 3, plans/maintenance_profile.md) — cf. GET /api/atelier/profiles.
 // welcome/input_placeholder (Étape 8) : vocabulaire UI DU MODE — plus aucun
 // texte scénario codé en dur côté front, cf. felix.atelier.agent.profile_summary.
@@ -79,6 +86,11 @@ export interface AtelierMsg {
   status?: AlertStatus
   resolves?: ResolveOption[]
   resolution?: string
+  // Origine tranchée par le vérificateur source (#vérif-source) + correction
+  // énoncée si source_kind === 'extraction' (valeur telle qu'elle apparaît
+  // dans le document, avec sa référence).
+  source_kind?: AlertSourceKind
+  correction?: string
   // Coût du TOUR qui a produit ce message (#coût) — posé sur le DERNIER message
   // felix du tour (carte s'il y en a, sinon le texte) ; survit au reload car
   // persisté dans le payload du message stocké, cf. useAtelier.mapServerMsg.

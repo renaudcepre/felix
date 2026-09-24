@@ -87,3 +87,17 @@ def build_gate_model() -> Model:
         settings.llm_gate_model or settings.llm_chat_model,
         settings.llm_gate_base_url if settings.llm_gate_model else settings.llm_chat_base_url,
     )
+
+
+def build_verifier_model() -> Model:
+    """Build model for the source verifier (per-feature override, fallback checker).
+
+    Le vérificateur source relit le texte d'origine d'UNE alerte distincte
+    (jamais par entité, cf. felix.atelier.pipeline.consistency_alerts) : un
+    volume encore plus faible que le checker — un modèle dédié permet de
+    monter en qualité sans toucher au budget des extracteurs, avec le checker
+    en garant si aucun modèle dédié n'est configuré."""
+    return build_model(
+        settings.llm_verifier_model or settings.llm_checker_model,
+        settings.llm_verifier_base_url if settings.llm_verifier_model else settings.llm_checker_base_url,
+    )

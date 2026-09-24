@@ -53,6 +53,7 @@ from felix.core.projects import (
     ensure_project_scoping,
     list_projects,
 )
+from felix.core.source_pages import persist_source_pages, source_pages_for
 from felix.core.user_edits import (
     consume_unnotified_edits,
     recent_user_edits,
@@ -90,6 +91,7 @@ __all__ = [
     "list_projects",
     "load_llm_history",
     "merge_entity_into",
+    "persist_source_pages",
     "project_cost_totals",
     "recent_entities",
     "recent_user_edits",
@@ -104,4 +106,5 @@ __all__ = [
     "render_user_edits_block",
     "runs_chronicle",
     "save_llm_history",
+    "source_pages_for",
 ]

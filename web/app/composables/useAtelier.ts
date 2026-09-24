@@ -1,4 +1,4 @@
-import type { AtelierMsg, IngestReportPayload } from '~/types/atelier'
+import type { AlertSourceKind, AtelierMsg, IngestReportPayload } from '~/types/atelier'
 import type { CostSummaryPayload } from '~/types/costs'
 import { parseSSEStream } from '~/utils/parseSSE'
 import { currentProfile, profiles as atelierProfiles, useAtelierProfile } from './useAtelierProfile'
@@ -19,12 +19,16 @@ interface ToolCardPayload {
 }
 
 // Alerte d'incohérence émise par le backend (event SSE `alert`) — cf. la route
-// atelier (consistency_check sur les entités touchées).
+// atelier (consistency_check sur les entités touchées). `source_kind`/`correction`
+// (#vérif-source) : verify_against_source a relu la source pour dire si c'est le
+// document qui se contredit ou Felix qui l'a mal lu.
 interface AlertPayload {
   kind: 'alert'
   title: string
   body: string
   status: 'open' | 'resolving' | 'resolved' | 'dismissed'
+  source_kind: AlertSourceKind
+  correction: string
 }
 
 // Message persisté côté serveur (GET /api/atelier/conversation, #63).
@@ -143,6 +147,8 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       title: p.title,
       body: p.body,
       status: p.status,
+      source_kind: p.source_kind,
+      correction: p.correction,
       cost: extractCost(m.payload),
     }
   }
@@ -275,7 +281,15 @@ export function useAtelier() {
   }
 
   function appendAlertCard(a: AlertPayload): AtelierMsg {
-    return append({ role: 'felix', kind: 'alert', title: a.title, body: a.body, status: a.status })
+    return append({
+      role: 'felix',
+      kind: 'alert',
+      title: a.title,
+      body: a.body,
+      status: a.status,
+      source_kind: a.source_kind,
+      correction: a.correction,
+    })
   }
 
   async function sendMessage(text: string) {

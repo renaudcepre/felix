@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # un petit modèle (ex. Devstral Small 2) suffit avec le gros en garant.
     llm_gate_model: str | None = None
     llm_gate_base_url: str | None = None
+    # Vérificateur source (1 appel PAR ALERTE distincte, jamais par entité) :
+    # relit le texte source d'une contradiction pour distinguer une VRAIE
+    # incohérence du document d'une mauvaise lecture de Felix. Repli sur le
+    # checker (même esprit que le gate replie sur le chat).
+    llm_verifier_model: str | None = None
+    llm_verifier_base_url: str | None = None
 
     # Surcharge de la table de prix (JSON, cf. felix.cost.DEFAULT_PRICING) —
     # {"nom-modele": {"input": prix_par_million, "output": prix_par_million}, ...}.
