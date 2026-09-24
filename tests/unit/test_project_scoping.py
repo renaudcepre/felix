@@ -35,6 +35,7 @@ CYPHER_MODULES = [
     SRC / "core" / "user_edits.py",
     SRC / "core" / "alerts.py",     # méta-nœud :Alert (#50-a)
     SRC / "core" / "messages.py",  # brique #63 — :Message / :Thread
+    SRC / "core" / "schema_changes.py",  # migration du passé — appliquer un schéma validé
     SRC / "api" / "routes" / "entities.py",
 ]
 

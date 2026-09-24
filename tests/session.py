@@ -16,6 +16,7 @@ from tests.unit.test_relation_reemission import relation_reemission_suite
 from tests.unit.test_relation_typing import relation_typing_suite
 from tests.unit.test_resolver import resolver_suite
 from tests.unit.test_retype_entity import retype_entity_suite
+from tests.unit.test_schema_changes import schema_changes_suite
 from tests.unit.test_update_event_guard import update_event_guard_suite
 from tests.unit.test_user_edits import user_edits_suite
 from tests.unit.test_vectorstore import vectorstore_suite
@@ -39,5 +40,6 @@ session.add_suite(llm_timeout_suite)
 session.add_suite(event_reorder_suite)
 session.add_suite(relation_reemission_suite)
 session.add_suite(retype_entity_suite)
+session.add_suite(schema_changes_suite)
 session.add_suite(maintenance_profile_suite)
 session.add_suite(ingest_document_suite)
