@@ -14,10 +14,14 @@ from felix.core.graph import NARRATIVE_REL
 from felix.core.profile import EMERGENT_SEED_PROFILE, EntityType, Profile, RelationSpec
 from felix.core.profile_store import (
     load_project_profile,
+    load_project_profile_version,
+    load_rejected_changes,
     profile_from_dict,
     profile_to_dict,
     save_project_profile,
+    save_rejected_change,
 )
+from felix.core.schema_changes import MergeTypes, PromoteVerbs
 from felix.graph.driver import get_driver, setup_constraints
 
 if TYPE_CHECKING:
@@ -142,3 +146,84 @@ async def test_save_scoped_per_project(
     await _wipe(driver)
     await save_project_profile(driver, _RICH_PROFILE, project=PROJ)
     assert await load_project_profile(driver, project=PROJ_B) is None
+
+
+# ──────────────────── refus persistés (file de validation, Étape 8) ────────────────────
+# Un `rejected` SIBLING de `data` sur le même :ProjectProfile — pas dans le
+# Profile lui-même (round-trip profile_to_dict intact, cf. tests ci-dessus).
+
+@profile_store_suite.test()
+async def test_load_rejected_changes_empty_when_nothing_stored(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    await _wipe(driver)
+    assert await load_rejected_changes(driver, project=PROJ) == []
+
+
+@profile_store_suite.test()
+async def test_save_then_load_rejected_change_round_trips(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    await _wipe(driver)
+    change = PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS")
+    await save_rejected_change(driver, change, project=PROJ)
+    assert await load_rejected_changes(driver, project=PROJ) == [change.model_dump()]
+
+
+@profile_store_suite.test()
+async def test_save_rejected_change_accumulates(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    await _wipe(driver)
+    await save_rejected_change(
+        driver, PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"), project=PROJ,
+    )
+    await save_rejected_change(
+        driver, MergeTypes(sources=["verins"], target="verin"), project=PROJ,
+    )
+    rejected = await load_rejected_changes(driver, project=PROJ)
+    assert len(rejected) == 2
+    assert {r["kind"] for r in rejected} == {"promote_verbs", "merge_types"}
+
+
+@profile_store_suite.test()
+async def test_save_rejected_change_scoped_per_project(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    await _wipe(driver)
+    await save_rejected_change(
+        driver, PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"), project=PROJ,
+    )
+    assert await load_rejected_changes(driver, project=PROJ_B) == []
+
+
+@profile_store_suite.test()
+async def test_save_rejected_change_does_not_create_stored_profile(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Refuser une proposition avant toute validation ne doit PAS faire apparaître
+    un profil stocké (`data` reste absent) — seul `rejected` est posé."""
+    await _wipe(driver)
+    await save_rejected_change(
+        driver, PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"), project=PROJ,
+    )
+    assert await load_project_profile(driver, project=PROJ) is None
+
+
+# ──────────────────── version (lecture seule, GET /api/schema/profile) ────────────────────
+
+@profile_store_suite.test()
+async def test_load_version_is_zero_when_nothing_stored(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    await _wipe(driver)
+    assert await load_project_profile_version(driver, project=PROJ) == 0
+
+
+@profile_store_suite.test()
+async def test_load_version_matches_save_project_profile(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    await _wipe(driver)
+    saved = await save_project_profile(driver, EMERGENT_SEED_PROFILE, project=PROJ)
+    assert await load_project_profile_version(driver, project=PROJ) == saved

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Annotated
 from protest import ProTestSuite, Use, fixture
 
 from felix.core.profile import EMERGENT_SEED_PROFILE
+from felix.core.profile_store import save_rejected_change
 from felix.core.schema_changes import MergeTypes, PromoteVerbs
 from felix.core.schema_detector import (
     cluster_verbs,
@@ -38,6 +39,16 @@ async def _wipe(driver: AsyncDriver) -> None:
         )
 
 
+async def _wipe_profile(driver: AsyncDriver) -> None:
+    """Le méta-nœud :ProjectProfile (refus, cf. Étape 8) — un espace à part de
+    :GenEntity, nettoyé séparément pour ne pas polluer les tests qui refusent
+    des propositions sur PROJ."""
+    async with driver.session() as session:
+        await session.run(
+            "MATCH (p:ProjectProfile {project: $p}) DETACH DELETE p", p=PROJ,
+        )
+
+
 @fixture(max_concurrency=1)
 async def _driver() -> AsyncGenerator[AsyncDriver]:
     driver = get_driver()
@@ -46,6 +57,7 @@ async def _driver() -> AsyncGenerator[AsyncDriver]:
         yield driver
     finally:
         await _wipe(driver)
+        await _wipe_profile(driver)
         await driver.close()
 
 
@@ -257,3 +269,79 @@ async def test_detect_proposals_etancheite_projet(
             assert not [p for p in proposals if isinstance(p.change, PromoteVerbs)]
         finally:
             await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj_b)
+
+
+# ──────────────────── refus persistés (file de validation, Étape 8) ────────────────────
+
+@schema_detector_suite.test()
+async def test_detect_proposals_skips_rejected_verb_cluster(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Un refus porte sur l'ENSEMBLE SOURCE (verbe_slugs), pas sur le nom cible
+    proposé — refuser « règle → AUTRE_NOM » doit aussi taire « règle → REGLE »
+    (même cluster, seul le nom change)."""
+    await _wipe(driver)
+    await _wipe_profile(driver)
+    await _seed_entity(driver, "verin", "Vérin", "organe")
+    await _seed_entity(driver, "trappe", "Trappe", "organe")
+    await _seed_entity(driver, "levier", "Levier", "commande")
+    await _seed_narrative(driver, "levier", "verin", "règle")
+    await _seed_narrative(driver, "levier", "trappe", "règle")
+    await save_rejected_change(
+        driver, PromoteVerbs(verbe_slugs=["regle"], rel_type="AUTRE_NOM"), project=PROJ,
+    )
+    try:
+        proposals = await detect_proposals(
+            driver, project=PROJ, profile=EMERGENT_SEED_PROFILE, min_count=2
+        )
+        assert not [p for p in proposals if isinstance(p.change, PromoteVerbs)]
+    finally:
+        await _wipe_profile(driver)
+
+
+@schema_detector_suite.test()
+async def test_detect_proposals_does_not_skip_unrelated_verb_cluster(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Un refus sur un AUTRE cluster (verbe_slugs différents) ne doit rien taire."""
+    await _wipe(driver)
+    await _wipe_profile(driver)
+    await _seed_entity(driver, "verin", "Vérin", "organe")
+    await _seed_entity(driver, "trappe", "Trappe", "organe")
+    await _seed_entity(driver, "levier", "Levier", "commande")
+    await _seed_narrative(driver, "levier", "verin", "règle")
+    await _seed_narrative(driver, "levier", "trappe", "règle")
+    await save_rejected_change(
+        driver, PromoteVerbs(verbe_slugs=["pilote"], rel_type="CONTROLS"), project=PROJ,
+    )
+    try:
+        proposals = await detect_proposals(
+            driver, project=PROJ, profile=EMERGENT_SEED_PROFILE, min_count=2
+        )
+        promote = [p for p in proposals if isinstance(p.change, PromoteVerbs)]
+        assert len(promote) == 1
+    finally:
+        await _wipe_profile(driver)
+
+
+@schema_detector_suite.test()
+async def test_detect_proposals_skips_rejected_type_merge(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Même règle pour MergeTypes : le refus porte sur l'ensemble `sources`."""
+    await _wipe(driver)
+    await _wipe_profile(driver)
+    await _seed_entity(driver, "verin1", "Vérin 1", "verin")
+    await _seed_entity(driver, "verin2", "Vérin 2", "verin")
+    await _seed_entity(driver, "verinbis", "Vérin bis", "verins")
+    await save_rejected_change(
+        driver, MergeTypes(sources=["verins"], target="verinou"), project=PROJ,
+    )
+    try:
+        proposals = await detect_proposals(
+            driver, project=PROJ, profile=EMERGENT_SEED_PROFILE, min_count=2
+        )
+        merges = [p for p in proposals if isinstance(p.change, MergeTypes)]
+        assert not [m for m in merges if m.change.sources == ["verins"]]
+    finally:
+        await _wipe_profile(driver)

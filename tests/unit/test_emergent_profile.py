@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from protest import ProTestSuite, Use, fixture
 
-from felix.atelier.agent import ATELIER_CHOICES, resolve_profile
+from felix.atelier.agent import ATELIER_CHOICES, profile_summary, resolve_profile
 from felix.core.graph import NARRATIVE_REL
 from felix.core.profile import (
     CHANTIER_PROFILE,
@@ -219,3 +219,57 @@ async def test_resolve_profile_evolving_with_stored_returns_stored(
     profile = await resolve_profile(driver, choice, project=PROJ)
     assert profile == evolved
     assert profile is not EMERGENT_SEED_PROFILE
+
+
+# ──────────────────── vocabulaire UI (GET /api/atelier/profiles, Étape 8) ────────────────────
+# Plus AUCUN texte scénario codé en dur côté front : welcome/input_placeholder
+# viennent du mode choisi (cf. felix.atelier.agent.profile_summary).
+
+@emergent_profile_suite.test()
+def test_all_choices_have_non_empty_ui_vocabulary() -> None:
+    for choice in ATELIER_CHOICES.values():
+        assert choice.welcome.strip(), f"{choice.key} : welcome vide"
+        assert choice.input_placeholder.strip(), f"{choice.key} : input_placeholder vide"
+
+
+@emergent_profile_suite.test()
+def test_scenario_keeps_its_fiction_wording() -> None:
+    """Le mode scénario garde sa voix « histoire »/« bible » — c'est le seul mode
+    où ce vocabulaire est légitime (il vient du CHOIX, pas d'une constante unique
+    imposée à tous les modes)."""
+    scenario = ATELIER_CHOICES["scenario"]
+    assert "histoire" in scenario.welcome.lower()
+    assert "bible" in scenario.welcome.lower()
+
+
+@emergent_profile_suite.test()
+def test_emergent_and_maintenance_share_documentary_wording() -> None:
+    """Même posture d'assistant documentaire (cf. personas partagées ci-dessus) →
+    même invite, ni « histoire » ni « personnage »."""
+    emergent = ATELIER_CHOICES["emergent"]
+    maintenance = ATELIER_CHOICES["maintenance"]
+    assert emergent.welcome == maintenance.welcome
+    assert "documentation" in emergent.welcome.lower()
+    for fiction_word in ("histoire", "personnage", "bible", "scénario"):
+        assert fiction_word not in emergent.welcome.lower()
+        assert fiction_word not in emergent.input_placeholder.lower()
+
+
+@emergent_profile_suite.test()
+def test_profile_summary_keeps_key_and_label() -> None:
+    summary = profile_summary(ATELIER_CHOICES["scenario"])
+    assert summary["key"] == "scenario"
+    assert summary["label"] == "Scénario"
+
+
+@emergent_profile_suite.test()
+def test_profile_summary_exposes_ui_vocabulary_and_evolving() -> None:
+    summary = profile_summary(ATELIER_CHOICES["emergent"])
+    assert summary["welcome"] == ATELIER_CHOICES["emergent"].welcome
+    assert summary["input_placeholder"] == ATELIER_CHOICES["emergent"].input_placeholder
+    assert summary["evolving"] is True
+
+
+@emergent_profile_suite.test()
+def test_profile_summary_non_evolving_choice_reports_false() -> None:
+    assert profile_summary(ATELIER_CHOICES["scenario"])["evolving"] is False

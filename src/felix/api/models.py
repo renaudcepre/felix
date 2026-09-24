@@ -15,8 +15,9 @@ class ChatRequest(BaseModel):
     # route charge le fil serveur depuis :Thread (load_llm_history) — c'est le
     # chemin normal du front web, qui ne gère plus d'état localStorage (#63).
     message_history: list[dict[str, object]] = []
-    # Bot B uniquement : clé de profil/mode choisie dans l'UI (scenario/chantier/none).
-    profile: str = "scenario"
+    # Bot B uniquement : clé de profil/mode choisie dans l'UI (emergent/scenario/
+    # chantier/maintenance/none). Défaut = emergent (cf. DEFAULT_PROFILE).
+    profile: str = "emergent"
     # Projet/histoire courant (#60) : le front l'envoie à chaque tour (stateless
     # côté serveur). Défaut = projet de repli (anciens clients, curl).
     project: str = DEFAULT_PROJECT

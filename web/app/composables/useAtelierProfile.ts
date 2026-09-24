@@ -5,12 +5,17 @@ import type { AtelierProfile } from '~/types/atelier'
 // de chat ET à chaque import de fiche). Persisté en localStorage, même schéma
 // que useProject (felix.project.v1) : aucun état côté serveur, survit au reload.
 const PROFILE_KEY = 'felix.profile.v1'
-export const DEFAULT_ATELIER_PROFILE = 'scenario'
+// Défaut = émergent (Étape 8, aligné sur felix.atelier.agent.DEFAULT_PROFILE) :
+// le mode qui n'assume rien du domaine, pas scénario.
+export const DEFAULT_ATELIER_PROFILE = 'emergent'
 
 export const currentProfile = ref<string>(
   import.meta.client ? (localStorage.getItem(PROFILE_KEY) ?? DEFAULT_ATELIER_PROFILE) : DEFAULT_ATELIER_PROFILE,
 )
-const profiles = ref<AtelierProfile[]>([])
+// Exporté (pas seulement retourné par le composable) : useAtelier.ts en a
+// besoin pour dériver le welcome/placeholder du mode courant sans dupliquer
+// l'état ni dépendre de l'ordre de montage des composants.
+export const profiles = ref<AtelierProfile[]>([])
 
 export function useAtelierProfile() {
   async function refreshProfiles() {

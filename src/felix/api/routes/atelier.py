@@ -35,6 +35,7 @@ from felix.atelier.agent import (
     build_atelier_agent,
     build_chronicle_agent,
     build_relation_agent,
+    profile_summary,
     resolve_profile,
 )
 from felix.atelier.pipeline import consistency_alerts, run_extractors, stream_pass
@@ -104,9 +105,10 @@ async def _apply_gate_verdict(gate_task: asyncio.Task, deps: GenericDeps, usages
 
 
 @router.get("/profiles")
-async def atelier_profiles() -> list[dict[str, str]]:
-    """Modes proposés par le sélecteur de l'UI (clé + libellé)."""
-    return [{"key": c.key, "label": c.label} for c in ATELIER_CHOICES.values()]
+async def atelier_profiles() -> list[dict[str, object]]:
+    """Modes proposés par le sélecteur de l'UI (clé, libellé, vocabulaire UI,
+    `evolving` — cf. `felix.atelier.agent.profile_summary`)."""
+    return [profile_summary(c) for c in ATELIER_CHOICES.values()]
 
 
 @router.post("/chat")

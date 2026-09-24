@@ -16,9 +16,16 @@ export interface ResolveOption {
 export type AlertStatus = 'open' | 'resolving' | 'resolved' | 'dismissed'
 
 // Mode du bot (Étape 3, plans/maintenance_profile.md) — cf. GET /api/atelier/profiles.
+// welcome/input_placeholder (Étape 8) : vocabulaire UI DU MODE — plus aucun
+// texte scénario codé en dur côté front, cf. felix.atelier.agent.profile_summary.
 export interface AtelierProfile {
   key: string
   label: string
+  welcome: string
+  input_placeholder: string
+  // Vrai pour un mode dont le schéma s'apprend au fil des documents (émergent) —
+  // affiche le panneau de propositions (cf. SchemaProposalsPanel).
+  evolving: boolean
 }
 
 // Résumé d'un import de fiche (Étape 3) — miroir d'IngestReport (API), cf.

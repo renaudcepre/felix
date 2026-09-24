@@ -1,6 +1,6 @@
 import type { AtelierMsg } from '~/types/atelier'
 import { parseSSEStream } from '~/utils/parseSSE'
-import { currentProfile } from './useAtelierProfile'
+import { currentProfile, profiles as atelierProfiles, useAtelierProfile } from './useAtelierProfile'
 import { currentProject } from './useProject'
 
 // Carte tool émise par le backend (event SSE `tool`) — cf. felix/core/models.py
@@ -35,10 +35,15 @@ interface ConversationMessageOut {
   payload: Record<string, unknown> | null
 }
 
-const WELCOME: Omit<AtelierMsg, 'id'> = {
-  role: 'felix',
-  kind: 'text',
-  body: 'Bonjour. Raconte-moi ton histoire : décris tes personnages au fil de l\'eau, et je tiendrai leurs fiches à jour dans la bible.',
+// Repli si le backend n'a pas encore répondu à /api/atelier/profiles (offline,
+// tout premier chargement) — neutre, aucun mot de fiction : le VRAI welcome
+// vient du mode courant (cf. welcomeFor), pas de cette constante.
+const FALLBACK_WELCOME = 'Bonjour. Décris ton sujet, et je tiendrai les fiches à jour au fil de la conversation.'
+
+// Le message d'accueil vient du MODE courant (Étape 8, GET /api/atelier/profiles)
+// — plus un seul texte scénario codé en dur pour tous les modes.
+function welcomeFor(profileKey: string): string {
+  return atelierProfiles.value.find(p => p.key === profileKey)?.welcome ?? FALLBACK_WELCOME
 }
 
 // État SINGLETON (hors de useAtelier) : survit au démontage/remontage de la page.
@@ -73,7 +78,7 @@ let _hydrationGen = 0
 
 function freshWelcome() {
   _seq = 0
-  messages.value = [{ id: uid(), ...WELCOME }]
+  messages.value = [{ id: uid(), role: 'felix', kind: 'text', body: welcomeFor(currentProfile.value) }]
   silentTurns.value = 0
   everWrote.value = false
 }
@@ -160,6 +165,17 @@ async function hydrateFromServer(project: string): Promise<'ok' | 'empty' | 'sta
   }
 }
 
+// Charge la liste des modes (une fois) — nécessaire à welcomeFor AVANT le
+// premier freshWelcome, sinon le tout premier accueil affiche le repli neutre
+// au lieu du texte du mode courant (course avec le fetch d'hydratation).
+let profilesLoaded: Promise<void> | null = null
+function ensureProfilesLoaded(): Promise<void> {
+  if (!profilesLoaded) {
+    profilesLoaded = useAtelierProfile().refreshProfiles()
+  }
+  return profilesLoaded
+}
+
 function ensureInit() {
   if (initialized) return
   initialized = true
@@ -169,9 +185,11 @@ function ensureInit() {
   // Le fil reste VIDE pendant le chargement (pas de flash welcome → remplacement).
   // Si le serveur retourne un fil vide OU si le fetch échoue, on affiche le welcome.
   // 'stale' : un switch d'histoire a pris le relais avant la fin — on ne fait rien.
-  void hydrateFromServer(currentProject.value).then((result) => {
-    if (result === 'empty') freshWelcome()
-  })
+  void Promise.all([ensureProfilesLoaded(), hydrateFromServer(currentProject.value)]).then(
+    ([, result]) => {
+      if (result === 'empty') freshWelcome()
+    },
+  )
 
   // Scope DÉTACHÉ (effectScope(true)) : le watch survit au démontage de la 1ʳᵉ page.
   effectScope(true).run(() => {

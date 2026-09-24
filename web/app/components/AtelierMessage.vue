@@ -127,7 +127,7 @@ function submitFree() {
               v-if="canDelete"
               class="tool-act danger"
               :class="{ confirming: confirmDelete }"
-              :title="msg.relation ? 'Supprimer cette relation' : 'Supprimer de la bible'"
+              :title="msg.relation ? 'Supprimer cette relation' : 'Supprimer cette fiche'"
               :disabled="busy"
               @click="removeTarget"
             >

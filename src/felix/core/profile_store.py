@@ -9,6 +9,11 @@ profil sérialisé en JSON, versionné à chaque sauvegarde.
 
 Deux fonctions pures de (dé)sérialisation (``profile_to_dict``/``profile_from_dict``,
 round-trip exact, tuples reconstruits) + deux fonctions Neo4j (``load``/``save``).
+
+Étape 8 (file de validation) : les changements REFUSÉS par l'humain vivent dans
+``p.rejected``, un champ SIBLING de ``p.data`` sur le MÊME nœud — jamais dans le
+``Profile`` lui-même (il n'a pas à savoir ce qu'on a refusé, seulement ce qui a
+été validé) — round-trip de ``profile_to_dict``/``profile_from_dict`` intact.
 """
 from __future__ import annotations
 
@@ -19,6 +24,8 @@ from felix.core.profile import EntityType, Profile, RelationSpec
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
+
+    from felix.core.schema_changes import SchemaChange
 
 
 def profile_to_dict(profile: Profile) -> dict:
@@ -109,3 +116,53 @@ async def save_project_profile(driver: AsyncDriver, profile: Profile, *, project
         )
         record = await result.single()
     return record["version"]
+
+
+async def load_project_profile_version(driver: AsyncDriver, *, project: str) -> int:
+    """Version courante du profil stocké (0 si rien n'a encore été sauvegardé —
+    cohérent avec ``ON CREATE SET p.version = 0`` de ``save_project_profile``).
+    Sert la lecture seule ``GET /api/schema/profile`` (le seed n'a pas de
+    version tant qu'aucun changement n'a été validé)."""
+    async with driver.session() as session:
+        result = await session.run(
+            "MATCH (p:ProjectProfile {project: $project}) RETURN p.version AS version",
+            project=project,
+        )
+        record = await result.single()
+    if record is None or record["version"] is None:
+        return 0
+    return record["version"]
+
+
+async def load_rejected_changes(driver: AsyncDriver, *, project: str) -> list[dict]:
+    """Changements REFUSÉS par l'humain pour ce projet, en dicts (mêmes clés
+    qu'un ``SchemaChange.model_dump()``) — ``schema_detector.detect_proposals``
+    s'en sert pour ne plus re-proposer un cluster déjà tranché."""
+    async with driver.session() as session:
+        result = await session.run(
+            "MATCH (p:ProjectProfile {project: $project}) RETURN p.rejected AS rejected",
+            project=project,
+        )
+        record = await result.single()
+    if record is None or record["rejected"] is None:
+        return []
+    return [json.loads(s) for s in record["rejected"]]
+
+
+async def save_rejected_change(
+    driver: AsyncDriver, change: SchemaChange, *, project: str
+) -> None:
+    """Ajoute UN changement refusé à la liste persistée (append, jamais de
+    remplacement — un refus n'efface pas les précédents). ``MERGE`` : refuser
+    une proposition avant toute validation ne doit PAS créer de profil stocké
+    (``p.data`` reste absent, cf. tests de non-régression du round-trip)."""
+    payload = json.dumps(change.model_dump())
+    async with driver.session() as session:
+        await session.run(
+            """
+            MERGE (p:ProjectProfile {project: $project})
+            ON CREATE SET p.version = 0
+            SET p.rejected = coalesce(p.rejected, []) + $payload
+            """,
+            project=project, payload=payload,
+        )

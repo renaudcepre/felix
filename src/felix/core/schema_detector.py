@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from rapidfuzz import fuzz
 
 from felix.core.graph import NARRATIVE_REL
+from felix.core.profile_store import load_rejected_changes
 from felix.core.schema_changes import (
     ChangeReport,
     MergeTypes,
@@ -110,6 +111,17 @@ def pair_near_duplicate_types(counts: dict[str, int]) -> list[MergeTypes]:
     return merges
 
 
+def _rejection_signature(change: dict) -> tuple[str, frozenset[str]]:
+    """Signature stable d'un changement, pour comparer une proposition à un refus
+    passé — INDÉPENDANTE du nom cible choisi (``rel_type``/``target``) : ce qui
+    définit « le même refus », c'est l'ensemble SOURCE (les verbes ou les types
+    qu'on a écartés), pas le nom qu'on leur proposait. Fonctionne aussi bien sur
+    un ``SchemaChange.model_dump()`` que sur un dict rechargé depuis la base."""
+    if change.get("kind") == "promote_verbs":
+        return ("promote_verbs", frozenset(change.get("verbe_slugs", [])))
+    return ("merge_types", frozenset(change.get("sources", [])))
+
+
 class Proposal(BaseModel):
     """Une proposition de changement de schéma, avec son rapport en PREVIEW —
     ce que montrerait la file de validation avant le clic « accepter »."""
@@ -188,12 +200,22 @@ async def detect_proposals(
 ) -> list[Proposal]:
     """Propositions DÉTERMINISTES pour ce projet, aucun appel LLM :
     (a) clusters de verbes LIE_A promouvables (≥ ``min_count`` arêtes) ;
-    (b) quasi-doublons de type d'entité fusionnables.
+    (b) quasi-doublons de type d'entité fusionnables ;
+    en excluant (Étape 8) celles dont la SOURCE (verbe_slugs / sources) a déjà
+    été refusée par l'humain (cf. ``profile_store.load_rejected_changes``) — un
+    verbe déjà entièrement promu n'a de toute façon plus d'arête LIE_A à
+    proposer (cf. ci-dessus), mais un refus doit rester valable même si le
+    cluster REVIENT identique à un run ultérieur.
 
     ``profile`` n'est pas encore consulté ici (les clusters partent des arêtes
-    LIE_A VIVANTES : un verbe déjà entièrement promu n'a plus d'arête LIE_A à
-    proposer, donc rien à re-proposer — cf. plan étape 5) ; il est gardé dans la
-    signature pour un filtrage futur (ex. ignorer un type déjà refusé)."""
+    LIE_A VIVANTES) ; il est gardé dans la signature pour un filtrage futur."""
+    rejected = await load_rejected_changes(driver, project=project)
+    rejected_sigs = {_rejection_signature(r) for r in rejected}
+
     verb_proposals = await _verb_proposals(driver, project=project, min_count=min_count)
     type_proposals = await _type_proposals(driver, project=project)
-    return verb_proposals + type_proposals
+    all_proposals = verb_proposals + type_proposals
+    return [
+        p for p in all_proposals
+        if _rejection_signature(p.change.model_dump()) not in rejected_sigs
+    ]

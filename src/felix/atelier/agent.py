@@ -345,6 +345,12 @@ class AgentChoice:
     # non narratif (maintenance) porte la sienne, sinon il hériterait d'une voix
     # qui parle d'« histoire » à un technicien.
     master_persona: str = MASTER_PERSONA
+    # Vocabulaire UI DU MODE — exposé par GET /api/atelier/profiles (cf.
+    # `profile_summary`), pour que le front n'ait plus AUCUN texte scénario codé
+    # en dur : le welcome initial du chat et le placeholder du composer viennent
+    # du mode choisi, pas d'une constante unique qui suppose de la fiction.
+    welcome: str = ""
+    input_placeholder: str = ""
     # Vrai pour un domaine dont le PROFIL RÉEL n'est pas figé dans le code : il
     # part du profil ci-dessus (le SEED) mais évolue par projet au fil des
     # changements de schéma validés (#Étape 4-7), stocké en base
@@ -355,24 +361,43 @@ class AgentChoice:
     evolving: bool = False
 
 
+# Vocabulaire UI partagé émergent/maintenance : même posture d'assistant
+# documentaire (cf. MAINTENANCE_PERSONA), même invite — un domaine encore
+# inconnu (émergent) ou déjà figé (maintenance) s'aborde pareil depuis le chat.
+_DOC_WELCOME = (
+    "Importez une fiche technique ou décrivez une machine ; posez vos "
+    "questions sur la documentation."
+)
+_DOC_PLACEHOLDER = "Décris la machine ou pose ta question…"
+
 # Registre des modes proposés par le sélecteur de l'UI.
 ATELIER_CHOICES: dict[str, AgentChoice] = {
     "scenario": AgentChoice(
         "scenario", "Scénario", SCENARIO_PROFILE, ATELIER_PERSONA,
         MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        welcome="Bonjour. Raconte-moi ton histoire : décris tes personnages au "
+        "fil de l'eau, et je tiendrai leurs fiches à jour dans la bible.",
+        input_placeholder="Écris à Felix… (idée, scène, question)",
     ),
     "chantier": AgentChoice(
         "chantier", "Chantier", CHANTIER_PROFILE, CHANTIER_PERSONA,
         MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        welcome="Bonjour. Décris l'avancement du chantier — outils, matériaux, "
+        "ouvrages, intervenants — et je tiendrai les fiches à jour.",
+        input_placeholder="Décris le chantier… (outil, matériau, avancement)",
     ),
     "none": AgentChoice(
         "none", "Aucun (noyau nu)", None, NEUTRAL_PERSONA,
         MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        welcome="Bonjour. Décris ce que tu veux suivre, et je tiendrai les "
+        "fiches à jour au fil de la conversation.",
+        input_placeholder="Écris à Felix…",
     ),
     "maintenance": AgentChoice(
         "maintenance", "Maintenance", MAINTENANCE_PROFILE, MAINTENANCE_PERSONA,
         MAINTENANCE_MASTER_SYSTEM_PROMPT, MAINTENANCE_GATE_SYSTEM_PROMPT,
         master_persona=MAINTENANCE_PERSONA,
+        welcome=_DOC_WELCOME, input_placeholder=_DOC_PLACEHOLDER,
     ),
     # Schéma ÉMERGENT (plan `maintenance_profile.md`) : part du noyau nu
     # (EMERGENT_SEED_PROFILE) et apprend son vocabulaire au fil des documents —
@@ -383,10 +408,27 @@ ATELIER_CHOICES: dict[str, AgentChoice] = {
         "emergent", "Émergent (profil appris)", EMERGENT_SEED_PROFILE,
         MAINTENANCE_PERSONA, MAINTENANCE_MASTER_SYSTEM_PROMPT,
         MAINTENANCE_GATE_SYSTEM_PROMPT, master_persona=MAINTENANCE_PERSONA,
+        welcome=_DOC_WELCOME, input_placeholder=_DOC_PLACEHOLDER,
         evolving=True,
     ),
 }
-DEFAULT_PROFILE = "scenario"
+# Défaut = émergent (2026-09-24) : le profil qui n'assume rien du domaine est le
+# seul point d'entrée honnête pour un outil générique — scénario reste
+# sélectionnable, mais n'est plus le premier mode qu'un nouvel arrivant voit.
+DEFAULT_PROFILE = "emergent"
+
+
+def profile_summary(choice: AgentChoice) -> dict[str, object]:
+    """Le dict envoyé par GET /api/atelier/profiles pour un mode — vocabulaire UI
+    (accueil, placeholder) et `evolving` (affiche le panneau de propositions côté
+    front), en plus de key/label. Fonction PURE, testable sans FastAPI."""
+    return {
+        "key": choice.key,
+        "label": choice.label,
+        "welcome": choice.welcome,
+        "input_placeholder": choice.input_placeholder,
+        "evolving": choice.evolving,
+    }
 
 
 async def resolve_profile(

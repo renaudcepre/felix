@@ -15,7 +15,13 @@ from pydantic import BaseModel
 from felix.api.deps import Neo4jDriver  # noqa: TC001 — FastAPI résout au runtime (DI)
 from felix.atelier.agent import ATELIER_CHOICES, resolve_profile
 from felix.core.profile_evolution import evolve_profile
-from felix.core.profile_store import profile_to_dict, save_project_profile
+from felix.core.profile_store import (
+    load_project_profile_version,
+    load_rejected_changes,
+    profile_to_dict,
+    save_project_profile,
+    save_rejected_change,
+)
 from felix.core.projects import DEFAULT_PROJECT
 from felix.core.schema_changes import ChangeReport, SchemaChange, apply_schema_change
 from felix.core.schema_detector import Proposal, detect_proposals
@@ -36,13 +42,21 @@ class ApplyChangeResponse(BaseModel):
     version: int
 
 
+class RejectChangeRequest(BaseModel):
+    project: str = DEFAULT_PROJECT
+    change: SchemaChange
+
+
 @router.get("/profile")
 async def get_profile(driver: Neo4jDriver, project: str = DEFAULT_PROJECT) -> dict:
     """Le profil RÉEL de ce projet — stocké s'il existe, sinon le seed
-    (cf. ``resolve_profile`` : aucun changement n'a encore été validé)."""
+    (cf. ``resolve_profile`` : aucun changement n'a encore été validé), avec sa
+    `version` (0 tant que rien n'a été validé) — la vue en lecture seule du
+    front l'affiche à côté des types de relation appris."""
     choice = ATELIER_CHOICES[_CHOICE_KEY]
     profile = await resolve_profile(driver, choice, project=project)
-    return profile_to_dict(profile)
+    version = await load_project_profile_version(driver, project=project)
+    return {**profile_to_dict(profile), "version": version}
 
 
 @router.get("/proposals")
@@ -70,3 +84,13 @@ async def post_apply_change(driver: Neo4jDriver, body: ApplyChangeRequest) -> Ap
     return ApplyChangeResponse(
         report=report, profile=profile_to_dict(new_profile), version=version
     )
+
+
+@router.post("/reject")
+async def post_reject_change(driver: Neo4jDriver, body: RejectChangeRequest) -> list[dict]:
+    """Refuse UNE proposition : persistée (``profile_store.save_rejected_change``)
+    pour que ``detect_proposals`` ne la re-propose plus (même ensemble source —
+    verbe_slugs ou sources — quel que soit le nom cible tenté ensuite). Rend la
+    liste des refus à jour, pour un affichage sans second aller-retour."""
+    await save_rejected_change(driver, body.change, project=body.project)
+    return await load_rejected_changes(driver, project=body.project)
