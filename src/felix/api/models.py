@@ -30,11 +30,12 @@ class ConversationMessageOut(BaseModel):
     """Un message de la conversation active, exposé par GET /api/atelier/conversation.
 
     `payload` est décodé en dict côté API (la base stocke une string JSON) —
-    None pour kind='text', objet pour kind='tool' ou 'alert'."""
+    None pour kind='text', objet pour kind='tool'/'alert'/'report' (#import,
+    carte de résumé d'ingestion — cf. felix.ingest.document.IngestReport)."""
 
     id: str
     role: str   # 'user' | 'felix'
-    kind: str   # 'text' | 'tool' | 'alert'
+    kind: str   # 'text' | 'tool' | 'alert' | 'report'
     body: str
     ord: int
     payload: dict[str, Any] | None = None

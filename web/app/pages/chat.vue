@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import type { AtelierMsg, ChoiceOption, IngestReportPayload, ResolveOption } from '~/types/atelier'
+import type { AtelierMsg, ChoiceOption, ResolveOption } from '~/types/atelier'
 import { formatCostLine } from '~/utils/formatCost'
 
 // Page autonome (pas le layout cyan de l'app de référence).
 definePageMeta({ layout: false })
 
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
-const { messages, typing, phase, sendMessage, silentSession, newConversation, pushSystemMessage } = useAtelier()
+const { messages, typing, phase, sendMessage, silentSession, newConversation, importDocument } = useAtelier()
 
 // Histoire courante (#60) : sélecteur d'histoire + « Nouveau projet » — le
 // fil de conversation ET la bible suivent (useAtelier persiste par projet, les
@@ -66,11 +66,12 @@ async function onProjectChange(e: Event) {
   }
 }
 
-// ───────── Import de fiche (Étape 3, plans/maintenance_profile.md) ─────────
+// ───────── Import de fiche (Étape 3, plans/maintenance_profile.md ; #import) ─────────
 // Upload PDF/txt/md → POST /api/ingest/document (même profil + histoire que le
-// chat). L'appel prend 1 à 3 min (lecture + extraction bloc par bloc) : on le
-// dit dans le bouton plutôt que de laisser l'auteur devant un silence. Visible
-// dans tous les modes — un document EST du contenu, quel que soit le mode.
+// chat), streamé en SSE (phases + cartes live) : l'ingestion prend 1 à 3 min
+// (lecture + extraction bloc par bloc), mais le fil n'est plus muet pendant
+// tout ce temps — cf. useAtelier.importDocument. Visible dans tous les modes —
+// un document EST du contenu, quel que soit le mode.
 const importing = ref(false)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 
@@ -87,29 +88,22 @@ async function onFileSelected(e: Event) {
 
   importing.value = true
   try {
-    const form = new FormData()
-    form.append('file', file)
-    form.append('profile', currentProfile.value)
-    form.append('project', currentProject.value)
-    const report = await $fetch<IngestReportPayload>('/api/ingest/document', {
-      method: 'POST',
-      body: form,
+    // Même flux SSE que le chat (#import) : phases + cartes live pendant les
+    // 1 à 3 min d'ingestion, plus un JSON one-shot après un long silence —
+    // importDocument gère le stream ET l'affichage (phase/typing/cartes/erreur).
+    const result = await importDocument(file, {
+      profile: currentProfile.value,
+      project: currentProject.value,
     })
-    pushSystemMessage({ role: 'felix', kind: 'report', report })
-    // La liste d'entités (page /entities) cache sa réponse par appel : sans
-    // ça, revenir dessus après un import montrerait encore l'ancien état.
-    clearNuxtData()
-    // Total persistant du projet (#coût) : l'import vient d'ajouter une opération.
-    void refreshProjectCost()
-    // Un document EST du contenu : le détecteur (mode évolutif) peut avoir de
-    // nouvelles propositions dès la fin de l'import — la file de validation
-    // se rafraîchit toute seule, sans repasser par le bouton.
-    if (isEvolvingMode.value) void refreshSchemaProposals()
-  }
-  catch (err) {
-    const detail = (err as { data?: { detail?: string } } | undefined)?.data?.detail
-    const msg = detail ?? (err instanceof Error ? err.message : 'Erreur inconnue')
-    pushSystemMessage({ role: 'felix', kind: 'text', body: `Erreur à l'import de la fiche : ${msg}` })
+    if (result.ok) {
+      // La liste d'entités (page /entities) cache sa réponse par appel : sans
+      // ça, revenir dessus après un import montrerait encore l'ancien état.
+      clearNuxtData()
+      // Un document EST du contenu : le détecteur (mode évolutif) peut avoir de
+      // nouvelles propositions dès la fin de l'import — la file de validation
+      // se rafraîchit toute seule, sans repasser par le bouton.
+      if (isEvolvingMode.value) void refreshSchemaProposals()
+    }
   }
   finally {
     importing.value = false

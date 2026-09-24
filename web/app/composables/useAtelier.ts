@@ -1,4 +1,4 @@
-import type { AtelierMsg } from '~/types/atelier'
+import type { AtelierMsg, IngestReportPayload } from '~/types/atelier'
 import type { CostSummaryPayload } from '~/types/costs'
 import { parseSSEStream } from '~/utils/parseSSE'
 import { currentProfile, profiles as atelierProfiles, useAtelierProfile } from './useAtelierProfile'
@@ -28,10 +28,12 @@ interface AlertPayload {
 }
 
 // Message persisté côté serveur (GET /api/atelier/conversation, #63).
+// kind='report' (#import) : résumé d'un import de fiche persisté comme un
+// tour normal — visible après reload, même flux de persistance que tool/alert.
 interface ConversationMessageOut {
   id: string
   role: 'user' | 'felix'
-  kind: 'text' | 'tool' | 'alert'
+  kind: 'text' | 'tool' | 'alert' | 'report'
   body: string
   ord: number
   payload: Record<string, unknown> | null
@@ -144,6 +146,17 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       cost: extractCost(m.payload),
     }
   }
+  if (m.kind === 'report') {
+    if (!m.payload) return null
+    // Le rapport porte déjà son propre coût (total_tokens/cost_usd/by_model) —
+    // pas de champ `cost` séparé à poser, cf. AtelierMessage (kind='report').
+    return {
+      id: uid(),
+      role: 'felix',
+      kind: 'report',
+      report: m.payload as unknown as IngestReportPayload,
+    }
+  }
   return null
 }
 
@@ -244,6 +257,27 @@ export function useAtelier() {
     return messages.value[messages.value.length - 1]!
   }
 
+  // Cartes tool/alert : MÊME rendu qu'on les reçoive d'un tour de chat ou d'un
+  // import de fiche (#import) — un seul endroit qui sait lire ces deux cartes
+  // du backend, partagé par sendMessage ET importDocument ci-dessous.
+  function appendToolCard(card: ToolCardPayload): AtelierMsg {
+    return append({
+      role: 'felix',
+      kind: 'tool',
+      tool: card.tool,
+      title: card.title,
+      subject: card.subject,
+      field: card.field,
+      added: card.added,
+      entityId: card.entity_id ?? undefined,
+      relation: card.relation ?? undefined,
+    })
+  }
+
+  function appendAlertCard(a: AlertPayload): AtelierMsg {
+    return append({ role: 'felix', kind: 'alert', title: a.title, body: a.body, status: a.status })
+  }
+
   async function sendMessage(text: string) {
     const t = text.trim()
     if (!t) return
@@ -297,26 +331,14 @@ export function useAtelier() {
             messages.value = [...messages.value]
             break
           case 'tool': {
-            const card = JSON.parse(sse.data) as ToolCardPayload
             current = null
             wroteThisTurn = true
-            lastAppended = append({
-              role: 'felix',
-              kind: 'tool',
-              tool: card.tool,
-              title: card.title,
-              subject: card.subject,
-              field: card.field,
-              added: card.added,
-              entityId: card.entity_id ?? undefined,
-              relation: card.relation ?? undefined,
-            })
+            lastAppended = appendToolCard(JSON.parse(sse.data) as ToolCardPayload)
             break
           }
           case 'alert': {
-            const a = JSON.parse(sse.data) as AlertPayload
             current = null
-            lastAppended = append({ role: 'felix', kind: 'alert', title: a.title, body: a.body, status: a.status })
+            lastAppended = appendAlertCard(JSON.parse(sse.data) as AlertPayload)
             break
           }
           case 'usage': {
@@ -361,11 +383,71 @@ export function useAtelier() {
     }
   }
 
-  // Poste un message côté client sans passer par le tour de chat (SSE) — sert
-  // à afficher le résultat d'un import de fiche (Étape 3) : carte de résumé en
-  // succès, texte d'erreur sinon. Même helper `append` que le stream, donc
-  // même id de rendu (pas une deuxième fonction qui ferait la même chose).
-  const pushSystemMessage = append
+  // Import de fiche (Étape 3, #import) — UN SEUL système de streaming avec
+  // sendMessage ci-dessus : même parseSSEStream, mêmes cartes tool/alert
+  // (appendToolCard/appendAlertCard), même ref `phase`/`typing` pour le retour
+  // visuel pendant les 1 à 3 min d'ingestion (avant #import, zéro feedback tant
+  // que le JSON one-shot n'était pas revenu). Multipart POST, réponse SSE —
+  // fetch + parseSSEStream comme le chat (pas $fetch, qui attendrait le JSON final).
+  async function importDocument(
+    file: File,
+    opts: { profile: string, project: string },
+  ): Promise<{ ok: true, report: IngestReportPayload } | { ok: false }> {
+    typing.value = true
+    let report: IngestReportPayload | null = null
 
-  return { messages, typing, phase, sendMessage, silentSession, newConversation, pushSystemMessage }
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('profile', opts.profile)
+      form.append('project', opts.project)
+      const response = await fetch(`${apiStreamBase}/api/ingest/document`, {
+        method: 'POST',
+        body: form,
+      })
+
+      if (!response.ok) {
+        const err = await response.text()
+        throw new Error(err || `HTTP ${response.status}`)
+      }
+
+      for await (const sse of parseSSEStream(response)) {
+        switch (sse.event) {
+          case 'phase':
+            phase.value = sse.data
+            break
+          case 'tool':
+            appendToolCard(JSON.parse(sse.data) as ToolCardPayload)
+            break
+          case 'alert':
+            appendAlertCard(JSON.parse(sse.data) as AlertPayload)
+            break
+          case 'report':
+            report = JSON.parse(sse.data) as IngestReportPayload
+            append({ role: 'felix', kind: 'report', report })
+            break
+          case 'error':
+            throw new Error(sse.data)
+          case 'done':
+            break
+        }
+      }
+      if (!report) throw new Error('Import terminé sans rapport (bug interne)')
+      return { ok: true, report }
+    }
+    catch (error) {
+      const msg = error instanceof Error ? error.message : 'Erreur inconnue'
+      append({ role: 'felix', kind: 'text', body: `Erreur à l'import de la fiche : ${msg}` })
+      return { ok: false }
+    }
+    finally {
+      typing.value = false
+      phase.value = null
+      // Total persistant du projet (#coût) : même loi que sendMessage — rafraîchi
+      // après CHAQUE import, même en erreur (l'import peut avoir coûté avant de planter).
+      void useProjectCost().refreshProjectCost()
+    }
+  }
+
+  return { messages, typing, phase, sendMessage, silentSession, newConversation, importDocument }
 }

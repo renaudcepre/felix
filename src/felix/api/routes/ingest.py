@@ -1,17 +1,26 @@
-"""Route d'ingestion de document (Étape 2, `plans/maintenance_profile.md`).
+"""Route d'ingestion de document (Étape 2, `plans/maintenance_profile.md` ;
+streaming #import).
 
 Une fiche procédure (PDF/txt/md) uploadée devient un graphe interrogeable :
 sauvegarde dans un fichier TEMPORAIRE (le pipeline lit un chemin, cf.
 `felix.ingest.document.read_pages`), ingestion via le même pipeline que le CLI
-(`tools/ingest_doc.py`), résumé retourné (`IngestReport`).
+(`tools/ingest_doc.py`), streamée en SSE (mêmes events que la route de chat :
+`phase`/`tool`/`alert`, plus `report`) — une ingestion prend 1 à 3 min, plus
+question de laisser l'auteur devant un spinner muet tout du long. Le tour est
+persisté en conversation comme un tour de chat (message utilisateur « Import :
+<fichier> », cartes tool/alert, carte report finale) : même convention que
+`felix.api.routes.atelier`, pour que l'import reste visible après reload.
 """
 from __future__ import annotations
 
+import logging
 import shutil
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, File, Form, UploadFile
+from sse_starlette import EventSourceResponse, ServerSentEvent
 
 from felix.api.deps import (  # noqa: TC001 — FastAPI résout ces annotations au runtime (DI)
     AtelierAgentsDep,
@@ -27,8 +36,14 @@ from felix.atelier.agent import (
     build_relation_agent,
     resolve_profile,
 )
+from felix.core import record_message
 from felix.core.projects import DEFAULT_PROJECT
-from felix.ingest.document import IngestReport, ingest_document
+from felix.ingest.document import stream_ingest_document
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
@@ -42,13 +57,16 @@ async def post_ingest_document(  # noqa: PLR0913 — 3 deps d'agents + driver + 
     file: UploadFile = File(...),  # noqa: B008 — pattern FastAPI standard
     profile: str = Form(default="maintenance"),
     project: str = Form(default=DEFAULT_PROJECT),
-) -> IngestReport:
-    """Upload d'une fiche → ingestion en base, résumé retourné.
+) -> EventSourceResponse:
+    """Upload d'une fiche → flux SSE d'ingestion.
 
     Le nom de fichier d'origine est conservé (basename seul, anti-traversal) —
     il devient la prop `source` de l'entité `document` et sert à deviner
-    l'extension (.pdf vs .txt/.md, cf. `read_pages`). Le fichier temporaire est
-    supprimé après l'ingestion, réussie ou non."""
+    l'extension (.pdf vs .txt/.md, cf. `read_pages`). L'écriture du fichier
+    temporaire, l'ingestion ET sa suppression vivent TOUTES dans le générateur
+    (pas avant) : une erreur à l'écriture devient un event `error` proprement
+    formé plutôt qu'un 500 brut, et le nettoyage reste garanti (`finally`)
+    même si le flux est interrompu en cours de route."""
     choice = ATELIER_CHOICES.get(profile, ATELIER_CHOICES[DEFAULT_PROFILE])
     # Profil RÉEL de ce projet (cf. atelier.py) : le seed pour un choix
     # évolutif tant qu'aucun changement n'a encore été validé, sinon le profil
@@ -66,16 +84,47 @@ async def post_ingest_document(  # noqa: PLR0913 — 3 deps d'agents + driver + 
     safe_name = Path(file.filename or "document.txt").name or "document.txt"
     tmp_dir = Path(tempfile.mkdtemp(prefix="felix-ingest-"))
     tmp_path = tmp_dir / safe_name
-    try:
-        with tmp_path.open("wb") as out:
-            shutil.copyfileobj(file.file, out)
-        return await ingest_document(
-            driver, tmp_path,
-            profile=resolved_profile,
-            agent=agent,
-            relation_agent=relation_agent,
-            chronicle_agent=chronicle_agent,
-            project=project,
-        )
-    finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    async def event_generator() -> AsyncGenerator[ServerSentEvent]:
+        # Cartes du tour (tool/alert), retenues pour la persistance APRÈS le
+        # flux — même convention que felix.api.routes.atelier (turn_cards).
+        turn_cards: list[tuple[str, str]] = []
+        report_json: str | None = None
+        try:
+            with tmp_path.open("wb") as out:
+                shutil.copyfileobj(file.file, out)
+            # Message utilisateur du tour d'import — persisté avant l'ingestion
+            # (même loi que record_message côté chat : témoignage de la
+            # demande, indépendant de la réussite de ce qui suit).
+            await record_message(
+                driver, "user", "text", f"Import : {safe_name}", project=project,
+            )
+            async for ev in stream_ingest_document(
+                driver, tmp_path,
+                profile=resolved_profile, agent=agent,
+                relation_agent=relation_agent, chronicle_agent=chronicle_agent,
+                project=project,
+            ):
+                yield ev
+                if ev.event in ("tool", "alert"):
+                    turn_cards.append((ev.event, ev.data))
+                elif ev.event == "report":
+                    report_json = ev.data
+
+            # --- Persistance du tour en graphe, visible après reload ---
+            for kind, data in turn_cards:
+                await record_message(
+                    driver, "felix", kind, "", payload=data, project=project,
+                )
+            if report_json is not None:
+                await record_message(
+                    driver, "felix", "report", "", payload=report_json, project=project,
+                )
+            yield ServerSentEvent(data="", event="done")
+        except Exception as e:
+            logger.exception("import de document échoué")
+            yield ServerSentEvent(data=str(e), event="error")
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return EventSourceResponse(event_generator())

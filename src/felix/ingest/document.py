@@ -3,12 +3,20 @@ procédure (PDF ou texte) devient un graphe interrogeable, chaque fiche du
 graphe traçable jusqu'à sa page source (DESCRIBED_IN {pages}).
 
 Trois fonctions PURES, testables sans Neo4j ni LLM (lecture, nettoyage,
-découpe), puis `ingest_document` qui orchestre : crée l'entité `document` EN
-CODE, joue le pipeline d'extraction PARTAGÉ (felix.atelier.pipeline —
-`run_extractors`, le MÊME code que la route de chat) bloc par bloc — SANS gate
-ni maître, un document EST du contenu, pas une conversation à filtrer — pose
-DESCRIBED_IN en code sur les entités touchées de chaque bloc, puis lance le
-check de cohérence sur les candidats accumulés.
+découpe), puis `stream_ingest_document` qui orchestre : crée l'entité
+`document` EN CODE, joue le pipeline d'extraction PARTAGÉ
+(felix.atelier.pipeline — `run_extractors`, le MÊME code que la route de chat)
+bloc par bloc — SANS gate ni maître, un document EST du contenu, pas une
+conversation à filtrer — pose DESCRIBED_IN en code sur les entités touchées de
+chaque bloc, puis lance le check de cohérence sur les candidats accumulés.
+
+Une ingestion prend 1 à 3 min (plusieurs blocs x 2-3 passes LLM) — RAISON
+D'ÊTRE du streaming (#import) : `stream_ingest_document` est un générateur
+d'événements SSE (phase/tool/alert/report), le MÊME protocole que la route de
+chat (`felix.api.routes.atelier`), consommé par la route d'ingestion ET par
+`ingest_document` (ci-dessous), la version « await » qui ne garde que le
+rapport final — pour le CLI (`tools/ingest_doc.py`) et les scripts e2e
+(`evals/maintenance/emergent_e2e.py`), inchangés.
 """
 from __future__ import annotations
 
@@ -23,6 +31,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 from pypdf import PdfReader
 from rapidfuzz import fuzz
+from sse_starlette import ServerSentEvent
 
 from felix.atelier.pipeline import consistency_alerts, run_extractors
 from felix.config import settings
@@ -42,6 +51,8 @@ from felix.cost import (
 from felix.ingest.resolver import slugify
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from neo4j import AsyncDriver
     from pydantic_ai import Agent
 
@@ -302,7 +313,23 @@ class IngestReport(BaseModel):
     errors: list[str] = []
 
 
-async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu + 3 agents + profil + projet
+# Traduction des events `phase` génériques de `run_extractors` (« Felix met à
+# jour la bible… », etc. — pensés pour le chat) en un libellé situé dans le
+# document : la Nᵉ phase d'un bloc est entités/relations/événements, DANS CET
+# ORDRE (cf. `run_extractors`, qui construit ses passes dans cet ordre-là).
+_INGEST_PASS_LABELS = ("fiches", "liens", "événements")
+
+
+def _block_label(index: int, n_chunks: int, chunk: Chunk) -> str:
+    """« Bloc 2/5 (pages 3-4) » — préfixe des phases émises pour ce bloc."""
+    pages_label = (
+        f"page {chunk.page_start}" if chunk.page_start == chunk.page_end
+        else f"pages {chunk.page_start}-{chunk.page_end}"
+    )
+    return f"Bloc {index}/{n_chunks} ({pages_label})"
+
+
+async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : driver + contenu + 3 agents + profil + projet, générateur SSE (pas une lib)
     driver: AsyncDriver,
     path_or_pages: str | Path | list[str],
     *,
@@ -312,16 +339,25 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
     chronicle_agent: Agent,
     project: str,
     max_chars: int = DEFAULT_MAX_CHARS,
-) -> IngestReport:
-    """Ingère un document dans le graphe.
+) -> AsyncGenerator[ServerSentEvent]:
+    """Ingère un document dans le graphe — générateur d'événements SSE
+    (#import) : une ingestion prend 1 à 3 min, silencieuse jusqu'ici (un seul
+    spinner) — même protocole que la route de chat (`phase`/`tool`/`alert`),
+    plus un `report` final (l'`IngestReport` complet, JSON).
 
     ``path_or_pages`` accepte un chemin (PDF/txt/md, lu via `read_pages`) ou
     directement une liste de pages déjà extraites (tests, appelants qui ont
     leur propre extraction). Chaque bloc rejoue le pipeline PARTAGÉ
     (`felix.atelier.pipeline.run_extractors`) — le MÊME code que la route de
     chat, sans gate (rien à filtrer, un document EST du contenu) ni maître
-    (rien à répondre). `link_described_in` pose la traçabilité page par page,
-    en code, jamais par le modèle (cf. `Profile.code_only_relations`)."""
+    (rien à répondre) — ses events `tool` sont retransmis TELS QUELS (mêmes
+    cartes live que le chat) ; ses events `phase` génériques sont retraduits en
+    « Bloc i/N (pages p-q) : fiches…/liens…/événements… » (cf.
+    `_block_label`/`_INGEST_PASS_LABELS`), plus parlant sur un document long
+    que le texte pensé pour un tour de chat. `link_described_in` pose la
+    traçabilité page par page, en code, jamais par le modèle (cf.
+    `Profile.code_only_relations`)."""
+    yield ServerSentEvent(data="Lecture du document…", event="phase")
     if isinstance(path_or_pages, list):
         pages = path_or_pages
         source_name = "document"
@@ -332,6 +368,7 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
     pages = clean_pages(pages)
     title = guess_title(pages, Path(source_name).stem)
     chunks = chunk_pages(pages, max_chars=max_chars)
+    n_chunks = len(chunks)
 
     # Un projet alimenté par ingestion doit exister au registre, sinon le
     # sélecteur du front ne le propose jamais (seul le chat créait ses projets).
@@ -351,7 +388,7 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
     errors: list[str] = []
     relations_count = 0
 
-    for chunk in chunks:
+    for index, chunk in enumerate(chunks, start=1):
         chunk_deps = GenericDeps(driver=driver, profile=profile, project_id=project)
         # Même working set qu'au chat (#Étape 1) : les entités récemment
         # touchées, pour que l'extracteur relise la base avant d'écrire — sans
@@ -361,12 +398,20 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
         )
         chunk_prompt = chunk.prompt(title, len(pages))
         extract_prompt = "\n\n".join(part for part in (block, chunk_prompt) if part)
+        label = _block_label(index, n_chunks, chunk)
+        pass_idx = 0
         try:
             async for ev in run_extractors(
                 agent, relation_agent, chronicle_agent,
                 extract_prompt, chunk_prompt, None,
                 chunk_deps, profile,
             ):
+                if ev.event == "phase":
+                    step = _INGEST_PASS_LABELS[min(pass_idx, len(_INGEST_PASS_LABELS) - 1)]
+                    pass_idx += 1
+                    yield ServerSentEvent(data=f"{label} : {step}…", event="phase")
+                    continue
+                yield ev
                 if ev.event == "tool":
                     card = json.loads(ev.data)
                     if card.get("relation") is not None:
@@ -399,17 +444,21 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
         # système de comptabilité, comme touched_ids/check_candidates ci-dessus.
         totals.cost_ledger.merge(chunk_deps.cost_ledger)
 
+    # Toujours annoncée (contrairement au chat, où elle dépend du gate) : un
+    # document EST du contenu, chaque ingestion a extrait quelque chose.
+    yield ServerSentEvent(data="Vérification de la cohérence…", event="phase")
     alerts: list[str] = []
     async for ev in consistency_alerts(driver, totals, profile):
         card = json.loads(ev.data)
         alerts.append(card.get("body", ""))
+        yield ev
 
     # Coût de l'ingestion ENTIÈRE (tous les blocs + le check de cohérence final,
     # qui a déposé son coût dans totals.cost_ledger via consistency_alerts ci-dessus).
     cost_summary = totals.cost_ledger.summary()
     await record_cost_entry(driver, cost_summary, project=project, kind="ingest")
 
-    return IngestReport(
+    report = IngestReport(
         document_id=document_id,
         title=title,
         chunks=len(chunks),
@@ -423,3 +472,34 @@ async def ingest_document(  # noqa: PLR0913 — orchestrateur : driver + contenu
         by_model=cost_summary.by_model,
         errors=errors,
     )
+    yield ServerSentEvent(data=report.model_dump_json(), event="report")
+
+
+async def ingest_document(  # noqa: PLR0913 — même signature que stream_ingest_document (appelants inchangés)
+    driver: AsyncDriver,
+    path_or_pages: str | Path | list[str],
+    *,
+    profile: Profile | None,
+    agent: Agent,
+    relation_agent: Agent,
+    chronicle_agent: Agent,
+    project: str,
+    max_chars: int = DEFAULT_MAX_CHARS,
+) -> IngestReport:
+    """Version « await » de `stream_ingest_document`, pour les appelants qui
+    n'ont pas de flux SSE à tenir — le CLI (`tools/ingest_doc.py`) et les
+    scripts e2e (`evals/maintenance/emergent_e2e.py`). Consomme le générateur
+    jusqu'au bout et n'en retient que l'event `report` final : comportement
+    inchangé pour ces appelants (même signature, même valeur de retour)."""
+    report: IngestReport | None = None
+    async for ev in stream_ingest_document(
+        driver, path_or_pages,
+        profile=profile, agent=agent, relation_agent=relation_agent,
+        chronicle_agent=chronicle_agent, project=project, max_chars=max_chars,
+    ):
+        if ev.event == "report":
+            report = IngestReport.model_validate_json(ev.data)
+    if report is None:
+        msg = "ingest_document : aucun event report émis par le générateur (bug interne)"
+        raise RuntimeError(msg)
+    return report

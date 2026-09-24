@@ -5,13 +5,20 @@ pied de page répété sur les 4.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import httpx
+from fastapi import FastAPI
 from protest import ProTestSuite, Use, fixture, tmp_path
-from pydantic_ai import RunContext
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.test import TestModel
+from sse_starlette import ServerSentEvent
 
+from felix.api import deps as api_deps
+from felix.api.routes import ingest as ingest_routes
 from felix.core.deps import GenericDeps
 from felix.core.graph import link_described_in
 from felix.core.profile import MAINTENANCE_PROFILE
@@ -19,12 +26,15 @@ from felix.core.tools import add_relation
 from felix.graph.driver import get_driver, setup_constraints
 from felix.ingest.document import (
     Chunk,
+    IngestReport,
     chunk_pages,
     clean_pages,
     entity_pages,
     guess_title,
+    ingest_document,
     pages_mentioning,
     read_pages,
+    stream_ingest_document,
 )
 
 if TYPE_CHECKING:
@@ -348,3 +358,172 @@ def test_entity_pages_falls_back_to_properties_then_to_all_pages() -> None:
     assert entity_pages(node, _SX40_PAGES) == [4]
     ghost = {"id": "y", "name": "Mâchoire inférieure"}
     assert entity_pages(ghost, _SX40_PAGES) == [2, 3, 4]
+
+
+# ──────────────── stream_ingest_document : streaming SSE (#import) ────────────────
+# `run_extractors` est STUBBÉ (pas un TestModel) : ce qu'on vérifie ici est
+# l'orchestration DE stream_ingest_document elle-même (ordre des events, traduction
+# phase → « Bloc i/N… », propagation des cartes tool, event report final) — pas le
+# comportement du pipeline d'extraction partagé, déjà couvert ailleurs.
+_STUB_TOOL_CARD = {
+    "kind": "tool", "tool": "fiche", "title": "Fiche", "subject": "Test",
+    "field": "x", "added": "y", "entity_id": "stub-id", "relation": None,
+}
+
+
+async def _stub_run_extractors(*_args: object, **_kwargs: object):
+    """Simule 2 passes (entités, relations) du pipeline partagé : une phase +
+    une carte tool pour la première, une phase seule pour la seconde — assez
+    pour vérifier l'ordre sans dépendre d'un vrai modèle."""
+    yield ServerSentEvent(data="Felix met à jour la bible…", event="phase")
+    yield ServerSentEvent(data=json.dumps(_STUB_TOOL_CARD), event="tool")
+    yield ServerSentEvent(data="Felix relie les fiches…", event="phase")
+
+
+_STREAM_PROJ = "test-ingest-stream-v1"
+
+
+async def _wipe_stream_proj(driver: AsyncDriver) -> None:
+    async with driver.session() as session:
+        await session.run(
+            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=_STREAM_PROJ,
+        )
+
+
+@ingest_document_suite.test()
+async def test_stream_ingest_document_emits_phase_then_tool_then_report(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    await _wipe_stream_proj(driver)
+    try:
+        with patch("felix.ingest.document.run_extractors", _stub_run_extractors):
+            events = [
+                ev async for ev in stream_ingest_document(
+                    driver, ["Page de test avec du contenu."],
+                    profile=MAINTENANCE_PROFILE,
+                    agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                    project=_STREAM_PROJ,
+                )
+            ]
+        kinds = [ev.event for ev in events]
+        assert kinds == ["phase", "phase", "tool", "phase", "phase", "report"], kinds
+        # Phase de lecture, puis les deux phases du bloc traduites (label + étape) —
+        # « Felix met à jour la bible… »/« Felix relie les fiches… » (génériques,
+        # pensées pour le chat) ne doivent JAMAIS fuiter telles quelles ici.
+        assert events[0].data == "Lecture du document…"
+        assert events[1].data == "Bloc 1/1 (page 1) : fiches…"
+        assert events[3].data == "Bloc 1/1 (page 1) : liens…"
+        assert events[4].data == "Vérification de la cohérence…"
+        assert "Felix met à jour la bible" not in " ".join(e.data for e in events)
+        # La carte tool est retransmise TELLE QUELLE (même carte que le chat).
+        assert json.loads(events[2].data) == _STUB_TOOL_CARD
+        # L'event report final porte un IngestReport valide et cohérent avec le stub.
+        report = IngestReport.model_validate_json(events[-1].data)
+        assert report.chunks == 1
+        assert report.title == "Page de test avec du contenu."
+    finally:
+        await _wipe_stream_proj(driver)
+
+
+@ingest_document_suite.test()
+async def test_ingest_document_await_helper_matches_stream_final_report(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """`ingest_document` (CLI/e2e, #import) doit rester un simple raccourci
+    « await » — son retour égale l'event `report` que `stream_ingest_document`
+    aurait émis pour la MÊME entrée, comportement inchangé pour ses appelants."""
+    pages = ["Une autre page de test, contenu différent."]
+    await _wipe_stream_proj(driver)
+    try:
+        with patch("felix.ingest.document.run_extractors", _stub_run_extractors):
+            events = [
+                ev async for ev in stream_ingest_document(
+                    driver, pages, profile=MAINTENANCE_PROFILE,
+                    agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                    project=_STREAM_PROJ,
+                )
+            ]
+        expected = IngestReport.model_validate_json(events[-1].data)
+
+        await _wipe_stream_proj(driver)
+        with patch("felix.ingest.document.run_extractors", _stub_run_extractors):
+            actual = await ingest_document(
+                driver, pages, profile=MAINTENANCE_PROFILE,
+                agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                project=_STREAM_PROJ,
+            )
+        assert actual == expected
+    finally:
+        await _wipe_stream_proj(driver)
+
+
+@ingest_document_suite.test()
+async def test_ingest_document_raises_if_generator_never_reports(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Garde-fou : si le générateur ne produit jamais d'event `report` (bug
+    interne), `ingest_document` échoue fort plutôt que de retourner `None`."""
+    async def _no_report(*_args: object, **_kwargs: object):
+        yield ServerSentEvent(data="Lecture du document…", event="phase")
+
+    try:
+        with patch("felix.ingest.document.stream_ingest_document", _no_report):
+            raised = False
+            try:
+                await ingest_document(
+                    driver, ["page"], profile=MAINTENANCE_PROFILE,
+                    agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                    project=_STREAM_PROJ,
+                )
+            except RuntimeError:
+                raised = True
+            assert raised
+    finally:
+        await _wipe_stream_proj(driver)
+
+
+# ──────────────── route POST /api/ingest/document : content-type SSE ────────────────
+
+@ingest_document_suite.test()
+async def test_ingest_route_streams_text_event_stream(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """La route ne doit plus rendre un JSON one-shot après 1 à 3 min de silence
+    (#import) mais un flux `text/event-stream` — vérifié sur une app MINIMALE
+    (SEUL le routeur ingest, pas felix.api.main : on ne veut pas du lifespan
+    complet — collection Chroma incluse — pour un test de câblage de route)
+    avec des agents `TestModel` (pydantic-ai, stub IN-PROCESS, cf.
+    tests/unit/test_cost.py) : zéro appel LLM réel.
+
+    `httpx.AsyncClient` + `ASGITransport` plutôt que `fastapi.testclient.TestClient` :
+    ce dernier exécute la requête dans un thread à part (sa propre event loop),
+    où le driver Neo4j de la fixture (créé sur LA loop du test) n'est pas
+    valide — « Future attached to a different loop ». Le client async reste
+    sur la même loop que le test."""
+    proj = "test-ingest-route-v1"
+    async with driver.session() as session:
+        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
+
+    stub_agent = Agent(TestModel())
+    test_app = FastAPI()
+    test_app.include_router(ingest_routes.router)
+    test_app.dependency_overrides[api_deps.get_driver] = lambda: driver
+    test_app.dependency_overrides[api_deps.get_atelier_agents] = lambda: {"maintenance": stub_agent}
+    test_app.dependency_overrides[api_deps.get_relation_agents] = lambda: {"maintenance": stub_agent}
+    test_app.dependency_overrides[api_deps.get_chronicle_agents] = lambda: {"maintenance": stub_agent}
+    try:
+        transport = httpx.ASGITransport(app=test_app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/ingest/document",
+                files={"file": ("note.txt", b"Une fiche de test minimaliste.", "text/plain")},
+                data={"profile": "maintenance", "project": proj},
+            )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        body = response.text
+        assert "event: phase" in body
+        assert "event: report" in body or "event: error" in body, body
+    finally:
+        async with driver.session() as session:
+            await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
