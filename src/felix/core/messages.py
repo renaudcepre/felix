@@ -65,7 +65,9 @@ async def record_message(  # noqa: PLR0913 — 6 params voulus : driver + 4 cham
             "OPTIONAL MATCH (existing:Message {project: $project})"
             " WITH coalesce(max(existing.ord), 0) AS max_ord"
             " MERGE (p:Project {id: $project})"
-            " ON CREATE SET p.created_at = timestamp()"
+            # Un projet né d'un message doit avoir un nom : sans lui, la liste
+            # du registre (ProjectOut.name: str) plante tout le sélecteur.
+            " ON CREATE SET p.created_at = timestamp(), p.name = $project"
             # Phase 2 : création du nœud Message et rattachement au projet.
             " CREATE (m:Message {"
             "   id: randomUUID(), project: $project,"
