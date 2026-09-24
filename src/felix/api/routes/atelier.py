@@ -33,9 +33,7 @@ from felix.atelier.agent import (
     ATELIER_CHOICES,
     DEFAULT_PROFILE,
     RouteDecision,
-    build_atelier_agent,
-    build_chronicle_agent,
-    build_relation_agent,
+    build_turn_agents,
     profile_summary,
     resolve_profile,
 )
@@ -137,19 +135,22 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
     driver: Neo4jDriver,
 ) -> EventSourceResponse:
     choice = ATELIER_CHOICES.get(body.profile, ATELIER_CHOICES[DEFAULT_PROFILE])
-    gate_agent = gate_agents[choice.key]
-    master_agent = master_agents[choice.key]
     # Profil RÉEL de ce projet : pour un choix évolutif (#Étape 6), le profil
     # STOCKÉ (appris au fil des changements validés) s'il existe, sinon le seed —
-    # les dicts pré-construits ci-dessus ne connaissent QUE le seed, donc les 3
-    # agents extracteurs sont reconstruits À LA DEMANDE pour ce profil. Un choix
-    # non évolutif garde exactement le chemin d'aujourd'hui (dict pré-construit).
+    # UN SEUL appel par requête, réutilisé pour les 5 agents du tour (#82 : avant
+    # ce fix, le maître et le gate restaient construits sur le seed pendant que
+    # SEULS les 3 extracteurs étaient reconstruits pour ce profil). Un choix non
+    # évolutif garde exactement le chemin d'aujourd'hui (dicts pré-construits).
     profile = await resolve_profile(driver, choice, project=body.project)
     if choice.evolving:
-        agent = build_atelier_agent(choice, profile)
-        relation_agent = build_relation_agent(choice, profile)
-        chronicle_agent = build_chronicle_agent(choice, profile)
+        turn = build_turn_agents(choice, profile)
+        gate_agent, master_agent = turn.gate, turn.master
+        agent, relation_agent, chronicle_agent = (
+            turn.atelier, turn.relation, turn.chronicle,
+        )
     else:
+        gate_agent = gate_agents[choice.key]
+        master_agent = master_agents[choice.key]
         agent = agents[choice.key]
         relation_agent = relation_agents[choice.key]
         chronicle_agent = chronicle_agents[choice.key]

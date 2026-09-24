@@ -10,11 +10,20 @@ from typing import TYPE_CHECKING, Annotated
 
 from protest import ProTestSuite, Use, fixture
 
-from felix.atelier.agent import ATELIER_CHOICES, profile_summary, resolve_profile
+import felix.atelier.agent as atelier_agent_module
+from felix.atelier.agent import (
+    ATELIER_CHOICES,
+    build_gate_agent,
+    build_master_agent,
+    build_turn_agents,
+    profile_summary,
+    resolve_profile,
+)
 from felix.core.graph import NARRATIVE_REL
 from felix.core.profile import (
     CHANTIER_PROFILE,
     EMERGENT_SEED_PROFILE,
+    EntityType,
     Profile,
     RelationSpec,
 )
@@ -268,6 +277,143 @@ def test_profile_summary_exposes_ui_vocabulary_and_evolving() -> None:
     assert summary["welcome"] == ATELIER_CHOICES["emergent"].welcome
     assert summary["input_placeholder"] == ATELIER_CHOICES["emergent"].input_placeholder
     assert summary["evolving"] is True
+
+
+# ──────────────────── #82 — build_turn_agents ────────────────────
+# Avant ce fix, un choix ÉVOLUTIF ne reconstruisait pour le profil résolu que
+# ses 3 agents extracteurs (cf. route) : le maître et le gate restaient sur les
+# dicts pré-construits d'app.state, donc sur le SEED — le chat ne connaissait
+# jamais le vocabulaire appris (#82).
+
+def _instructions_text(agent: object) -> str:
+    """Instructions concaténées d'un Agent pydantic-ai — inspection SANS appel
+    réseau. Tous nos builders passent ``instructions=`` comme une simple
+    chaîne (jamais une fonction dynamique), donc ``agent._instructions`` est
+    une liste à un seul élément ici."""
+    return "".join(agent._instructions)  # type: ignore[attr-defined]
+
+
+_EVOLVED_WITH_PROMOTED_TYPE = Profile(
+    name="documentation technique", description="évolué",
+    entity_types=(EntityType("vanne", ("emplacement",)),),
+    narrative_rel=NARRATIVE_REL,
+    relation_vocabulary=(RelationSpec("CONTROLS", "pilote"),),
+)
+
+
+@emergent_profile_suite.test()
+async def test_build_turn_agents_master_and_gate_learn_promoted_type(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Un profil ÉVOLUÉ stocké (type promu 'vanne') apparaît dans les
+    instructions du MAÎTRE et du GATE — pas seulement des extracteurs (#82)."""
+    await _wipe(driver)
+    await save_project_profile(driver, _EVOLVED_WITH_PROMOTED_TYPE, project=PROJ)
+
+    choice = ATELIER_CHOICES["emergent"]
+    profile = await resolve_profile(driver, choice, project=PROJ)
+    turn = build_turn_agents(choice, profile)
+
+    assert "vanne" in _instructions_text(turn.master)
+    assert "vanne" in _instructions_text(turn.gate)
+
+
+@emergent_profile_suite.test()
+async def test_build_turn_agents_extractors_also_learn_promoted_type(
+    driver: Annotated[AsyncDriver, Use(_driver)],
+) -> None:
+    """Non-régression : les 3 extracteurs restent bâtis sur le même profil
+    résolu (déjà vrai avant #82 — la route les reconstruisait déjà)."""
+    await _wipe(driver)
+    await save_project_profile(driver, _EVOLVED_WITH_PROMOTED_TYPE, project=PROJ)
+
+    choice = ATELIER_CHOICES["emergent"]
+    profile = await resolve_profile(driver, choice, project=PROJ)
+    turn = build_turn_agents(choice, profile)
+
+    assert "vanne" in _instructions_text(turn.atelier)
+    assert "vanne" in _instructions_text(turn.relation)
+    assert "vanne" in _instructions_text(turn.chronicle)
+
+
+@emergent_profile_suite.test()
+def test_non_evolving_gate_agent_keeps_bare_gate_prompt() -> None:
+    """Chemin non-évolutif (main.py appelle build_gate_agent(choice) SANS 2e
+    argument) : aucun bloc n'est collé — comportement inchangé."""
+    choice = ATELIER_CHOICES["scenario"]
+    gate = build_gate_agent(choice)
+    assert _instructions_text(gate) == choice.gate_prompt
+
+
+@emergent_profile_suite.test()
+def test_non_evolving_master_agent_uses_choice_profile_by_default() -> None:
+    """Sans override, build_master_agent retombe sur choice.profile — identique
+    à avant #82 pour un choix non évolutif."""
+    choice = ATELIER_CHOICES["scenario"]
+    default_master = build_master_agent(choice)
+    explicit_master = build_master_agent(choice, profile=choice.profile)
+    assert _instructions_text(default_master) == _instructions_text(explicit_master)
+
+
+@emergent_profile_suite.test()
+def test_gate_agent_appends_short_profile_block_with_types_and_relations() -> None:
+    profile = Profile(
+        name="test", description="", entity_types=(EntityType("vanne", ()),),
+        relation_vocabulary=(RelationSpec("CONTROLS", "pilote"),),
+    )
+    choice = ATELIER_CHOICES["emergent"]
+    gate = build_gate_agent(choice, profile)
+    joined = _instructions_text(gate)
+    assert "vanne" in joined
+    assert "CONTROLS" in joined
+
+
+@emergent_profile_suite.test()
+def test_gate_agent_skips_block_when_profile_has_no_vocabulary_yet() -> None:
+    """Le seed émergent tout neuf (aucun type/relation encore appris) ne colle
+    RIEN au gate — reste cheap tant qu'il n'y a rien à apprendre."""
+    choice = ATELIER_CHOICES["emergent"]
+    gate = build_gate_agent(choice, EMERGENT_SEED_PROFILE)
+    assert _instructions_text(gate) == choice.gate_prompt
+
+
+@emergent_profile_suite.test()
+def test_gate_profile_block_has_no_modeling_rules_dump() -> None:
+    """Le bloc gate ne colle QUE des noms — pas modeling_rules ni examples
+    (garder le gate cheap, #82)."""
+    profile = Profile(
+        name="test", description="", entity_types=(EntityType("vanne", ()),),
+        modeling_rules=("une règle qui ne doit PAS fuiter dans le gate",),
+        relation_vocabulary=(
+            RelationSpec("CONTROLS", "pilote", examples="ne doit pas fuiter non plus"),
+        ),
+    )
+    block = profile.render_gate_block()
+    assert "vanne" in block
+    assert "CONTROLS" in block
+    assert "ne doit PAS fuiter" not in block
+    assert "ne doit pas fuiter non plus" not in block
+
+
+@emergent_profile_suite.test()
+def test_build_turn_agents_does_not_read_the_db_itself() -> None:
+    """build_turn_agents prend un profil DÉJÀ résolu : elle ne doit JAMAIS
+    relire la base elle-même — sinon on retombe sur un double appel
+    resolve_profile/tour (#82 : un seul, côté route)."""
+    calls: list[str] = []
+    original = atelier_agent_module.load_project_profile
+
+    async def spy(driver: AsyncDriver, *, project: str) -> Profile | None:
+        calls.append(project)
+        return await original(driver, project=project)
+
+    atelier_agent_module.load_project_profile = spy
+    try:
+        choice = ATELIER_CHOICES["emergent"]
+        build_turn_agents(choice, EMERGENT_SEED_PROFILE)
+    finally:
+        atelier_agent_module.load_project_profile = original
+    assert calls == []
 
 
 @emergent_profile_suite.test()

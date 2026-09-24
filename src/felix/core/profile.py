@@ -139,6 +139,23 @@ class Profile:
             )
         return "\n".join(lines)
 
+    def render_gate_block(self) -> str:
+        """Bloc COURT pour le gate de routage (#82) : juste les NOMS de types et
+        de relations, aucune règle de modélisation ni exemple — le gate reste un
+        appel court/pas cher (cf. build_gate_agent). Vide si le profil n'a encore
+        AUCUN vocabulaire appris (ex. le seed émergent tout neuf) : rien à coller
+        au prompt nu dans ce cas."""
+        if not self.entity_types and not self.relation_vocabulary:
+            return ""
+        lines = [f"Vocabulaire appris du domaine « {self.name} » :"]
+        if self.entity_types:
+            lines.append("Types : " + ", ".join(et.name for et in self.entity_types))
+        if self.relation_vocabulary:
+            lines.append(
+                "Relations : " + ", ".join(spec.name for spec in self.relation_vocabulary)
+            )
+        return "\n".join(lines)
+
     def render_schema_hint(self) -> str:
         """Réponse de describe_schema sur base vide : oriente sans verrouiller."""
         lines = [

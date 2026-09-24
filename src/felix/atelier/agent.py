@@ -286,7 +286,9 @@ Exemples (univers d'illustration — presse plieuse PL-7) :
 """
 
 
-def build_gate_agent(choice: AgentChoice) -> Agent[None, RouteDecision]:
+def build_gate_agent(
+    choice: AgentChoice, profile: Profile | None = None
+) -> Agent[None, RouteDecision]:
     """Gate de routage : un appel court, SANS outils ni deps, sortie structurée.
 
     Construit PAR PROFIL (cf. app.state.gate_agents) : la QUESTION posée à
@@ -294,10 +296,22 @@ def build_gate_agent(choice: AgentChoice) -> Agent[None, RouteDecision]:
     — dépend du domaine, comme le maître et les extracteurs. Appelé par la
     route avec le message du tour SEUL (jamais d'historique) : la fraîcheur de
     la décision est la propriété qui tue l'ornière — ne pas lui passer de
-    message_history."""
+    message_history.
+
+    ``profile`` (#82) : pour un choix ÉVOLUTIF, le gate doit apprendre le
+    VOCABULAIRE du domaine (types + relations promus) pour ne pas rater un fait
+    qui utilise un nom appris — cf. ``Profile.render_gate_block`` (COURT :
+    juste des noms, pas le dump de règles du system prompt complet). None ou
+    profil sans vocabulaire encore appris → prompt inchangé (choix non
+    évolutifs, ou seed émergent tout neuf)."""
+    instructions = choice.gate_prompt
+    if profile is not None:
+        block = profile.render_gate_block()
+        if block:
+            instructions = instructions.rstrip() + "\n\n" + block
     return Agent(
         build_gate_model(),
-        instructions=choice.gate_prompt,
+        instructions=instructions,
         output_type=RouteDecision,
         model_settings=ModelSettings(temperature=0.0),
         retries=3,
@@ -464,7 +478,7 @@ def create_atelier_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDep
 
 
 def build_master_agent(
-    choice: AgentChoice, model: Model | None = None
+    choice: AgentChoice, model: Model | None = None, *, profile: Profile | None = None
 ) -> Agent[GenericDeps, str]:
     """Passe 0 « maître » : MÈNE la conversation (texte streamé), threadée.
 
@@ -475,9 +489,15 @@ def build_master_agent(
 
     model=None → modèle de chat par défaut. L'override sert l'A/B tiering (#49) :
     le maître est la VOIX du produit (1 appel/tour) et le seul à faire du jugement
-    sémantique conversationnel — premier candidat à monter en tier (cf. bug #62)."""
+    sémantique conversationnel — premier candidat à monter en tier (cf. bug #62).
+
+    ``profile`` (mot-clé, #82) override ``choice.profile`` — nécessaire pour un
+    choix ÉVOLUTIF : le profil réel d'un projet vit en base, jamais dans
+    ``choice`` (cf. ``resolve_profile``, ``build_atelier_agent``). Gardé
+    keyword-only pour ne pas casser les appelants existants qui passent
+    ``model`` en position (cf. evals/atelier/master_ab.py)."""
     return create_core_agent(
-        profile=choice.profile,
+        profile=profile if profile is not None else choice.profile,
         persona=choice.master_persona,
         system_prompt=choice.master_prompt,
         tools=MASTER_TOOLS,
@@ -532,3 +552,35 @@ def build_chronicle_agent(
 
 def create_chronicle_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
     return build_chronicle_agent(ATELIER_CHOICES[profile_key])
+
+
+@dataclass(frozen=True)
+class TurnAgents:
+    """Les 5 agents d'un tour, tous bâtis sur le MÊME profil résolu (#82). Avant
+    ce type, le maître et le gate restaient construits sur le SEED (dicts
+    pré-construits d'app.state) pendant qu'un choix évolutif reconstruisait
+    SEULEMENT ses 3 extracteurs pour le profil du projet — le chat ne
+    connaissait donc jamais le vocabulaire appris. Un seul point de fabrique
+    pour les 5 : impossible d'en oublier un la prochaine fois."""
+
+    master: Agent[GenericDeps, str]
+    gate: Agent[None, RouteDecision]
+    atelier: Agent[GenericDeps, str]
+    relation: Agent[GenericDeps, str]
+    chronicle: Agent[GenericDeps, str]
+
+
+def build_turn_agents(choice: AgentChoice, profile: Profile | None) -> TurnAgents:
+    """Fabrique unique des 5 agents d'un tour pour un choix ÉVOLUTIF (#82) : le
+    ``profile`` est déjà résolu par l'appelant (cf. ``resolve_profile``, appelé
+    UNE SEULE FOIS par requête côté route) — cette fonction ne touche PAS la
+    base elle-même, elle ne fait que construire. Un choix NON évolutif n'a pas
+    besoin de cette fabrique : la route garde ses dicts pré-construits
+    (app.state.*_agents), inchangés."""
+    return TurnAgents(
+        master=build_master_agent(choice, profile=profile),
+        gate=build_gate_agent(choice, profile),
+        atelier=build_atelier_agent(choice, profile),
+        relation=build_relation_agent(choice, profile),
+        chronicle=build_chronicle_agent(choice, profile),
+    )
