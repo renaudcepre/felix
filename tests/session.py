@@ -25,6 +25,8 @@ from tests.unit.test_schema_changes import schema_changes_suite
 from tests.unit.test_schema_detector import schema_detector_suite
 from tests.unit.test_source_pages import source_pages_suite
 from tests.unit.test_source_verify import source_verify_suite
+from tests.unit.test_tool_labels import tool_labels_suite
+from tests.unit.test_tool_trace import tool_trace_suite
 from tests.unit.test_update_entity_changes import update_entity_changes_suite
 from tests.unit.test_update_event_guard import update_event_guard_suite
 from tests.unit.test_user_edits import user_edits_suite
@@ -61,3 +63,5 @@ session.add_suite(source_pages_suite)
 session.add_suite(source_verify_suite)
 session.add_suite(entity_list_summary_suite)
 session.add_suite(update_entity_changes_suite)
+session.add_suite(tool_labels_suite)
+session.add_suite(tool_trace_suite)

@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from felix.core.projects import DEFAULT_PROJECT
 from felix.cost import CostLedger
+from felix.trace import QueryTrace, RecordingDriver
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
@@ -69,3 +70,18 @@ class GenericDeps:
     # gate, maître, extracteurs et juge de cohérence y déposent chacun leur
     # (modèle, tokens) — jamais une liste `usages` ad hoc par appelant.
     cost_ledger: CostLedger = field(default_factory=CostLedger)
+    # Trace UNIQUE des appels d'outils + de la Cypher exécutée ce tour/import
+    # (#78, cf. felix.trace) — même design que cost_ledger. `__post_init__`
+    # (ci-dessous) enveloppe `driver` dans un proxy qui alimente CE trace à
+    # chaque session().run(), sans table tool→requête écrite à la main.
+    query_trace: QueryTrace = field(default_factory=QueryTrace)
+
+    def __post_init__(self) -> None:
+        # Le proxy est créé PAR OPÉRATION (une instance de GenericDeps = un
+        # tour de chat ou un bloc d'ingestion, cf. felix.atelier.pipeline /
+        # felix.ingest.document) — jamais partagé entre deux opérations, donc
+        # jamais de fuite d'une trace dans une autre. RecordingDriver n'est
+        # PAS nominalement un AsyncDriver (il ne proxifie QUE .session(), la
+        # seule méthode utilisée sur `deps.driver` dans tout le code — cf.
+        # felix.trace) : compatible en usage, pas en type déclaré.
+        self.driver = RecordingDriver(self.driver, self.query_trace)  # type: ignore[assignment]

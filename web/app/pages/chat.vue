@@ -557,6 +557,23 @@ function onKeydown(e: KeyboardEvent) {
    estompé) : une donnée de contexte, pas une donnée de récit. */
 .felix-atelier .msg-cost { margin-top: 6px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
 
+/* Trace des appels d'outil + Cypher (#78) — même registre discret que
+   .msg-cost, juste en dessous. Le détail (appels/requêtes) ne s'ouvre qu'au
+   clic : aucune couleur neuve, mono partout pour la matière technique. */
+.felix-atelier .msg-trace { margin-top: 4px; }
+.felix-atelier .trace-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: none; background: none; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); cursor: pointer; }
+.felix-atelier .trace-toggle:hover { color: var(--gold-deep); }
+.felix-atelier .trace-toggle svg { transition: transform .14s ease; }
+.felix-atelier .trace-toggle.open svg { transform: rotate(180deg); }
+.felix-atelier .trace-labels { text-align: left; }
+.felix-atelier .trace-details { margin-top: 6px; padding: 9px 11px; background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--line-2); border-radius: 6px; display: flex; flex-direction: column; gap: 10px; }
+.felix-atelier .trace-section-title { font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
+.felix-atelier .trace-line + .trace-line { margin-top: 5px; }
+.felix-atelier .trace-name { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink-2); margin-right: 8px; }
+.felix-atelier .trace-json { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); word-break: break-word; }
+.felix-atelier .trace-query { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; margin: 0 0 3px; }
+.felix-atelier .trace-more { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+
 /* Actions ✎/🗑 des cartes (#61) — l'auteur corrige Felix sans quitter le fil */
 .felix-atelier .tool-act { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 6px; border: 1px solid transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12px; font-weight: 600; transition: color .14s ease, background .14s ease, border-color .14s ease; }
 .felix-atelier .tool-act:hover:not(:disabled) { color: var(--gold-deep); background: #fff; border-color: var(--gold-line); }

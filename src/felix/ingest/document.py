@@ -62,6 +62,7 @@ from felix.cost import (
 )
 from felix.ingest.resolver import slugify
 from felix.llm import build_gate_model
+from felix.trace import TraceSummary
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -515,6 +516,10 @@ class IngestReport(BaseModel):
     # prix inconnu (jamais un faux 0), éclaté par modèle pour l'affichage détaillé.
     cost_usd: float | None = None
     by_model: list[ModelCost] = []
+    # Trace de l'ingestion ENTIÈRE (#78) : appels d'outil + Cypher exécutée par
+    # tous les blocs, cf. felix.trace.QueryTrace — même esprit que by_model
+    # ci-dessus (fusion des ledgers par bloc, cf. `totals.query_trace.merge`).
+    trace: TraceSummary = TraceSummary()
     # Un bloc en échec (best-effort, cf. run_extractors) : "pages p-q : erreur".
     errors: list[str] = []
     # Ids des entités touchées par l'ingestion (hors document, #83) : sert à
@@ -681,6 +686,8 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         # Coût du bloc (extracteurs) fusionné dans le ledger DOCUMENT — un seul
         # système de comptabilité, comme touched_ids/check_candidates ci-dessus.
         totals.cost_ledger.merge(chunk_deps.cost_ledger)
+        # Trace du bloc (#78) fusionnée dans le trace DOCUMENT — même esprit.
+        totals.query_trace.merge(chunk_deps.query_trace)
 
     # Toujours annoncée (contrairement au chat, où elle dépend du gate) : un
     # document EST du contenu, chaque ingestion a extrait quelque chose.
@@ -708,6 +715,7 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         total_tokens=cost_summary.total_tokens,
         cost_usd=cost_summary.cost_usd,
         by_model=cost_summary.by_model,
+        trace=totals.query_trace.summary(),
         errors=errors,
         touched_ids=sorted(totals.touched_ids - {document_id}),
     )

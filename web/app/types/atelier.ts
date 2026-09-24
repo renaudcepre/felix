@@ -2,6 +2,7 @@
 // Reflète la spec produit B : text / tool / choice / cite / alert.
 
 import type { CostSummaryPayload, ModelCostPayload } from './costs'
+import type { TraceSummaryPayload } from './trace'
 
 export interface ChoiceOption {
   k: string
@@ -62,6 +63,8 @@ export interface IngestReportPayload {
   total_tokens: number
   cost_usd: number | null
   by_model: ModelCostPayload[]
+  // Trace de l'import ENTIER (#78) — cf. felix.trace.TraceSummary.
+  trace: TraceSummaryPayload
 }
 
 export interface AtelierMsg {
@@ -107,4 +110,8 @@ export interface AtelierMsg {
   // felix du tour (carte s'il y en a, sinon le texte) ; survit au reload car
   // persisté dans le payload du message stocké, cf. useAtelier.mapServerMsg.
   cost?: CostSummaryPayload
+  // Trace du TOUR (#78) — appels d'outil + Cypher exécutée, MÊME convention
+  // que cost (posée sur le dernier message felix du tour, persistée dans le
+  // même payload).
+  trace?: TraceSummaryPayload
 }

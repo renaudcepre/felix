@@ -1,5 +1,6 @@
 import type { AlertSourceKind, AtelierMsg, IngestReportPayload, PropChange } from '~/types/atelier'
 import type { CostSummaryPayload } from '~/types/costs'
+import type { TraceSummaryPayload } from '~/types/trace'
 import { parseSSEStream } from '~/utils/parseSSE'
 import { currentProfile, profiles as atelierProfiles, useAtelierProfile } from './useAtelierProfile'
 import { currentProject } from './useProject'
@@ -109,6 +110,12 @@ function extractCost(payload: Record<string, unknown> | null | undefined): CostS
   return (payload?.cost as CostSummaryPayload | undefined) ?? undefined
 }
 
+// Trace du tour (#78), MÊME convention que extractCost ci-dessus — posée par
+// le back dans le même payload que cost, sur le même dernier message.
+function extractTrace(payload: Record<string, unknown> | null | undefined): TraceSummaryPayload | undefined {
+  return (payload?.trace as TraceSummaryPayload | undefined) ?? undefined
+}
+
 // Mapping ConversationMessageOut → AtelierMsg.
 // Renvoie null pour les messages tool/alert dont le payload est absent (défensif :
 // un bug de persistance ne doit pas faire planter l'hydratation entière).
@@ -120,6 +127,7 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       kind: 'text',
       body: m.body,
       cost: extractCost(m.payload),
+      trace: extractTrace(m.payload),
     }
   }
   if (m.kind === 'tool') {
@@ -138,6 +146,7 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       entityId: p.entity_id ?? undefined,
       relation: p.relation ?? undefined,
       cost: extractCost(m.payload),
+      trace: extractTrace(m.payload),
     }
   }
   if (m.kind === 'alert') {
@@ -153,6 +162,7 @@ function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
       source_kind: p.source_kind,
       correction: p.correction,
       cost: extractCost(m.payload),
+      trace: extractTrace(m.payload),
     }
   }
   if (m.kind === 'report') {
@@ -363,6 +373,17 @@ export function useAtelier() {
             const summary = JSON.parse(sse.data) as CostSummaryPayload
             if (lastAppended) {
               lastAppended.cost = summary
+              messages.value = [...messages.value]
+            }
+            break
+          }
+          case 'trace': {
+            // Trace du tour (#78) — MÊME convention que usage ci-dessus : posée
+            // sur le dernier message felix du tour (carte s'il y en a, sinon le
+            // texte), cf. felix.api.routes.atelier.
+            const summary = JSON.parse(sse.data) as TraceSummaryPayload
+            if (lastAppended) {
+              lastAppended.trace = summary
               messages.value = [...messages.value]
             }
             break

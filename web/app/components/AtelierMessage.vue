@@ -114,6 +114,7 @@ function submitFree() {
       <template v-if="msg.kind === 'text'">
         <div class="felix-text" v-html="html" />
         <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
+        <AtelierTrace v-if="msg.trace" :trace="msg.trace" />
       </template>
 
       <!-- tool use -->
@@ -183,6 +184,7 @@ function submitFree() {
           </div>
           <p v-if="actionError" class="tool-error">{{ actionError }}</p>
           <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
+          <AtelierTrace v-if="msg.trace" :trace="msg.trace" />
         </div>
       </div>
 
@@ -208,6 +210,7 @@ function submitFree() {
             <li v-for="(err, i) in msg.report.errors" :key="`err-${i}`">{{ err }}</li>
           </ul>
           <div class="msg-cost">{{ formatCostLine(msg.report.total_tokens, msg.report.cost_usd) }}</div>
+          <AtelierTrace v-if="msg.report.trace" :trace="msg.report.trace" />
         </div>
       </div>
 
@@ -294,6 +297,7 @@ function submitFree() {
             <button class="btn btn-ghost" @click="emit('status', msg, 'dismissed')">Ignorer</button>
           </div>
           <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
+          <AtelierTrace v-if="msg.trace" :trace="msg.trace" />
         </div>
       </template>
     </div>

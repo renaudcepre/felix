@@ -7,7 +7,8 @@ modèle tient le cap, pas par du code. Ne pas les diluer.
 from __future__ import annotations
 
 import unicodedata
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Mapping
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic_ai import RunContext
 
@@ -35,6 +36,72 @@ from felix.core.graph import (
 from felix.core.models import PropChange, RelationRef, ToolCard
 from felix.core.schema_detector import content_tokens, verb_head
 from felix.ingest.resolver import slugify
+
+# ─────────── Libellés humains des tools (#78) ───────────
+# Le LLM n'écrit jamais de Cypher : son langage de requête, ce sont les appels
+# d'outil. Chaque tool déclare ICI, À CÔTÉ de sa définition, le gabarit qui le
+# traduit en français pour l'auteur (« Recherche d'informations sur {name} ») —
+# une seule source de vérité, pas une table à part qui dérive du code réel
+# (cf. CLAUDE.md « des systèmes, pas du cas par cas »). `stream_pass`
+# (felix.atelier.pipeline) résout le libellé via `label_for_tool_call` au
+# moment où il capture l'appel dans le trace de l'opération (felix.trace).
+
+F = TypeVar("F", bound=Callable[..., Any])
+# Un gabarit simple prend juste le nom des args entre accolades
+# (str.format_map) ; un tool dont le libellé dépend d'une LOGIQUE (ex.
+# add_relation : verbe si présent, sinon rel_type) enregistre une fonction.
+LabelTemplate = str | Callable[[Mapping[str, Any]], str]
+
+TOOL_LABELS: dict[str, Callable[[Mapping[str, Any]], str]] = {}
+
+
+class _GracefulArgs(dict):
+    """Formatage TOLÉRANT : un arg manquant à l'appel (tool appelé sans un
+    paramètre optionnel, ou args partiels dans un test) devient une chaîne
+    vide plutôt qu'une KeyError — jamais un libellé qui plante l'affichage."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
+def tool_label(template: LabelTemplate) -> Callable[[F], F]:
+    """Décorateur qui enregistre le libellé humain d'un tool, à côté de sa
+    définition. `template` est soit un gabarit `str.format_map` (les noms
+    entre accolades sont les noms des paramètres du tool), soit une fonction
+    `args -> str` pour un libellé qui a besoin d'un choix (ex. verbe/rel_type)."""
+
+    def decorator(fn: F) -> F:
+        if callable(template):
+            TOOL_LABELS[fn.__name__] = template
+        else:
+            def render(args: Mapping[str, Any], _template: str = template) -> str:
+                return _template.format_map(_GracefulArgs(args))
+            TOOL_LABELS[fn.__name__] = render
+        return fn
+
+    return decorator
+
+
+def label_for_tool_call(name: str, args: Mapping[str, Any]) -> str:
+    """Libellé humain d'un appel d'outil réel (nom + args capturés dans le
+    trace). Un tool inconnu du registre (ne devrait jamais arriver — cf. le
+    test structurel qui vérifie que TOUT tool enregistré sur un agent de l'app
+    a un libellé) retombe sur son nom brut plutôt que de planter l'affichage."""
+    render = TOOL_LABELS.get(name)
+    return render(args) if render is not None else name
+
+
+def _add_relation_label(args: Mapping[str, Any]) -> str:
+    """Le lien « {verbe ou rel_type} » entre {from_name} et {to_name} — le
+    verbe verbatim de l'auteur prime quand il est présent (arête narrative
+    LIE_A), sinon le type structurel canonique (LOCATED_AT, MEMBER_OF…)."""
+    verbe = str(args.get("verbe") or "").strip()
+    rel_type = str(args.get("rel_type") or "").strip()
+    label = verbe or rel_type or "?"
+    from_name = args.get("from_name", "") or "?"
+    to_name = args.get("to_name", "") or "?"
+    return f"Lien « {label} » entre {from_name} et {to_name}"
+
 
 # ─────────────────────────── Helpers réordonnancement (#44) ─────────────────
 
@@ -170,6 +237,7 @@ async def _rebuild_event_sequence(
             )
 
 
+@tool_label("Lecture du schéma")
 async def describe_schema(ctx: RunContext[GenericDeps]) -> str:
     """Décrit le schéma actuel de la base : types d'entités, noms de propriétés
     et types de relations déjà utilisés.
@@ -209,6 +277,7 @@ async def describe_schema(ctx: RunContext[GenericDeps]) -> str:
     return "\n".join(lines)
 
 
+@tool_label("Liste des fiches")
 async def list_entities(ctx: RunContext[GenericDeps]) -> str:
     """Liste toutes les entités de la base (nom + type), groupées par type.
 
@@ -229,6 +298,7 @@ async def list_entities(ctx: RunContext[GenericDeps]) -> str:
     )
 
 
+@tool_label("Recherche d'informations sur {name}")
 async def find_entity(ctx: RunContext[GenericDeps], name: str) -> str:
     """Cherche une entité par nom et retourne ses propriétés et relations.
 
@@ -312,6 +382,7 @@ def check_add_entity_guards(
     return None, False
 
 
+@tool_label("Création de la fiche {name}")
 async def add_entity(
     ctx: RunContext[GenericDeps],
     name: str,
@@ -406,6 +477,7 @@ def check_update_target(node: dict | None, name: str) -> str | None:
     return None
 
 
+@tool_label("Mise à jour de la fiche {name}")
 async def update_entity(
     ctx: RunContext[GenericDeps], name: str, props: dict[str, str],
     is_correction: bool = False,
@@ -490,6 +562,7 @@ async def update_entity(
     return f"{node['name']} mis à jour : {fmt_props(to_set, skip_reserved=False)}.{suffix}"
 
 
+@tool_label("Renommage de {current_name} en {new_name}")
 async def rename_entity(
     ctx: RunContext[GenericDeps], current_name: str, new_name: str
 ) -> str:
@@ -547,6 +620,7 @@ async def rename_entity(
     return f"« {out.old_name} » renommé « {new_name} »."
 
 
+@tool_label("Correction du type de {name}")
 async def retype_entity(
     ctx: RunContext[GenericDeps], name: str, nouveau_type: str
 ) -> str:
@@ -688,6 +762,7 @@ def same_narrative_link(new_verb: str, existing_verbs: list[str]) -> bool:
     return False
 
 
+@tool_label(_add_relation_label)
 async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas une prop enfouie (#68)
     ctx: RunContext[GenericDeps],
     from_name: str,
@@ -848,6 +923,7 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
     return f"Relation : {a['name']} —[{label}]→ {b['name']}."
 
 
+@tool_label("Événement : {resume}")
 async def add_event(
     ctx: RunContext[GenericDeps],
     resume: str,
@@ -987,6 +1063,7 @@ async def add_event(
     return f"Événement #{ordre} enregistré : {text}{avant_suffix} (participants : {', '.join(linked) or '—'})."
 
 
+@tool_label("Déplacement de l'événement « {resume} »")
 async def move_event(
     ctx: RunContext[GenericDeps],
     resume: str,

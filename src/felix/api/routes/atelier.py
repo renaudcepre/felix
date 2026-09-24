@@ -4,6 +4,8 @@ Protocole d'événements (aligné sur le modèle AtelierMsg du front) :
 - ``text``    : delta de texte du modèle
 - ``tool``    : carte structurée émise par un tool (JSON ToolCard)
 - ``usage``   : coût du tour — tokens + USD (JSON, cf. felix.cost.CostSummary)
+- ``trace``   : appels d'outil + Cypher exécutée ce tour (#78, JSON, cf.
+  felix.trace.TraceSummary)
 - ``history`` : message_history sérialisé pour le tour suivant (JSON)
 - ``alert``   : incohérence détectée par le check de cohérence (JSON, kind=alert)
 - ``done`` / ``error``
@@ -263,6 +265,10 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             # chaque passe (cf. stream_pass / _apply_gate_verdict / consistency_check).
             cost_summary = deps.cost_ledger.summary()
             yield ServerSentEvent(data=cost_summary.model_dump_json(), event="usage")
+            # Trace du tour ENTIER (#78) : appels d'outil + Cypher exécutée, mêmes
+            # deps que le coût (cf. stream_pass, felix.trace.QueryTrace).
+            trace_summary = deps.query_trace.summary()
+            yield ServerSentEvent(data=trace_summary.model_dump_json(), event="trace")
 
             # L'historique threadé = le FIL DU MAÎTRE (la conversation), pas les
             # tool-calls d'extraction : le graphe est la mémoire longue, relue à la
@@ -273,12 +279,18 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             # --- Persistance du tour en graphe (#63) ---
             # Ordre garanti : texte felix → cartes → provenance → fil threadé.
             # Exécuté APRÈS l'event history (compat e2e) et AVANT done.
-            # Le coût du tour est attaché au DERNIER message felix du tour (la
-            # dernière carte s'il y en a, sinon le texte) — « sous chaque réponse »
-            # côté front veut dire une seule ligne par tour, pas une par carte.
+            # Le coût ET la trace (#78) du tour sont attachés au DERNIER message
+            # felix du tour (la dernière carte s'il y en a, sinon le texte) —
+            # « sous chaque réponse » côté front veut dire une seule ligne par
+            # tour, pas une par carte. Même paire que le coût : ça survit au
+            # reload car persisté dans le MÊME payload.
             cost_json = cost_summary.model_dump()
+            trace_json = trace_summary.model_dump()
             if master_text_buf:
-                text_payload = None if turn_cards else json.dumps({"cost": cost_json})
+                text_payload = (
+                    None if turn_cards
+                    else json.dumps({"cost": cost_json, "trace": trace_json})
+                )
                 await record_message(
                     driver, "felix", "text", "".join(master_text_buf),
                     payload=text_payload, project=body.project,
@@ -287,6 +299,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 card = json.loads(card_data)
                 if idx == len(turn_cards) - 1:
                     card["cost"] = cost_json
+                    card["trace"] = trace_json
                 await record_message(
                     driver, "felix", kind, "", payload=json.dumps(card),
                     project=body.project,

@@ -15,6 +15,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from pydantic_ai import Agent
+from pydantic_ai.messages import ToolCallPart
 from sse_starlette import ServerSentEvent
 
 from felix.core import consistency_check, record_alert, runs_chronicle, source_pages_for
@@ -24,6 +25,7 @@ from felix.core.check import (
     verify_against_source,
 )
 from felix.core.graph import find_node
+from felix.core.tools import label_for_tool_call
 from felix.cost import agent_model_name
 
 if TYPE_CHECKING:
@@ -59,11 +61,26 @@ async def stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + histori
     Dépose AUSSI le coût de cette passe dans `deps.cost_ledger` — attribué au
     modèle RÉELLEMENT utilisé par `sub_agent` (gate/maître/extracteurs peuvent
     différer, cf. build_gate_model/build_checker_model/build_chat_model) : un
-    seul système de comptabilité, alimenté par chaque passe."""
+    seul système de comptabilité, alimenté par chaque passe.
+
+    Capture AUSSI chaque appel d'outil (nom + args) dans `deps.query_trace`
+    (#78, cf. felix.trace) — un `CallToolsNode` par réponse du modèle qui
+    contient des appels d'outil ; le libellé humain est résolu ICI, à la
+    capture (cf. felix.core.tools.label_for_tool_call), pas recalculé côté
+    front. La Cypher exécutée par ces appels est capturée SÉPARÉMENT, à
+    l'exécution, par le driver proxy posé sur `deps` (RecordingDriver)."""
     async with sub_agent.iter(
         prompt, deps=deps, message_history=history
     ) as run:
         async for node in run:
+            if Agent.is_call_tools_node(node):
+                for part in node.model_response.parts:
+                    if isinstance(part, ToolCallPart):
+                        args = part.args_as_dict()
+                        deps.query_trace.add_tool_call(
+                            part.tool_name, args,
+                            label_for_tool_call(part.tool_name, args),
+                        )
             for card in deps.ui_events:
                 yield ServerSentEvent(data=card.model_dump_json(), event="tool")
             deps.ui_events.clear()
