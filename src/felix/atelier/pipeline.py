@@ -36,8 +36,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def sse_text(ev: ServerSentEvent) -> str:
+    """`ServerSentEvent.data` est typé `Any | None` côté sse_starlette (la lib
+    ne le contraint pas) ; toutes les passes de ce module (et les deux routes
+    qui les consomment, atelier ET ingestion) n'y déposent jamais que du texte
+    — ce garde-fou le dit au vérificateur de types, sans changer le comportement."""
+    assert isinstance(ev.data, str)
+    return ev.data
+
+
 async def stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + historique + deps partagés
-    sub_agent: Agent, prompt: str, history: list | None, deps: GenericDeps,
+    sub_agent: Agent[GenericDeps, str], prompt: str, history: list | None, deps: GenericDeps,
     *, stream_text: bool, holder: dict
 ) -> AsyncGenerator[ServerSentEvent]:
     """Joue une passe via `.iter()` : draine les cartes des tools EN LIVE (à
@@ -72,9 +81,9 @@ async def stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + histori
 
 
 async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profile, un seul appelant par tour
-    agent: Agent,
-    relation_agent: Agent,
-    chronicle_agent: Agent,
+    agent: Agent[GenericDeps, str],
+    relation_agent: Agent[GenericDeps, str],
+    chronicle_agent: Agent[GenericDeps, str],
     extract_prompt: str,
     chronicle_prompt: str,
     message_history: list | None,

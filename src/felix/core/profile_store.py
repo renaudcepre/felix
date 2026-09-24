@@ -115,6 +115,7 @@ async def save_project_profile(driver: AsyncDriver, profile: Profile, *, project
             project=project, data=data,
         )
         record = await result.single()
+    assert record is not None  # MERGE ... RETURN garantit toujours une ligne
     return record["version"]
 
 

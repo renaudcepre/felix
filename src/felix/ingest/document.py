@@ -41,7 +41,7 @@ from pypdf import PdfReader
 from rapidfuzz import fuzz
 from sse_starlette import ServerSentEvent
 
-from felix.atelier.pipeline import consistency_alerts, run_extractors
+from felix.atelier.pipeline import consistency_alerts, run_extractors, sse_text
 from felix.config import settings
 from felix.core import (
     GenericDeps,
@@ -540,9 +540,9 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
     path_or_pages: str | Path | list[str],
     *,
     profile: Profile | None,
-    agent: Agent,
-    relation_agent: Agent,
-    chronicle_agent: Agent,
+    agent: Agent[GenericDeps, str],
+    relation_agent: Agent[GenericDeps, str],
+    chronicle_agent: Agent[GenericDeps, str],
     project: str,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> AsyncGenerator[ServerSentEvent]:
@@ -634,7 +634,7 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
                     continue
                 yield ev
                 if ev.event == "tool":
-                    card = json.loads(ev.data)
+                    card = json.loads(sse_text(ev))
                     if card.get("relation") is not None:
                         relations_count += 1
         except Exception as exc:
@@ -681,7 +681,7 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
     yield ServerSentEvent(data="Vérification de la cohérence…", event="phase")
     alerts: list[str] = []
     async for ev in consistency_alerts(driver, totals, profile):
-        card = json.loads(ev.data)
+        card = json.loads(sse_text(ev))
         alerts.append(card.get("body", ""))
         yield ev
 
@@ -712,9 +712,9 @@ async def ingest_document(  # noqa: PLR0913 — même signature que stream_inges
     path_or_pages: str | Path | list[str],
     *,
     profile: Profile | None,
-    agent: Agent,
-    relation_agent: Agent,
-    chronicle_agent: Agent,
+    agent: Agent[GenericDeps, str],
+    relation_agent: Agent[GenericDeps, str],
+    chronicle_agent: Agent[GenericDeps, str],
     project: str,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> IngestReport:
@@ -730,7 +730,7 @@ async def ingest_document(  # noqa: PLR0913 — même signature que stream_inges
         chronicle_agent=chronicle_agent, project=project, max_chars=max_chars,
     ):
         if ev.event == "report":
-            report = IngestReport.model_validate_json(ev.data)
+            report = IngestReport.model_validate_json(sse_text(ev))
     if report is None:
         msg = "ingest_document : aucun event report émis par le générateur (bug interne)"
         raise RuntimeError(msg)

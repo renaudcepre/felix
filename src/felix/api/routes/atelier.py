@@ -32,13 +32,19 @@ from felix.api.models import ChatRequest, ConversationMessageOut
 from felix.atelier.agent import (
     ATELIER_CHOICES,
     DEFAULT_PROFILE,
+    RouteDecision,
     build_atelier_agent,
     build_chronicle_agent,
     build_relation_agent,
     profile_summary,
     resolve_profile,
 )
-from felix.atelier.pipeline import consistency_alerts, run_extractors, stream_pass
+from felix.atelier.pipeline import (
+    consistency_alerts,
+    run_extractors,
+    sse_text,
+    stream_pass,
+)
 from felix.config import settings
 from felix.core import (
     GenericDeps,
@@ -91,7 +97,9 @@ async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str
     return "\n\n".join(parts)
 
 
-async def _apply_gate_verdict(gate_task: asyncio.Task, gate_agent: Agent, deps: GenericDeps) -> None:
+async def _apply_gate_verdict(
+    gate_task: asyncio.Task, gate_agent: Agent[None, RouteDecision], deps: GenericDeps
+) -> None:
     """Attend le gate et pose `extraction_requested`. Best-effort FAIL-CLOSED : si le
     gate crashe (transient LLM), on n'extrait pas ce tour — l'invariant produit n°1
     reste « jamais d'écriture sans contenu », et le fait peut être redonné.
@@ -196,9 +204,9 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 yield ev
                 # Accumulation du texte et collecte des cartes outil du maître.
                 if ev.event == "text":
-                    master_text_buf.append(ev.data)
+                    master_text_buf.append(sse_text(ev))
                 elif ev.event == "tool":
-                    turn_cards.append(("tool", ev.data))
+                    turn_cards.append(("tool", sse_text(ev)))
 
             await _apply_gate_verdict(gate_task, gate_agent, deps)
 
@@ -237,7 +245,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 ):
                     yield ev
                     if ev.event == "tool":
-                        turn_cards.append(("tool", ev.data))
+                        turn_cards.append(("tool", sse_text(ev)))
 
                 # Check de cohérence (sur deps.check_candidates) — seulement si on a
                 # extrait. Best-effort, isolé pour ne jamais bloquer le `done`.
@@ -245,7 +253,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 try:
                     async for alert in consistency_alerts(driver, deps, profile):
                         yield alert
-                        turn_cards.append(("alert", alert.data))
+                        turn_cards.append(("alert", sse_text(alert)))
                 except Exception:
                     logger.exception("consistency_check a échoué (tour non bloqué)")
 

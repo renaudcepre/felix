@@ -36,6 +36,7 @@ from felix.atelier.agent import (
     build_relation_agent,
     resolve_profile,
 )
+from felix.atelier.pipeline import sse_text
 from felix.core import record_message
 from felix.core.projects import DEFAULT_PROJECT
 from felix.ingest.document import stream_ingest_document
@@ -107,7 +108,7 @@ async def post_ingest_document(  # noqa: PLR0913 — 3 deps d'agents + driver + 
             ):
                 yield ev
                 if ev.event in ("tool", "alert"):
-                    turn_cards.append((ev.event, ev.data))
+                    turn_cards.append((ev.event, sse_text(ev)))
                 elif ev.event == "report":
                     report_json = ev.data
 

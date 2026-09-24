@@ -9,6 +9,8 @@ arbitraire : pas de première abstraction avant un second cas concret.
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -26,9 +28,23 @@ from felix.core.projects import DEFAULT_PROJECT
 from felix.core.schema_changes import ChangeReport, SchemaChange, apply_schema_change
 from felix.core.schema_detector import Proposal, detect_proposals
 
+if TYPE_CHECKING:
+    from felix.core.profile import Profile
+
 router = APIRouter(prefix="/api/schema", tags=["schema"])
 
 _CHOICE_KEY = "emergent"
+
+
+def _require_profile(profile: Profile | None) -> Profile:
+    """`resolve_profile` reste `Profile | None` pour couvrir tout choix (cf.
+    `felix.atelier.agent.AgentChoice`, un choix non évolutif peut ne porter aucun
+    profil) ; ces routes ne s'appliquent qu'au choix ÉMERGENT (cf. docstring du
+    module), qui en a toujours un — None ici signalerait un appel hors de ce
+    contrat plutôt qu'un crash plus loin dans detect_proposals/evolve_profile."""
+    if profile is None:
+        raise ValueError(f"aucun profil résolu pour le choix « {_CHOICE_KEY} »")
+    return profile
 
 
 class ApplyChangeRequest(BaseModel):
@@ -54,7 +70,7 @@ async def get_profile(driver: Neo4jDriver, project: str = DEFAULT_PROJECT) -> di
     `version` (0 tant que rien n'a été validé) — la vue en lecture seule du
     front l'affiche à côté des types de relation appris."""
     choice = ATELIER_CHOICES[_CHOICE_KEY]
-    profile = await resolve_profile(driver, choice, project=project)
+    profile = _require_profile(await resolve_profile(driver, choice, project=project))
     version = await load_project_profile_version(driver, project=project)
     return {**profile_to_dict(profile), "version": version}
 
@@ -66,7 +82,7 @@ async def get_proposals(
     """Propositions déterministes (aucun appel LLM) pour ce projet — chacune
     porte son rapport en PREVIEW, exactement ce que ferait le clic « accepter »."""
     choice = ATELIER_CHOICES.get(profile, ATELIER_CHOICES[_CHOICE_KEY])
-    resolved = await resolve_profile(driver, choice, project=project)
+    resolved = _require_profile(await resolve_profile(driver, choice, project=project))
     return await detect_proposals(driver, project=project, profile=resolved)
 
 
@@ -78,7 +94,7 @@ async def post_apply_change(driver: Neo4jDriver, body: ApplyChangeRequest) -> Ap
     la file de validation affiche les deux."""
     choice = ATELIER_CHOICES[_CHOICE_KEY]
     report = await apply_schema_change(driver, body.change, project=body.project, preview=False)
-    current = await resolve_profile(driver, choice, project=body.project)
+    current = _require_profile(await resolve_profile(driver, choice, project=body.project))
     new_profile = evolve_profile(current, body.change, report)
     version = await save_project_profile(driver, new_profile, project=body.project)
     return ApplyChangeResponse(
