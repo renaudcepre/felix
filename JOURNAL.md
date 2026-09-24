@@ -26,6 +26,12 @@
 
 **Pointeurs** : noyau `src/felix/core/` (graph.py `entity_timeline` + tie-break `find_node`, check.py `consistency_check` concatène la timeline + `CHECK_PROMPT` temporel, agent.py `CHRONICLE_SYSTEM_PROMPT` « mort = événement », profile.py `consistency_rules` rule 1 + `manages_events`, tools.py `add_event`/`find_non_event`, deps.py `event_seq_lock`) ; route **3 passes** `src/felix/api/routes/atelier.py` ; evals `evals/atelier/` (cas `check_death_then_act`/`check_act_then_death` A/B + `event_chrono` + `roue_de_sang`). Harness checker isolé `/tmp/check_temporal.py` (juge sur graphe fixe, 1 appel/cas — robuste aux transients) et `/tmp/compare_checker.py` (6 scénarios, non-régression faux positifs). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## 2026-09-24 — chore(web): recipe `just web-check` (#80) — plus de lint front silencieusement cassé
+
+**Fait** : `pnpm lint` était cassé (eslint pas en devDependency directe) et personne ne s'en apercevait, aucune recipe ne le lançait. Ajout de `web-check` dans le `justfile` (`pnpm typecheck` → `pnpm lint` → `pnpm build`, `set -e` donc arrêt au premier échec, mentionné dans le bloc usage en tête de fichier).
+
+**Qualification** : `just web-check` vert (exit 0) — typecheck clean, lint 1 seul avertissement pré-existant (`vue/no-v-html` sur `AtelierMessage.vue`, accepté), build OK (écrit dans `web/.output`, gitignored, sans effet sur les serveurs de dev). Serveurs 8000/3007 revérifiés après coup (200 sur `/api/schema/profile` et `:3007`).
+
 ## 2026-09-24 — fix(types): sweep Pyright sur la branche (#79) — Optional réels, pas les imports
 
 **Fait** : `uv run pyright` (venv du projet, imports résolus) trouvait 19 vraies erreurs sur les fichiers touchés par `feat/maintenance-profile` (pas les 20+ imports non résolus, qui sont du bruit sans venv). Deux causes racines, pas 19 cas isolés :

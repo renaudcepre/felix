@@ -1,8 +1,9 @@
 # Felix — task runner
 # Usage: just <recipe>
-# just dev-up   → API (hot reload) + frontend Nuxt en parallèle
-# just api      → API seule
-# just web      → frontend seul
+# just dev-up    → API (hot reload) + frontend Nuxt en parallèle
+# just api       → API seule
+# just web       → frontend seul
+# just web-check → typecheck + lint + build front (fail fast)
 
 chroma_path := "chroma_data"
 archive_dir := "data/archives"
@@ -22,6 +23,15 @@ api:
 # Lance uniquement le frontend Nuxt avec hot reload (port 3007)
 web:
     cd web && pnpm dev
+
+# Vérifie le front : typecheck, lint, build — dans cet ordre, s'arrête au premier échec
+web-check:
+    #!/usr/bin/env bash
+    set -e
+    cd web
+    pnpm typecheck
+    pnpm lint
+    pnpm build
 
 # Lance les tests via protest
 test *args:
