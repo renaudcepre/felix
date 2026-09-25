@@ -32,6 +32,7 @@ Relations posées à la création :
 Nœud :Thread (un par projet, MERGE) :
   project, llm_history (JSON string pydantic-ai, null après archive)
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -87,7 +88,11 @@ async def record_message(  # noqa: PLR0913 — 6 params voulus : driver + 4 cham
             "   CREATE (prev)-[:NEXT]->(m)"
             " )"
             " RETURN m.id AS id",
-            project=project, role=role, kind=kind, body=body, payload=payload,
+            project=project,
+            role=role,
+            kind=kind,
+            body=body,
+            payload=payload,
         )
         record = await result.single()
         # La requête CREATE ne peut échouer silencieusement : si record est None,
@@ -125,7 +130,8 @@ async def link_produced(
             " OPTIONAL MATCH (e:GenEntity {id: eid, project: $project})"
             " WITH m, e WHERE e IS NOT NULL"
             " MERGE (m)-[:PRODUCED]->(e)",
-            message_id=message_id, project=project,
+            message_id=message_id,
+            project=project,
             entity_ids=list(entity_ids),
         )
 
@@ -198,9 +204,9 @@ async def save_llm_history(
     reconstruit à la lecture via validate_python(json.loads(raw))."""
     async with driver.session() as session:
         await session.run(
-            "MERGE (t:Thread {project: $project})"
-            " SET t.llm_history = $history_json",
-            project=project, history_json=history_json,
+            "MERGE (t:Thread {project: $project}) SET t.llm_history = $history_json",
+            project=project,
+            history_json=history_json,
         )
 
 

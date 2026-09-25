@@ -13,6 +13,7 @@ Trois familles :
 - TOLÉRANCE : pas de sur-rejet d'un type d'entité inconnu (schemaless), et un
   profil sans vocab ni canal narratif ne contraint rien.
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite
@@ -47,7 +48,9 @@ def test_member_of_must_be_group() -> None:
 # ──────────────────── STRUCTUREL : relations légitimes ────────────────────
 @relation_typing_suite.test()
 def test_located_at_place_ok() -> None:
-    assert P.validate_relation("LOCATED_AT", "personnage", "lieu", same_node=False) is None
+    assert (
+        P.validate_relation("LOCATED_AT", "personnage", "lieu", same_node=False) is None
+    )
 
 
 @relation_typing_suite.test()
@@ -68,10 +71,16 @@ def test_part_of_place_ok() -> None:
 def test_narratif_verbe_ok() -> None:
     """Tessa LIE_A {verbe='était la maîtresse de'} Hadrin — le verbe de l'auteur
     EST la donnée, aucun type canonique à choisir."""
-    assert P.validate_relation(
-        "LIE_A", "personnage", "personnage", same_node=False,
-        verbe="était la maîtresse de",
-    ) is None
+    assert (
+        P.validate_relation(
+            "LIE_A",
+            "personnage",
+            "personnage",
+            same_node=False,
+            verbe="était la maîtresse de",
+        )
+        is None
+    )
 
 
 @relation_typing_suite.test()
@@ -79,9 +88,16 @@ def test_narratif_sans_domaine_portee() -> None:
     """AUCUNE validation domaine/portée sur le narratif : « le passeur transporte
     les lanternes » (personnage→objet) passe sans qu'un typage l'énumère — zéro
     trou par construction (prix assumé de #68)."""
-    assert P.validate_relation(
-        "LIE_A", "personnage", "objet", same_node=False, verbe="transporte",
-    ) is None
+    assert (
+        P.validate_relation(
+            "LIE_A",
+            "personnage",
+            "objet",
+            same_node=False,
+            verbe="transporte",
+        )
+        is None
+    )
 
 
 @relation_typing_suite.test()
@@ -95,7 +111,11 @@ def test_narratif_verbe_requis() -> None:
 def test_narratif_self_loop_rejected() -> None:
     """Même narratif, pas de boucle a==b (un personnage ne se commande pas lui-même)."""
     assert P.validate_relation(
-        "LIE_A", "personnage", "personnage", same_node=True, verbe="commande",
+        "LIE_A",
+        "personnage",
+        "personnage",
+        same_node=True,
+        verbe="commande",
     )
 
 
@@ -103,7 +123,9 @@ def test_narratif_self_loop_rejected() -> None:
 def test_hors_vocab_redirige_vers_narratif() -> None:
     """INTERROGATES (type inventé) → refus qui REDIRIGE vers le canal narratif :
     plus de trou de vocab, le lien réel a toujours une sortie."""
-    msg = P.validate_relation("INTERROGATES", "personnage", "personnage", same_node=False)
+    msg = P.validate_relation(
+        "INTERROGATES", "personnage", "personnage", same_node=False
+    )
     assert msg and NARRATIVE_REL in msg
 
 
@@ -120,12 +142,20 @@ def test_ancien_type_narratif_rejete() -> None:
 def test_unknown_type_tolerated() -> None:
     """« langue » n'est pas un type du domaine → on tolère (on ne rejette que les
     violations CLAIRES). Évite les faux rejets sur les types inventés par le modèle."""
-    assert P.validate_relation("LOCATED_AT", "personnage", "langue", same_node=False) is None
+    assert (
+        P.validate_relation("LOCATED_AT", "personnage", "langue", same_node=False)
+        is None
+    )
 
 
 @relation_typing_suite.test()
 def test_profile_without_vocab_allows_everything() -> None:
     """Un profil sans relation_vocabulary ni narrative_rel (chantier) ne contraint
     rien — rétrocompat."""
-    assert CHANTIER_PROFILE.validate_relation("WHATEVER", "outil", "ouvrage", same_node=False) is None
+    assert (
+        CHANTIER_PROFILE.validate_relation(
+            "WHATEVER", "outil", "ouvrage", same_node=False
+        )
+        is None
+    )
     assert CHANTIER_PROFILE.validate_relation("ANY", "x", "x", same_node=True) is None

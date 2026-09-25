@@ -12,6 +12,7 @@ tools), et la route de chat injecte EN CODE le bloc « décisions de l'auteur »
 Même mécanique neuro-symbolique que le working set (cf. graph.render_recent_block) :
 posé par du code, jamais par le modèle.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -33,7 +34,10 @@ async def record_user_edit(
         await session.run(
             "CREATE (:UserEdit {kind: $kind, name: $name, detail: $detail,"
             " ts: timestamp(), notified: false, project: $project})",
-            kind=kind, name=name, detail=detail, project=project,
+            kind=kind,
+            name=name,
+            detail=detail,
+            project=project,
         )
 
 
@@ -53,7 +57,8 @@ async def recent_user_edits(
         await session.run(
             "MATCH (u:UserEdit {project: $project})"
             " WHERE u.ts < timestamp() - $cutoff DELETE u",
-            cutoff=cutoff_ms, project=project,
+            cutoff=cutoff_ms,
+            project=project,
         )
         result = await session.run(
             """
@@ -61,7 +66,8 @@ async def recent_user_edits(
             RETURN u.kind AS kind, u.name AS name, u.detail AS detail
             ORDER BY u.ts DESC LIMIT $limit
             """,
-            limit=limit, project=project,
+            limit=limit,
+            project=project,
         )
         rows = [dict(r) for r in await result.data()]
     rows.reverse()  # chronologique : la dernière action en dernier (la plus saillante)

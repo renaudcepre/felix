@@ -63,7 +63,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         key: build_chronicle_agent(choice) for key, choice in ATELIER_CHOICES.items()
     }
 
-    logger.info("Felix API started — model=%s, base_url=%s", settings.llm_model, settings.llm_base_url)
+    logger.info(
+        "Felix API started — model=%s, base_url=%s",
+        settings.llm_model,
+        settings.llm_base_url,
+    )
     yield
 
     await close_driver(driver)

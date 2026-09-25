@@ -8,6 +8,7 @@ create_core_agent assemble les instructions en trois couches :
 Sans argument, create_core_agent() reproduit le comportement du prototype
 générique (discipline seule, aucun domaine).
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -194,8 +195,15 @@ def create_core_agent(
     )
     # tools=None → noyau complet (5 outils). Un sous-agent peut restreindre
     # l'ensemble (ex. relieur : lecture seule + add_relation).
-    default = (describe_schema, find_entity, add_entity, update_entity, add_relation,
-               rename_entity, retype_entity)
-    for tool in (tools if tools is not None else default):
+    default = (
+        describe_schema,
+        find_entity,
+        add_entity,
+        update_entity,
+        add_relation,
+        rename_entity,
+        retype_entity,
+    )
+    for tool in tools if tools is not None else default:
         agent.tool(tool)
     return agent

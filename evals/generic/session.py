@@ -7,6 +7,7 @@ Run:
 Wipe le graphe Neo4j partagé avant chaque cas — ne pas lancer en même temps
 qu'une autre session d'evals.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated

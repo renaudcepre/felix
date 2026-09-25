@@ -97,7 +97,10 @@ def _collect_candidates(
             alias_score = _coverage_score(norm, norm_alias)
             if alias_score > score and (
                 alias_score >= THRESHOLD_AUTO
-                or (alias_score >= THRESHOLD_FUZZY and _shares_significant_word(norm, norm_alias))
+                or (
+                    alias_score >= THRESHOLD_FUZZY
+                    and _shares_significant_word(norm, norm_alias)
+                )
             ):
                 candidates.append((eid, ename, alias_score))
     return candidates

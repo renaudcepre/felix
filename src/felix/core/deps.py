@@ -4,6 +4,7 @@ GenericDeps est la classe racine (inversion de dépendance : le bot B la ré-exp
 sous le nom AtelierDeps). Elle porte le driver, les cartes UI, le journal des
 écritures, l'ensemble des entités touchées ce tour, et le profil de domaine.
 """
+
 from __future__ import annotations
 
 import asyncio

@@ -4,6 +4,7 @@ fermé quand un canal narratif existe, seed nu, et sélection évolutive.
 Univers de TEST des cas synthétiques : presse à balles BX-9 (cf.
 [[feedback_prompt_test_leakage]], déjà utilisé par test_schema_changes.py).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -43,7 +44,8 @@ PROJ = "test-emergent-profile"
 async def _wipe(driver: AsyncDriver) -> None:
     async with driver.session() as session:
         await session.run(
-            "MATCH (n:ProjectProfile {project: $p}) DETACH DELETE n", p=PROJ,
+            "MATCH (n:ProjectProfile {project: $p}) DETACH DELETE n",
+            p=PROJ,
         )
 
 
@@ -59,6 +61,7 @@ async def _driver() -> AsyncGenerator[AsyncDriver]:
 
 
 # ──────────────────── Étape 1 — vocabulaire fermé ────────────────────
+
 
 @emergent_profile_suite.test()
 def test_narrative_rel_with_empty_vocab_refuses_structural_type() -> None:
@@ -96,9 +99,12 @@ def test_chantier_profile_unchanged_empty_vocab_no_narrative_rel() -> None:
     explicite de la condition touchée."""
     assert CHANTIER_PROFILE.narrative_rel == ""
     assert not CHANTIER_PROFILE.relation_vocabulary
-    assert CHANTIER_PROFILE.validate_relation(
-        "ANYTHING", "outil", "materiau", same_node=False
-    ) is None
+    assert (
+        CHANTIER_PROFILE.validate_relation(
+            "ANYTHING", "outil", "materiau", same_node=False
+        )
+        is None
+    )
 
 
 @emergent_profile_suite.test()
@@ -114,7 +120,9 @@ def test_populated_vocab_with_narrative_rel_behavior_unchanged() -> None:
     """Un profil à vocab NON vide + narrative_rel (ex. maintenance) garde son
     comportement d'avant : le refus liste les types structurels exacts."""
     profile = Profile(
-        name="test", description="", entity_types=(),
+        name="test",
+        description="",
+        entity_types=(),
         relation_vocabulary=(RelationSpec("CONTROLS", "pilote"),),
         narrative_rel=NARRATIVE_REL,
     )
@@ -125,6 +133,7 @@ def test_populated_vocab_with_narrative_rel_behavior_unchanged() -> None:
 
 
 # ──────────────────── Étape 2 — EMERGENT_SEED_PROFILE ────────────────────
+
 
 @emergent_profile_suite.test()
 def test_seed_profile_has_no_entity_types() -> None:
@@ -169,6 +178,7 @@ def test_seed_profile_has_generic_consistency_rules() -> None:
 
 # ──────────────────── Étape 6 — choix évolutif + resolve_profile ────────────────────
 
+
 @emergent_profile_suite.test()
 def test_agent_choice_defaults_to_non_evolving() -> None:
     assert ATELIER_CHOICES["scenario"].evolving is False
@@ -195,7 +205,9 @@ def test_emergent_choice_reuses_maintenance_personas() -> None:
 
 
 @emergent_profile_suite.test()
-async def test_resolve_profile_non_evolving_ignores_db_and_returns_choice_profile() -> None:
+async def test_resolve_profile_non_evolving_ignores_db_and_returns_choice_profile() -> (
+    None
+):
     choice = ATELIER_CHOICES["scenario"]
     # driver=None : un choix non-évolutif ne doit JAMAIS toucher la base.
     profile = await resolve_profile(None, choice, project="whatever")  # type: ignore[arg-type]
@@ -218,8 +230,10 @@ async def test_resolve_profile_evolving_with_stored_returns_stored(
 ) -> None:
     await _wipe(driver)
     evolved = Profile(
-        name="documentation technique", description="évolué",
-        entity_types=(), narrative_rel=NARRATIVE_REL,
+        name="documentation technique",
+        description="évolué",
+        entity_types=(),
+        narrative_rel=NARRATIVE_REL,
         relation_vocabulary=(RelationSpec("CONTROLS", "pilote"),),
     )
     await save_project_profile(driver, evolved, project=PROJ)
@@ -234,11 +248,14 @@ async def test_resolve_profile_evolving_with_stored_returns_stored(
 # Plus AUCUN texte scénario codé en dur côté front : welcome/input_placeholder
 # viennent du mode choisi (cf. felix.atelier.agent.profile_summary).
 
+
 @emergent_profile_suite.test()
 def test_all_choices_have_non_empty_ui_vocabulary() -> None:
     for choice in ATELIER_CHOICES.values():
         assert choice.welcome.strip(), f"{choice.key} : welcome vide"
-        assert choice.input_placeholder.strip(), f"{choice.key} : input_placeholder vide"
+        assert choice.input_placeholder.strip(), (
+            f"{choice.key} : input_placeholder vide"
+        )
 
 
 @emergent_profile_suite.test()
@@ -285,6 +302,7 @@ def test_profile_summary_exposes_ui_vocabulary_and_evolving() -> None:
 # dicts pré-construits d'app.state, donc sur le SEED — le chat ne connaissait
 # jamais le vocabulaire appris (#82).
 
+
 def _instructions_text(agent: object) -> str:
     """Instructions concaténées d'un Agent pydantic-ai — inspection SANS appel
     réseau. Tous nos builders passent ``instructions=`` comme une simple
@@ -294,7 +312,8 @@ def _instructions_text(agent: object) -> str:
 
 
 _EVOLVED_WITH_PROMOTED_TYPE = Profile(
-    name="documentation technique", description="évolué",
+    name="documentation technique",
+    description="évolué",
     entity_types=(EntityType("vanne", ("emplacement",)),),
     narrative_rel=NARRATIVE_REL,
     relation_vocabulary=(RelationSpec("CONTROLS", "pilote"),),
@@ -358,7 +377,9 @@ def test_non_evolving_master_agent_uses_choice_profile_by_default() -> None:
 @emergent_profile_suite.test()
 def test_gate_agent_appends_short_profile_block_with_types_and_relations() -> None:
     profile = Profile(
-        name="test", description="", entity_types=(EntityType("vanne", ()),),
+        name="test",
+        description="",
+        entity_types=(EntityType("vanne", ()),),
         relation_vocabulary=(RelationSpec("CONTROLS", "pilote"),),
     )
     choice = ATELIER_CHOICES["emergent"]
@@ -382,7 +403,9 @@ def test_gate_profile_block_has_no_modeling_rules_dump() -> None:
     """Le bloc gate ne colle QUE des noms — pas modeling_rules ni examples
     (garder le gate cheap, #82)."""
     profile = Profile(
-        name="test", description="", entity_types=(EntityType("vanne", ()),),
+        name="test",
+        description="",
+        entity_types=(EntityType("vanne", ()),),
         modeling_rules=("une règle qui ne doit PAS fuiter dans le gate",),
         relation_vocabulary=(
             RelationSpec("CONTROLS", "pilote", examples="ne doit pas fuiter non plus"),

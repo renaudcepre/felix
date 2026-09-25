@@ -8,6 +8,7 @@ le LLM a mal modélisé. Chaque action manuelle pose un tombstone `:UserEdit`
 (felix.core.user_edits) que la route de chat injecte au LLM — sinon l'entité
 supprimée renaît au tour suivant via l'historique threadé.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
@@ -78,7 +79,9 @@ async def list_entities(
     aller-retour par carte."""
     entities = await all_entities(driver, project=project)
     relation_counts = await entity_relation_counts(
-        driver, project=project, excluded_rel_types=_CARD_EXCLUDED_RELS,
+        driver,
+        project=project,
+        excluded_rel_types=_CARD_EXCLUDED_RELS,
     )
     sources = await entity_primary_sources(driver, project=project)
     summaries = []
@@ -91,8 +94,11 @@ async def list_entities(
             continue
         raw_source = sources.get(e["id"])
         source = (
-            EntitySource(title=raw_source["title"], pages=sorted(raw_source.get("pages") or []))
-            if raw_source else None
+            EntitySource(
+                title=raw_source["title"], pages=sorted(raw_source.get("pages") or [])
+            )
+            if raw_source
+            else None
         )
         summaries.append(
             EntitySummary(
@@ -109,7 +115,8 @@ async def list_entities(
 
 @router.get("/{entity_id}")
 async def get_entity(
-    entity_id: str, driver: Neo4jDriver,
+    entity_id: str,
+    driver: Neo4jDriver,
     project: str = Query(default=DEFAULT_PROJECT),
 ) -> EntityDetail:
     node = await find_node(driver, entity_id, project=project)
@@ -168,12 +175,15 @@ def _label(node: dict) -> str:
     résumé (son « nom » EST l'action), une fiche par nom (type)."""
     if node.get("entity_type") == "evenement":
         return f"l'événement « {node.get('resume', node.get('name', node['id']))} »"
-    return f"l'entité « {node.get('name', node['id'])} » ({node.get('entity_type', '?')})"
+    return (
+        f"l'entité « {node.get('name', node['id'])} » ({node.get('entity_type', '?')})"
+    )
 
 
 @router.delete("/{entity_id}")
 async def remove_entity(
-    entity_id: str, driver: Neo4jDriver,
+    entity_id: str,
+    driver: Neo4jDriver,
     project: str = Query(default=DEFAULT_PROJECT),
 ) -> dict:
     node = await find_node(driver, entity_id, project=project)
@@ -182,15 +192,20 @@ async def remove_entity(
     label = _label(node)
     await delete_entity(driver, node["id"], project=project)
     await record_user_edit(
-        driver, "suppression", node.get("name", node["id"]),
-        f"{label} a été supprimé(e)", project=project,
+        driver,
+        "suppression",
+        node.get("name", node["id"]),
+        f"{label} a été supprimé(e)",
+        project=project,
     )
     return {"deleted": node["id"]}
 
 
 @router.patch("/{entity_id}")
 async def patch_entity(
-    entity_id: str, patch: EntityPatch, driver: Neo4jDriver,
+    entity_id: str,
+    patch: EntityPatch,
+    driver: Neo4jDriver,
     project: str = Query(default=DEFAULT_PROJECT),
 ) -> dict:
     """Correction manuelle d'une fiche : rename (MÊME effet que le tool
@@ -204,27 +219,34 @@ async def patch_entity(
     if patch.name and patch.name.strip() and patch.name != node.get("name"):
         out = await rename_or_merge(driver, node["id"], patch.name, project=project)
         if out.status == "invalid":
-            raise HTTPException(status_code=422, detail=f"Nom invalide : {patch.name!r}")
+            raise HTTPException(
+                status_code=422, detail=f"Nom invalide : {patch.name!r}"
+            )
         final_id, merged = out.final_id, out.status == "merged"
         detail = (
             f"« {out.old_name} » et « {out.new_name} » étaient la même entité — fusionnées"
-            if merged else f"« {out.old_name} » a été renommé(e) « {out.new_name} »"
+            if merged
+            else f"« {out.old_name} » a été renommé(e) « {out.new_name} »"
         )
-        await record_user_edit(driver, "correction", out.new_name, detail, project=project)
+        await record_user_edit(
+            driver, "correction", out.new_name, detail, project=project
+        )
 
     to_set = {k: v for k, v in patch.props.items() if k not in _NON_DISPLAY_KEYS}
     if to_set:
         async with driver.session() as session:
             await session.run(
                 "MATCH (e:GenEntity {id: $id, project: $project}) SET e += $props",
-                id=final_id, props=to_set, project=project,
+                id=final_id,
+                props=to_set,
+                project=project,
             )
         name = patch.name or node.get("name", final_id)
         for key, value in to_set.items():
             old = node.get(key)
             detail = (
-                f"la propriété {key} de « {name} » a été corrigée : "
-                f"{old!r} → {value!r}" if old is not None
+                f"la propriété {key} de « {name} » a été corrigée : {old!r} → {value!r}"
+                if old is not None
                 else f"la propriété {key} de « {name} » a été fixée à {value!r}"
             )
             await record_user_edit(driver, "correction", name, detail, project=project)
@@ -236,13 +258,17 @@ async def patch_entity(
                 await session.run(
                     f"MATCH (e:GenEntity {{id: $id, project: $project}})"
                     f" REMOVE e.`{key.replace('`', '')}`",
-                    id=final_id, project=project,
+                    id=final_id,
+                    project=project,
                 )
         name = patch.name or node.get("name", final_id)
         for key in to_remove:
             await record_user_edit(
-                driver, "suppression", name,
-                f"la propriété {key} de « {name} » a été supprimée", project=project,
+                driver,
+                "suppression",
+                name,
+                f"la propriété {key} de « {name} » a été supprimée",
+                project=project,
             )
 
     # La fiche corrigée entre dans le working set : les extracteurs la VOIENT.
@@ -252,7 +278,10 @@ async def patch_entity(
 
 @router.delete("/{entity_id}/relations/{rel_type}/{other_id}")
 async def remove_relation(  # noqa: PLR0913 — clé d'arête composite + scope projet (cf. delete_relation)
-    entity_id: str, rel_type: str, other_id: str, driver: Neo4jDriver,
+    entity_id: str,
+    rel_type: str,
+    other_id: str,
+    driver: Neo4jDriver,
     verbe_slug: str | None = Query(default=None),
     project: str = Query(default=DEFAULT_PROJECT),
 ) -> dict:
@@ -265,12 +294,19 @@ async def remove_relation(  # noqa: PLR0913 — clé d'arête composite + scope 
     if not a or not b:
         raise HTTPException(status_code=404, detail="Entity not found")
     if not await delete_relation(
-        driver, a["id"], b["id"], rel_type, verbe_slug, project=project,
+        driver,
+        a["id"],
+        b["id"],
+        rel_type,
+        verbe_slug,
+        project=project,
     ):
         raise HTTPException(status_code=404, detail="Relation not found")
     label = rel_type if verbe_slug is None else f"{rel_type} « {verbe_slug} »"
     await record_user_edit(
-        driver, "suppression", a.get("name", a["id"]),
+        driver,
+        "suppression",
+        a.get("name", a["id"]),
         f"la relation {a.get('name', a['id'])} —[{label}]→ "
         f"{b.get('name', b['id'])} a été supprimée (elle était fausse)",
         project=project,

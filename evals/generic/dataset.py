@@ -9,6 +9,7 @@ Ce que chaque groupe mesure :
                     contradiction directe, via une relation, et le miroir
                     compatible (anti-faux-positif, la plaie historique du 7B)
 """
+
 from __future__ import annotations
 
 from protest import ForEach
@@ -28,10 +29,16 @@ from evals.generic.evaluators import (
 
 atelier_seed_dalle = {
     "entities": [
-        {"name": "dalle béton", "entity_type": "ouvrage", "props": {"largeur": "3 m", "longueur": "4 m"}},
+        {
+            "name": "dalle béton",
+            "entity_type": "ouvrage",
+            "props": {"largeur": "3 m", "longueur": "4 m"},
+        },
         {"name": "abri de jardin", "entity_type": "ouvrage", "props": {}},
     ],
-    "relations": [{"from": "abri de jardin", "to": "dalle béton", "rel_type": "pose_sur"}],
+    "relations": [
+        {"from": "abri de jardin", "to": "dalle béton", "rel_type": "pose_sur"}
+    ],
 }
 
 # ── seeds « échelle » ──
@@ -55,18 +62,31 @@ _ENTOURAGE = [
 ]
 big_noir_seed = {
     "entities": [
-        {"name": "Marco Santi", "entity_type": "personnage",
-         "props": {"role": "suspect principal",
-                   "alibi": "chez sa mère à Marseille le soir du 12 juin",
-                   "adresse": "12 rue Moncey, Lyon"}},
-        {"name": "Le Vesuvio", "entity_type": "lieu",
-         "props": {"adresse": "8 quai de Bondy, Lyon", "categorie": "club de nuit"}},
-        *[{"name": n, "entity_type": "personnage", "props": {"role": r, "alibi": a}}
-          for n, r, a in _ENTOURAGE],
+        {
+            "name": "Marco Santi",
+            "entity_type": "personnage",
+            "props": {
+                "role": "suspect principal",
+                "alibi": "chez sa mère à Marseille le soir du 12 juin",
+                "adresse": "12 rue Moncey, Lyon",
+            },
+        },
+        {
+            "name": "Le Vesuvio",
+            "entity_type": "lieu",
+            "props": {"adresse": "8 quai de Bondy, Lyon", "categorie": "club de nuit"},
+        },
+        *[
+            {"name": n, "entity_type": "personnage", "props": {"role": r, "alibi": a}}
+            for n, r, a in _ENTOURAGE
+        ],
     ],
     "relations": [
         {"from": "Marco Santi", "to": "Le Vesuvio", "rel_type": "gerant_de"},
-        *[{"from": "Marco Santi", "to": n, "rel_type": "connait"} for n, _, _ in _ENTOURAGE],
+        *[
+            {"from": "Marco Santi", "to": n, "rel_type": "connait"}
+            for n, _, _ in _ENTOURAGE
+        ],
     ],
 }
 
@@ -74,24 +94,69 @@ big_noir_seed = {
 # devra être retrouvée au milieu d'une vingtaine de clés réparties sur 4 types.
 chantier_seed = {
     "entities": [
-        {"name": "perceuse Bosch GSB", "entity_type": "outil",
-         "props": {"date_achat": "2023", "prix": "129 euros", "fournisseur": "Leroy Merlin"}},
-        {"name": "marteau XP-55", "entity_type": "outil",
-         "props": {"date_achat": "2022", "prix": "25 euros"}},
-        {"name": "visseuse Makita DDF485", "entity_type": "outil",
-         "props": {"date_achat": "2021", "etat": "batterie fatiguée"}},
-        {"name": "bastaings 60x180", "entity_type": "materiau",
-         "props": {"essence": "douglas", "quantite": "12", "fournisseur": "scierie Martin",
-                   "prix": "340 euros", "date_achat": "avril 2024"}},
-        {"name": "panneaux OSB 18mm", "entity_type": "materiau",
-         "props": {"quantite": "8", "prix": "210 euros", "fournisseur": "Brico Dépôt"}},
-        {"name": "dalle béton", "entity_type": "ouvrage",
-         "props": {"largeur": "3 m", "longueur": "4 m", "epaisseur": "12 cm",
-                   "date_coulage": "mars 2024"}},
-        {"name": "abri de jardin", "entity_type": "ouvrage",
-         "props": {"surface": "9 m2", "hauteur_faitage": "2,4 m"}},
-        {"name": "Paul Vidal", "entity_type": "personne",
-         "props": {"role": "maçon", "telephone": "06 11 22 33 44", "tarif_jour": "280 euros"}},
+        {
+            "name": "perceuse Bosch GSB",
+            "entity_type": "outil",
+            "props": {
+                "date_achat": "2023",
+                "prix": "129 euros",
+                "fournisseur": "Leroy Merlin",
+            },
+        },
+        {
+            "name": "marteau XP-55",
+            "entity_type": "outil",
+            "props": {"date_achat": "2022", "prix": "25 euros"},
+        },
+        {
+            "name": "visseuse Makita DDF485",
+            "entity_type": "outil",
+            "props": {"date_achat": "2021", "etat": "batterie fatiguée"},
+        },
+        {
+            "name": "bastaings 60x180",
+            "entity_type": "materiau",
+            "props": {
+                "essence": "douglas",
+                "quantite": "12",
+                "fournisseur": "scierie Martin",
+                "prix": "340 euros",
+                "date_achat": "avril 2024",
+            },
+        },
+        {
+            "name": "panneaux OSB 18mm",
+            "entity_type": "materiau",
+            "props": {
+                "quantite": "8",
+                "prix": "210 euros",
+                "fournisseur": "Brico Dépôt",
+            },
+        },
+        {
+            "name": "dalle béton",
+            "entity_type": "ouvrage",
+            "props": {
+                "largeur": "3 m",
+                "longueur": "4 m",
+                "epaisseur": "12 cm",
+                "date_coulage": "mars 2024",
+            },
+        },
+        {
+            "name": "abri de jardin",
+            "entity_type": "ouvrage",
+            "props": {"surface": "9 m2", "hauteur_faitage": "2,4 m"},
+        },
+        {
+            "name": "Paul Vidal",
+            "entity_type": "personne",
+            "props": {
+                "role": "maçon",
+                "telephone": "06 11 22 33 44",
+                "tarif_jour": "280 euros",
+            },
+        },
     ],
     "relations": [
         {"from": "abri de jardin", "to": "dalle béton", "rel_type": "pose_sur"},
@@ -116,7 +181,9 @@ generic_cases = ForEach(
             },
             evaluators=[
                 entities_exist(names="marteau, perceuse"),
-                prop_key_shared(entities="marteau, perceuse", pattern="achat|achet|date|annee"),
+                prop_key_shared(
+                    entities="marteau, perceuse", pattern="achat|achet|date|annee"
+                ),
                 same_entity_type(entities="marteau, perceuse"),
             ],
         ),
@@ -126,8 +193,11 @@ generic_cases = ForEach(
                 "messages": ["J'ai aussi une perceuse Bosch GSB, achetée en 2023."],
                 "seed": {
                     "entities": [
-                        {"name": "marteau XP-55", "entity_type": "outil",
-                         "props": {"date_achat": "2022"}},
+                        {
+                            "name": "marteau XP-55",
+                            "entity_type": "outil",
+                            "props": {"date_achat": "2022"},
+                        },
                     ],
                 },
             },
@@ -168,8 +238,14 @@ generic_cases = ForEach(
                 ],
                 "seed": {
                     "entities": [
-                        {"name": "Marco Santi", "entity_type": "personnage",
-                         "props": {"role": "suspect", "alibi": "chez sa mère le soir du 12 juin"}},
+                        {
+                            "name": "Marco Santi",
+                            "entity_type": "personnage",
+                            "props": {
+                                "role": "suspect",
+                                "alibi": "chez sa mère le soir du 12 juin",
+                            },
+                        },
                     ],
                 },
             },
@@ -200,8 +276,11 @@ generic_cases = ForEach(
                 ],
                 "seed": {
                     "entities": [
-                        {"name": "pont de Remagen", "entity_type": "pont",
-                         "props": {"date_capture": "7 mars 1945"}},
+                        {
+                            "name": "pont de Remagen",
+                            "entity_type": "pont",
+                            "props": {"date_capture": "7 mars 1945"},
+                        },
                     ],
                 },
             },
@@ -215,16 +294,26 @@ generic_cases = ForEach(
         EvalCase(
             name="check_direct_noir",
             inputs={
-                "messages": ["Un témoin affirme avoir vu Marco au Vesuvio le soir du 12 juin."],
+                "messages": [
+                    "Un témoin affirme avoir vu Marco au Vesuvio le soir du 12 juin."
+                ],
                 # Le Vesuvio doit être localisé : sans adresse, « chez sa mère à
                 # Marseille » vs « au Vesuvio » n'est pas une contradiction
                 # démontrable — le judge l'a fait remarquer à juste titre.
                 "seed": {
                     "entities": [
-                        {"name": "Marco Santi", "entity_type": "personnage",
-                         "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
-                        {"name": "Le Vesuvio", "entity_type": "lieu",
-                         "props": {"adresse": "8 quai de Bondy, Lyon"}},
+                        {
+                            "name": "Marco Santi",
+                            "entity_type": "personnage",
+                            "props": {
+                                "alibi": "chez sa mère à Marseille le soir du 12 juin"
+                            },
+                        },
+                        {
+                            "name": "Le Vesuvio",
+                            "entity_type": "lieu",
+                            "props": {"adresse": "8 quai de Bondy, Lyon"},
+                        },
                     ],
                 },
                 "check": "marco",
@@ -263,9 +352,16 @@ generic_cases = ForEach(
                 ],
                 "seed": {
                     "entities": [
-                        {"name": "pont de Remagen", "entity_type": "pont",
-                         "props": {"effondrement": "10 mars 1945"}},
-                        {"name": "9e division blindée", "entity_type": "unite_militaire", "props": {}},
+                        {
+                            "name": "pont de Remagen",
+                            "entity_type": "pont",
+                            "props": {"effondrement": "10 mars 1945"},
+                        },
+                        {
+                            "name": "9e division blindée",
+                            "entity_type": "unite_militaire",
+                            "props": {},
+                        },
                     ],
                 },
                 "check": "remagen",
@@ -282,7 +378,9 @@ generic_cases = ForEach(
         EvalCase(
             name="scale_check_big_neighborhood",
             inputs={
-                "messages": ["Un témoin formel a vu Marco au Vesuvio le soir du 12 juin."],
+                "messages": [
+                    "Un témoin formel a vu Marco au Vesuvio le soir du 12 juin."
+                ],
                 "seed": big_noir_seed,
                 "check": "marco",
             },
@@ -291,7 +389,9 @@ generic_cases = ForEach(
         EvalCase(
             name="scale_check_big_no_false_positive",
             inputs={
-                "messages": ["Marco a déjeuné au Vesuvio avec Antoine Berger le 14 juin à midi."],
+                "messages": [
+                    "Marco a déjeuné au Vesuvio avec Antoine Berger le 14 juin à midi."
+                ],
                 "seed": big_noir_seed,
                 "check": "marco",
             },
@@ -330,7 +430,9 @@ generic_cases = ForEach(
             evaluators=[
                 entities_exist(names="marco, lea, vesuvio, goulot"),
                 count_matching(pattern="^marco|^santi", n=1),
-                has_prop_value(entity="marco santi", key_pattern="alibi", value="frère"),
+                has_prop_value(
+                    entity="marco santi", key_pattern="alibi", value="frère"
+                ),
                 relation_between(a="lea", b="marco santi"),
             ],
         ),

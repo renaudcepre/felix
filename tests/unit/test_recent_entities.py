@@ -9,6 +9,7 @@ Fix neuro-symbolique : la route injecte EN CODE un bloc borné « entités déj�
 (les N plus récemment touchées, pas toute la base) en tête du prompt des extracteurs.
 Ici on teste la partie PURE : le rendu du bloc, et la borne configurée.
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite

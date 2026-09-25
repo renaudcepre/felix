@@ -4,6 +4,7 @@ en bout sur un graphe construit à la main.
 
 Univers de TEST : presse à balles BX-9 (cf. [[feedback_prompt_test_leakage]]).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -37,7 +38,8 @@ PROJ = "test-schema-detector"
 async def _wipe(driver: AsyncDriver) -> None:
     async with driver.session() as session:
         await session.run(
-            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ,
+            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n",
+            p=PROJ,
         )
 
 
@@ -47,7 +49,8 @@ async def _wipe_profile(driver: AsyncDriver) -> None:
     des propositions sur PROJ."""
     async with driver.session() as session:
         await session.run(
-            "MATCH (p:ProjectProfile {project: $p}) DETACH DELETE p", p=PROJ,
+            "MATCH (p:ProjectProfile {project: $p}) DETACH DELETE p",
+            p=PROJ,
         )
 
 
@@ -63,26 +66,38 @@ async def _driver() -> AsyncGenerator[AsyncDriver]:
         await driver.close()
 
 
-async def _seed_entity(driver: AsyncDriver, entity_id: str, name: str, etype: str) -> None:
+async def _seed_entity(
+    driver: AsyncDriver, entity_id: str, name: str, etype: str
+) -> None:
     async with driver.session() as session:
         await session.run(
             "MERGE (e:GenEntity {id: $id, project: $project})"
             " SET e.name = $name, e.entity_type = $type",
-            id=entity_id, name=name, type=etype, project=PROJ,
+            id=entity_id,
+            name=name,
+            type=etype,
+            project=PROJ,
         )
 
 
-async def _seed_narrative(driver: AsyncDriver, from_id: str, to_id: str, verbe: str) -> None:
+async def _seed_narrative(
+    driver: AsyncDriver, from_id: str, to_id: str, verbe: str
+) -> None:
     async with driver.session() as session:
         await session.run(
             "MATCH (a:GenEntity {id: $a, project: $p}), (b:GenEntity {id: $b, project: $p})"
             " MERGE (a)-[r:REL {rel_type: 'LIE_A', verbe_slug: $vs}]->(b)"
             " SET r.verbe = $verbe",
-            a=from_id, b=to_id, p=PROJ, vs=slugify(verbe), verbe=verbe,
+            a=from_id,
+            b=to_id,
+            p=PROJ,
+            vs=slugify(verbe),
+            verbe=verbe,
         )
 
 
 # ──────────────────── verb_head (pur) ────────────────────
+
 
 @schema_detector_suite.test()
 def test_verb_head_plain_verb() -> None:
@@ -115,6 +130,7 @@ def test_verb_head_case_and_accent_insensitive() -> None:
 # voyait promu en rel_type « UNE » — l'article n'était pas dans le stoplist,
 # qui ne retirait que « est ».
 
+
 @schema_detector_suite.test()
 def test_verb_head_strips_indefinite_article() -> None:
     assert verb_head("est une évolution du slogan pour") == "evolution"
@@ -142,6 +158,7 @@ def test_content_tokens_strips_extended_stopwords() -> None:
 
 
 # ──────────────────── suggest_rel_type (nom suggéré, distinct de la clé de cluster) ────────────────────
+
 
 @schema_detector_suite.test()
 def test_suggest_rel_type_evolution_slogan() -> None:
@@ -177,6 +194,7 @@ def test_suggest_rel_type_empty_verb_is_empty() -> None:
 
 
 # ──────────────────── cluster_verbs (pur) ────────────────────
+
 
 @schema_detector_suite.test()
 def test_cluster_verbs_groups_by_head_above_threshold() -> None:
@@ -214,6 +232,7 @@ def test_cluster_verbs_groups_infinitive_and_present_tense_together() -> None:
 # pas un mot de fonction générique (au sens du stoplist qui retire des mots
 # EN TÊTE d'un verbe réel) — c'est retiré APRÈS clustering, cf. schema_detector.
 
+
 @schema_detector_suite.test()
 def test_cluster_verbs_excludes_conjunction_head_sinon() -> None:
     edges = [{"verbe": "sinon on bascule"}, {"verbe": "sinon rien ne se passe"}]
@@ -236,7 +255,9 @@ def test_cluster_verbs_excludes_conjunction_head_elided_lorsqu() -> None:
     """Apostrophe TYPOGRAPHIQUE (U+2019, copié-collé Word/Docs — pas l'apostrophe
     droite ASCII reconnue par _normalize) : « lorsqu » + « il » élidés se
     scindent en deux tokens — la tête retombe pile sur la conjonction."""
-    curly_apostrophe = chr(0x2019)  # U+2019 — construit à part, RUF001 le flague en littéral
+    curly_apostrophe = chr(
+        0x2019
+    )  # U+2019 — construit à part, RUF001 le flague en littéral
     edges = [
         {"verbe": f"lorsqu{curly_apostrophe}il bascule"},
         {"verbe": f"lorsqu{curly_apostrophe}elle bascule"},
@@ -255,6 +276,7 @@ def test_cluster_verbs_real_verb_not_excluded_by_conjunction_filter() -> None:
 
 
 # ──────────────────── pair_near_duplicate_types (pur) ────────────────────
+
 
 @schema_detector_suite.test()
 def test_pair_near_duplicate_types_same_singular() -> None:
@@ -285,6 +307,7 @@ def test_pair_near_duplicate_types_rarer_source_more_frequent_target() -> None:
 
 # ──────────────────── detect_proposals (Neo4j, bout en bout) ────────────────────
 
+
 @schema_detector_suite.test()
 async def test_detect_proposals_verb_cluster(
     driver: Annotated[AsyncDriver, Use(_driver)],
@@ -306,7 +329,8 @@ async def test_detect_proposals_verb_cluster(
     assert len(promote) == 1
     assert promote[0].change.rel_type == "REGLE"
     assert sorted(promote[0].report.observed_pairs) == [
-        ("commande", "organe"), ("commande", "parametre"),
+        ("commande", "organe"),
+        ("commande", "parametre"),
     ]
 
 
@@ -389,7 +413,9 @@ async def test_detect_proposals_type_near_duplicate(
         driver, project=PROJ, profile=EMERGENT_SEED_PROFILE, min_count=2
     )
     merges = [p for p in proposals if isinstance(p.change, MergeTypes)]
-    assert any(m.change.sources == ["verins"] and m.change.target == "verin" for m in merges)
+    assert any(
+        m.change.sources == ["verins"] and m.change.target == "verin" for m in merges
+    )
 
 
 @schema_detector_suite.test()
@@ -428,7 +454,9 @@ async def test_detect_proposals_etancheite_projet(
             "MATCH (a:GenEntity {id:'x', project:$p}), (b:GenEntity {id:'y', project:$p})"
             " MERGE (a)-[r:REL {rel_type:'LIE_A', verbe_slug:$vs}]->(b)"
             " SET r.verbe=$verbe",
-            p=proj_b, vs=slugify("regule"), verbe="régule",
+            p=proj_b,
+            vs=slugify("regule"),
+            verbe="régule",
         )
         await session.run(
             "MATCH (a:GenEntity {id:'x', project:$p}), (b:GenEntity {id:'y', project:$p})"
@@ -442,10 +470,13 @@ async def test_detect_proposals_etancheite_projet(
             )
             assert not [p for p in proposals if isinstance(p.change, PromoteVerbs)]
         finally:
-            await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj_b)
+            await session.run(
+                "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj_b
+            )
 
 
 # ──────────────────── refus persistés (file de validation, Étape 8) ────────────────────
+
 
 @schema_detector_suite.test()
 async def test_detect_proposals_skips_rejected_verb_cluster(
@@ -462,7 +493,9 @@ async def test_detect_proposals_skips_rejected_verb_cluster(
     await _seed_narrative(driver, "levier", "verin", "règle")
     await _seed_narrative(driver, "levier", "trappe", "règle")
     await save_rejected_change(
-        driver, PromoteVerbs(verbe_slugs=["regle"], rel_type="AUTRE_NOM"), project=PROJ,
+        driver,
+        PromoteVerbs(verbe_slugs=["regle"], rel_type="AUTRE_NOM"),
+        project=PROJ,
     )
     try:
         proposals = await detect_proposals(
@@ -486,7 +519,9 @@ async def test_detect_proposals_does_not_skip_unrelated_verb_cluster(
     await _seed_narrative(driver, "levier", "verin", "règle")
     await _seed_narrative(driver, "levier", "trappe", "règle")
     await save_rejected_change(
-        driver, PromoteVerbs(verbe_slugs=["pilote"], rel_type="CONTROLS"), project=PROJ,
+        driver,
+        PromoteVerbs(verbe_slugs=["pilote"], rel_type="CONTROLS"),
+        project=PROJ,
     )
     try:
         proposals = await detect_proposals(
@@ -509,7 +544,9 @@ async def test_detect_proposals_skips_rejected_type_merge(
     await _seed_entity(driver, "verin2", "Vérin 2", "verin")
     await _seed_entity(driver, "verinbis", "Vérin bis", "verins")
     await save_rejected_change(
-        driver, MergeTypes(sources=["verins"], target="verinou"), project=PROJ,
+        driver,
+        MergeTypes(sources=["verins"], target="verinou"),
+        project=PROJ,
     )
     try:
         proposals = await detect_proposals(

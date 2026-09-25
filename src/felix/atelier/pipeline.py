@@ -7,6 +7,7 @@ même comportement best-effort (une passe qui échoue est journalisée et
 n'interrompt pas les suivantes). « Des systèmes, pas des copies » : ce module
 est CE code, écrit une fois, utilisé par les deux.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -48,8 +49,13 @@ def sse_text(ev: ServerSentEvent) -> str:
 
 
 async def stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + historique + deps partagés
-    sub_agent: Agent[GenericDeps, str], prompt: str, history: list | None, deps: GenericDeps,
-    *, stream_text: bool, holder: dict
+    sub_agent: Agent[GenericDeps, str],
+    prompt: str,
+    history: list | None,
+    deps: GenericDeps,
+    *,
+    stream_text: bool,
+    holder: dict,
 ) -> AsyncGenerator[ServerSentEvent]:
     """Joue une passe via `.iter()` : draine les cartes des tools EN LIVE (à
     chaque node) et, si `stream_text`, streame le texte. Stocke `usage` +
@@ -69,16 +75,15 @@ async def stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + histori
     capture (cf. felix.core.tools.label_for_tool_call), pas recalculé côté
     front. La Cypher exécutée par ces appels est capturée SÉPARÉMENT, à
     l'exécution, par le driver proxy posé sur `deps` (RecordingDriver)."""
-    async with sub_agent.iter(
-        prompt, deps=deps, message_history=history
-    ) as run:
+    async with sub_agent.iter(prompt, deps=deps, message_history=history) as run:
         async for node in run:
             if Agent.is_call_tools_node(node):
                 for part in node.model_response.parts:
                     if isinstance(part, ToolCallPart):
                         args = part.args_as_dict()
                         deps.query_trace.add_tool_call(
-                            part.tool_name, args,
+                            part.tool_name,
+                            args,
                             label_for_tool_call(part.tool_name, args),
                         )
             for card in deps.ui_events:
@@ -120,19 +125,34 @@ async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profi
     `usages` séparée à tenir ici).
     """
     passes = [
-        (agent, "entités", extract_prompt, message_history,
-         "Felix met à jour la bible…"),
-        (relation_agent, "relations", extract_prompt, message_history,
-         "Felix relie les fiches…"),
+        (
+            agent,
+            "entités",
+            extract_prompt,
+            message_history,
+            "Felix met à jour la bible…",
+        ),
+        (
+            relation_agent,
+            "relations",
+            extract_prompt,
+            message_history,
+            "Felix relie les fiches…",
+        ),
     ]
     # Chroniqueur sauté pour un domaine sans chronologie (#Étape 1.3) : une fiche
     # maintenance décrit un état stable, pas un déroulé — règle SYSTÉMIQUE unique
     # (runs_chronicle), partagée par la route et l'ingestion.
     if runs_chronicle(profile):
-        passes.append((
-            chronicle_agent, "événements", chronicle_prompt, None,
-            "Felix note les événements…",
-        ))
+        passes.append(
+            (
+                chronicle_agent,
+                "événements",
+                chronicle_prompt,
+                None,
+                "Felix note les événements…",
+            )
+        )
     for sub_agent, label, prompt, hist, phase_text in passes:
         try:
             yield ServerSentEvent(data=phase_text, event="phase")
@@ -196,9 +216,17 @@ async def consistency_alerts(
     if not ids:
         return
     verdicts = await asyncio.gather(
-        *(consistency_check(driver, i, deps.write_log, profile,
-                            project=deps.project_id, cost_ledger=deps.cost_ledger)
-          for i in ids),
+        *(
+            consistency_check(
+                driver,
+                i,
+                deps.write_log,
+                profile,
+                project=deps.project_id,
+                cost_ledger=deps.cost_ledger,
+            )
+            for i in ids
+        ),
         return_exceptions=True,
     )
     ok: list[CheckVerdict] = []
@@ -218,14 +246,16 @@ async def consistency_alerts(
         source_verdict = await verify_against_source(verdict, pages, deps.cost_ledger)
         title = _ALERT_TITLES.get(source_verdict.kind, _DEFAULT_ALERT_TITLE)
         yield ServerSentEvent(
-            data=json.dumps({
-                "kind": "alert",
-                "title": title,
-                "body": alert_body,
-                "status": "open",
-                "source_kind": source_verdict.kind,
-                "correction": source_verdict.correction,
-            }),
+            data=json.dumps(
+                {
+                    "kind": "alert",
+                    "title": title,
+                    "body": alert_body,
+                    "status": "open",
+                    "source_kind": source_verdict.kind,
+                    "correction": source_verdict.correction,
+                }
+            ),
             event="alert",
         )
         # Persist pour le tour suivant (#50-a) : le maître recevra ce bloc

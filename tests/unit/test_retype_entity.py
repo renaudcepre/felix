@@ -17,6 +17,7 @@ Lois testées :
 
 Univers Quillon/Darnave/Solmer — frais, absent de tous les prompts.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -42,9 +43,7 @@ PROJ = "test-retype-entity"
 
 async def _wipe(driver: AsyncDriver) -> None:
     async with driver.session() as session:
-        await session.run(
-            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ
-        )
+        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ)
 
 
 @fixture(max_concurrency=1)
@@ -70,7 +69,10 @@ async def _seed(driver: AsyncDriver, name: str, etype: str) -> None:
         await session.run(
             "MERGE (e:GenEntity {id: $id, project: $project})"
             " SET e.name = $name, e.entity_type = $type",
-            id=name.lower(), name=name, type=etype, project=PROJ,
+            id=name.lower(),
+            name=name,
+            type=etype,
+            project=PROJ,
         )
 
 
@@ -78,7 +80,8 @@ async def _type_of(driver: AsyncDriver, name: str) -> str:
     async with driver.session() as session:
         result = await session.run(
             "MATCH (e:GenEntity {id: $id, project: $p}) RETURN e.entity_type AS t",
-            id=name.lower(), p=PROJ,
+            id=name.lower(),
+            p=PROJ,
         )
         record = await result.single()
         return record["t"] if record else "?"

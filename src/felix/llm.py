@@ -1,4 +1,5 @@
 """LLM model builder — shared across chat agent and ingest pipeline."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -85,7 +86,9 @@ def build_gate_model() -> Model:
     d'un tier (ex. Devstral Small 2) avec le modèle de chat en garant."""
     return build_model(
         settings.llm_gate_model or settings.llm_chat_model,
-        settings.llm_gate_base_url if settings.llm_gate_model else settings.llm_chat_base_url,
+        settings.llm_gate_base_url
+        if settings.llm_gate_model
+        else settings.llm_chat_base_url,
     )
 
 
@@ -99,5 +102,7 @@ def build_verifier_model() -> Model:
     en garant si aucun modèle dédié n'est configuré."""
     return build_model(
         settings.llm_verifier_model or settings.llm_checker_model,
-        settings.llm_verifier_base_url if settings.llm_verifier_model else settings.llm_checker_base_url,
+        settings.llm_verifier_base_url
+        if settings.llm_verifier_model
+        else settings.llm_checker_base_url,
     )

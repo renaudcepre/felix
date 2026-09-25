@@ -6,6 +6,7 @@ check de cohérence « voisinage + judge » sans aucune sémantique de domaine c
 
 Surface publique du noyau (le bot B et les evals importent d'ici).
 """
+
 from __future__ import annotations
 
 from felix.core.agent import SYSTEM_PROMPT, create_core_agent

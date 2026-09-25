@@ -5,6 +5,7 @@ compteur muté en place, l'agrégat se recalcule par somme (même esprit que
 suivante, `felix.api.routes.costs`) lit `project_cost_totals` pour le total
 persistant affiché dans la topbar du front.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -43,9 +44,12 @@ async def record_cost_entry(
             "   at: timestamp()"
             " })"
             " CREATE (p)-[:HAS_COST]->(e)",
-            project=project, kind=kind,
-            request_tokens=summary.request_tokens, response_tokens=summary.response_tokens,
-            total_tokens=summary.total_tokens, cost_usd=summary.cost_usd,
+            project=project,
+            kind=kind,
+            request_tokens=summary.request_tokens,
+            response_tokens=summary.response_tokens,
+            total_tokens=summary.total_tokens,
+            cost_usd=summary.cost_usd,
         )
 
 

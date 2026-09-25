@@ -14,6 +14,7 @@ Deux cas concrets, pas un par fonction :
 - ``MergeTypes`` : un ou plusieurs entity_type se fondent dans un seul (un
   renommage est une fusion à une seule source).
 """
+
 from __future__ import annotations
 
 import re
@@ -115,7 +116,9 @@ def _validate_change(change: PromoteVerbs | MergeTypes) -> None:
             )
     else:
         target = change.target
-        if target in _MACHINERY_ENTITY_TYPES and any(s != target for s in change.sources):
+        if target in _MACHINERY_ENTITY_TYPES and any(
+            s != target for s in change.sources
+        ):
             raise ValueError(
                 f"« {target} » est un type machinerie (chronologie ou ingestion) "
                 "— on ne peut pas y fusionner d'autres types."
@@ -139,7 +142,9 @@ async def _fetch_matching_narrative_edges(
                    r.verbe AS verbe, r.verbe_slug AS verbe_slug, properties(r) AS props
             ORDER BY a.id, b.id, r.verbe_slug
             """,
-            project=project, narr=NARRATIVE_REL, slugs=verbe_slugs,
+            project=project,
+            narr=NARRATIVE_REL,
+            slugs=verbe_slugs,
         )
         return [dict(r) for r in await result.data()]
 
@@ -158,15 +163,24 @@ async def _fetch_existing_typed_edge(
                   (b:GenEntity {id: $to_id, project: $project})
             RETURN properties(r) AS props
             """,
-            from_id=from_id, to_id=to_id, rel_type=rel_type, project=project,
+            from_id=from_id,
+            to_id=to_id,
+            rel_type=rel_type,
+            project=project,
         )
         record = await result.single()
         return dict(record["props"]) if record else None
 
 
 async def _write_typed_edge(  # noqa: PLR0913 — l'arête finale a une clé composite + sa charge
-    driver: AsyncDriver, from_id: str, to_id: str, rel_type: str,
-    verbe_origine: list[str], extra_props: dict, *, project: str,
+    driver: AsyncDriver,
+    from_id: str,
+    to_id: str,
+    rel_type: str,
+    verbe_origine: list[str],
+    extra_props: dict,
+    *,
+    project: str,
 ) -> None:
     """MERGE de l'arête typée finale — clé (pair, rel_type), comme add_relation
     pour toute relation non-narrative (cf. felix.core.tools.add_relation)."""
@@ -178,8 +192,12 @@ async def _write_typed_edge(  # noqa: PLR0913 — l'arête finale a une clé com
             MERGE (a)-[t:REL {rel_type: $rel_type}]->(b)
             SET t.verbe_origine = $verbe_origine, t += $extra_props
             """,
-            from_id=from_id, to_id=to_id, rel_type=rel_type,
-            verbe_origine=verbe_origine, extra_props=extra_props, project=project,
+            from_id=from_id,
+            to_id=to_id,
+            rel_type=rel_type,
+            verbe_origine=verbe_origine,
+            extra_props=extra_props,
+            project=project,
         )
 
 
@@ -196,7 +214,10 @@ async def _delete_narrative_edge(
                   (b:GenEntity {id: $to_id, project: $project})
             DELETE r
             """,
-            from_id=from_id, to_id=to_id, narr=NARRATIVE_REL, vs=verbe_slug,
+            from_id=from_id,
+            to_id=to_id,
+            narr=NARRATIVE_REL,
+            vs=verbe_slug,
             project=project,
         )
 
@@ -214,7 +235,9 @@ def _dedupe_verbes(rows: list[dict]) -> list[str]:
 async def _apply_promote_verbs(
     driver: AsyncDriver, change: PromoteVerbs, *, project: str, preview: bool
 ) -> ChangeReport:
-    rows = await _fetch_matching_narrative_edges(driver, change.verbe_slugs, project=project)
+    rows = await _fetch_matching_narrative_edges(
+        driver, change.verbe_slugs, project=project
+    )
     verbes = _dedupe_verbes(rows)
 
     # Groupage par paire FINALE (après inversion éventuelle) : deux paraphrases
@@ -222,7 +245,11 @@ async def _apply_promote_verbs(
     # paire déjà inversée — doivent fusionner en UNE arête typée.
     groups: dict[tuple[str, str], list[dict]] = {}
     for row in rows:
-        key = (row["to_id"], row["from_id"]) if change.reverse else (row["from_id"], row["to_id"])
+        key = (
+            (row["to_id"], row["from_id"])
+            if change.reverse
+            else (row["from_id"], row["to_id"])
+        )
         groups.setdefault(key, []).append(row)
 
     edges_collapsed = 0
@@ -239,7 +266,9 @@ async def _apply_promote_verbs(
 
         # verbe_origine : l'existant d'abord (il gagne sur conflit de props),
         # puis les verbes NOUVEAUX de ce groupe, dédupliqués en ordre stable.
-        verbe_origine: list[str] = list(existing.get("verbe_origine") or []) if existing else []
+        verbe_origine: list[str] = (
+            list(existing.get("verbe_origine") or []) if existing else []
+        )
         for row in group_rows:
             if row["verbe"] not in verbe_origine:
                 verbe_origine.append(row["verbe"])
@@ -248,7 +277,8 @@ async def _apply_promote_verbs(
         # complétées par celles des LIE_A d'origine (rel_type/verbe/verbe_slug
         # exclus — ce ne sont plus des props de l'arête typée).
         extra_props: dict = {
-            k: v for k, v in (existing or {}).items()
+            k: v
+            for k, v in (existing or {}).items()
             if k not in REL_RESERVED_KEYS and k != "verbe_origine"
         }
         for row in group_rows:
@@ -273,12 +303,20 @@ async def _apply_promote_verbs(
 
         if not preview:
             await _write_typed_edge(
-                driver, new_from, new_to, change.rel_type,
-                verbe_origine, extra_props, project=project,
+                driver,
+                new_from,
+                new_to,
+                change.rel_type,
+                verbe_origine,
+                extra_props,
+                project=project,
             )
             for row in group_rows:
                 await _delete_narrative_edge(
-                    driver, row["from_id"], row["to_id"], row["verbe_slug"],
+                    driver,
+                    row["from_id"],
+                    row["to_id"],
+                    row["verbe_slug"],
                     project=project,
                 )
 
@@ -303,7 +341,8 @@ async def _apply_merge_types(
             RETURN e.id AS id, e.name AS name, e.entity_type AS entity_type
             ORDER BY e.id
             """,
-            project=project, sources=change.sources,
+            project=project,
+            sources=change.sources,
         )
         rows = [dict(r) for r in await result.data()]
 
@@ -319,7 +358,9 @@ async def _apply_merge_types(
                 WHERE e.entity_type IN $sources
                 SET e.entity_type = $target
                 """,
-                project=project, sources=change.sources, target=change.target,
+                project=project,
+                sources=change.sources,
+                target=change.target,
             )
 
     return ChangeReport(
@@ -330,7 +371,10 @@ async def _apply_merge_types(
 
 
 async def apply_schema_change(
-    driver: AsyncDriver, change: PromoteVerbs | MergeTypes, *, project: str,
+    driver: AsyncDriver,
+    change: PromoteVerbs | MergeTypes,
+    *,
+    project: str,
     preview: bool = False,
 ) -> ChangeReport:
     """Applique (ou prévisualise) un changement de schéma VALIDÉ au graphe existant.
@@ -348,5 +392,7 @@ async def apply_schema_change(
     """
     _validate_change(change)
     if isinstance(change, PromoteVerbs):
-        return await _apply_promote_verbs(driver, change, project=project, preview=preview)
+        return await _apply_promote_verbs(
+            driver, change, project=project, preview=preview
+        )
     return await _apply_merge_types(driver, change, project=project, preview=preview)

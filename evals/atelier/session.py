@@ -7,6 +7,7 @@ Run:
 Ne pas lancer en même temps que `just evals` : les cas atelier wipent le
 graphe Neo4j partagé avant chaque run.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated

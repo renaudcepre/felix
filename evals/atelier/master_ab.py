@@ -22,6 +22,7 @@ Le maître étant en LECTURE SEULE, ce harness NE WIPE PAS la base (à la diffé
 des autres e2e). À lancer à la demande : `just ab-master`.
 Réglages : FLX_AB_REPS (défaut 4), FLX_AB_MODELS (CSV de noms Mistral).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -50,26 +51,32 @@ CHOICE = ATELIER_CHOICES["scenario"]
 TRAPS = [
     # (clé, message, info donnée que le maître ne doit PAS redemander)
     ("apposition", "Ok c'est l'histoire d'un castor, Hector.", "le nom (Hector)"),
-    ("apposition_metier",
-     "Mon héroïne, une archère nommée Brise, traque un déserteur.",
-     "le nom (Brise)"),
-    ("subordonnee",
-     "Il y a ce vieux marchand qui s'appelle Talou et qui revend des reliques volées.",
-     "le nom (Talou)"),
-    ("se_nomme",
-     "L'antagoniste se nomme Vorn, un ancien juge déchu.",
-     "le nom (Vorn)"),
-    ("double_info",
-     "Le village s'appelle Roche-Pâle ; il est bâti au bord d'une falaise.",
-     "le nom (Roche-Pâle)"),
+    (
+        "apposition_metier",
+        "Mon héroïne, une archère nommée Brise, traque un déserteur.",
+        "le nom (Brise)",
+    ),
+    (
+        "subordonnee",
+        "Il y a ce vieux marchand qui s'appelle Talou et qui revend des reliques volées.",
+        "le nom (Talou)",
+    ),
+    ("se_nomme", "L'antagoniste se nomme Vorn, un ancien juge déchu.", "le nom (Vorn)"),
+    (
+        "double_info",
+        "Le village s'appelle Roche-Pâle ; il est bâti au bord d'une falaise.",
+        "le nom (Roche-Pâle)",
+    ),
 ]
 
 # Tour de CONTRÔLE : aucun nom donné → demander « comment s'appelle la cité ? »
 # est PERTINENT. Sert à vérifier que le juge n'est pas gâchette facile et que le
 # gros modèle ne « gagne » pas juste en ne posant jamais de question.
-CONTROL = ("controle",
-           "Mon héros traverse une forêt et tombe sur une cité abandonnée.",
-           "(rien — poser une question d'identité est ici légitime)")
+CONTROL = (
+    "controle",
+    "Mon héros traverse une forêt et tombe sur une cité abandonnée.",
+    "(rien — poser une question d'identité est ici légitime)",
+)
 
 # Heuristique indépendante : la réplique redemande-t-elle un NOM ? (garde-fou juge)
 _NAME_Q = re.compile(
@@ -132,7 +139,6 @@ def build_judge(model_name: str) -> Agent[None, JudgeVerdict]:
     )
 
 
-
 async def opener_history(agent: Agent, driver: object) -> list:
     """Reproduit le CADRE D'INTERVIEW du dogfood : en prod, le maître avait d'abord
     salué et invité (« Raconte-moi ton histoire »), PUIS l'auteur a répondu « castor,
@@ -176,21 +182,33 @@ class Cell(BaseModel):
 
 
 async def play_cell(  # noqa: PLR0913 — une cellule = agents + juge + driver + tour + historique
-    sem: asyncio.Semaphore, agent: Agent, judge: Agent, driver: object,
-    model: str, key: str, message: str, history: list,
+    sem: asyncio.Semaphore,
+    agent: Agent,
+    judge: Agent,
+    driver: object,
+    model: str,
+    key: str,
+    message: str,
+    history: list,
 ) -> Cell:
     async with sem:
         cell = Cell(model=model, key=key, message=message)
         try:
             cell.reply = await run_master(agent, driver, message, history)
-        except Exception as exc:  # glitch Mistral ≠ régression : on consigne, on continue
+        except (
+            Exception
+        ) as exc:  # glitch Mistral ≠ régression : on consigne, on continue
             cell.error = f"master: {type(exc).__name__}: {exc}"[:160]
             return cell
         cell.heur = asks_for_name(cell.reply)
         try:
-            verdict = (await with_backoff(lambda: judge.run(
-                f"MESSAGE de l'auteur :\n{message}\n\nRÉPLIQUE de Felix :\n{cell.reply}"
-            ))).output
+            verdict = (
+                await with_backoff(
+                    lambda: judge.run(
+                        f"MESSAGE de l'auteur :\n{message}\n\nRÉPLIQUE de Felix :\n{cell.reply}"
+                    )
+                )
+            ).output
             cell.redundant = verdict.redondante
             cell.constat = verdict.constat
         except Exception as exc:
@@ -208,15 +226,19 @@ async def main() -> int:  # noqa: PLR0912, PLR0915 — script de restitution : i
     reps = int(os.environ.get("FLX_AB_REPS", "6"))
     default_small = settings.llm_chat_model or settings.llm_model
     models_env = os.environ.get("FLX_AB_MODELS", "")
-    models = ([m.strip() for m in models_env.split(",") if m.strip()]
-              if models_env else
-              [default_small, "mistral-medium-latest", "mistral-large-latest"])
+    models = (
+        [m.strip() for m in models_env.split(",") if m.strip()]
+        if models_env
+        else [default_small, "mistral-medium-latest", "mistral-large-latest"]
+    )
     judge_model = os.environ.get("FLX_AB_JUDGE", "mistral-medium-latest")
 
     all_turns = [*TRAPS, CONTROL]
-    print(f"A/B maître (#62) — {len(models)} modeles x {len(all_turns)} tours x "
-          f"{reps} rep = {len(models) * len(all_turns) * reps} appels maitre "
-          f"(juge : {judge_model})")
+    print(
+        f"A/B maître (#62) — {len(models)} modeles x {len(all_turns)} tours x "
+        f"{reps} rep = {len(models) * len(all_turns) * reps} appels maitre "
+        f"(juge : {judge_model})"
+    )
     print(f"modèles : {models}\n")
 
     async with lifespan(app):
@@ -232,8 +254,10 @@ async def main() -> int:  # noqa: PLR0912, PLR0915 — script de restitution : i
                 await s.run("MATCH (n) DETACH DELETE n")
                 await s.run("MATCH (u:UserEdit) DETACH DELETE u")
         n_ents = len(await all_entities(driver, project=DEFAULT_PROJECT))
-        print(f"BASE au départ : {n_ents} entité(s) "
-              f"({'VIDE — démarrage à froid' if n_ents == 0 else 'peuplée'})\n")
+        print(
+            f"BASE au départ : {n_ents} entité(s) "
+            f"({'VIDE — démarrage à froid' if n_ents == 0 else 'peuplée'})\n"
+        )
 
         judge = build_judge(judge_model)
         sem = asyncio.Semaphore(2)
@@ -250,7 +274,9 @@ async def main() -> int:  # noqa: PLR0912, PLR0915 — script de restitution : i
                 print(f"  {m} → {last_assistant_text(openers[m])[:90]!r}")
             except Exception as exc:
                 openers[m] = []
-                print(f"  {m} → ⚠ ouverture échouée ({type(exc).__name__}) — tours à froid")
+                print(
+                    f"  {m} → ⚠ ouverture échouée ({type(exc).__name__}) — tours à froid"
+                )
         print()
 
         tasks = [
@@ -287,11 +313,15 @@ async def main() -> int:  # noqa: PLR0912, PLR0915 — script de restitution : i
                 mark = " ⟵ " + " ".join(flags) if flags else ""
                 print(f"    felix  : {c.reply[:200]!r}{mark}")
                 if c.redundant != c.heur:
-                    print(f"            ⚖ divergence juge/heur — constat: {c.constat[:120]}")
+                    print(
+                        f"            ⚖ divergence juge/heur — constat: {c.constat[:120]}"
+                    )
 
     # ---- Tableau de synthèse : taux de relances redondantes sur les PIÈGES ----
     print("\n\n===== SYNTHÈSE (taux de relance redondante sur les pièges) =====")
-    print(f"{'modèle':<26} {'juge':>10} {'heuristique':>14} {'contrôle(juge)':>16} {'erreurs':>9}")
+    print(
+        f"{'modèle':<26} {'juge':>10} {'heuristique':>14} {'contrôle(juge)':>16} {'erreurs':>9}"
+    )
     verdicts: dict[str, float] = {}
     for m in models:
         traps = [c for c in by_model[m] if c.key in trap_keys]
@@ -302,8 +332,10 @@ async def main() -> int:  # noqa: PLR0912, PLR0915 — script de restitution : i
         errs = sum(1 for c in by_model[m] if c.error)
         j_rate = j_hit / j_n if j_n else float("nan")
         verdicts[m] = j_rate
-        print(f"{m:<26} {f'{j_hit}/{j_n}':>10} {f'{h_hit}/{h_n}':>14} "
-              f"{f'{cj_hit}/{cj_n}':>16} {errs:>9}")
+        print(
+            f"{m:<26} {f'{j_hit}/{j_n}':>10} {f'{h_hit}/{h_n}':>14} "
+            f"{f'{cj_hit}/{cj_n}':>16} {errs:>9}"
+        )
 
     # ---- Verdict A/B ----
     print("\n===== VERDICT =====")
@@ -316,10 +348,15 @@ async def main() -> int:  # noqa: PLR0912, PLR0915 — script de restitution : i
             print(f"  {m:<26} : indéterminé (tous les appels ont échoué)")
             continue
         delta = base_rate - r
-        verdict = ("RÈGLE le bug" if r == 0 else
-                   "améliore" if delta > 0.05 else
-                   "n'aide pas" if abs(delta) <= 0.05 else
-                   "AGGRAVE")
+        verdict = (
+            "RÈGLE le bug"
+            if r == 0
+            else "améliore"
+            if delta > 0.05
+            else "n'aide pas"
+            if abs(delta) <= 0.05
+            else "AGGRAVE"
+        )
         print(f"  {m:<26} : {r:.0%}  (Δ {delta:+.0%} vs baseline) → {verdict}")
     return 0
 

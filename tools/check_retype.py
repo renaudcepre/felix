@@ -10,6 +10,7 @@ Univers Vorvane — frais, absent de tous les prompts (anti-leakage).
 
 Usage : uv run python tools/check_retype.py
 """
+
 # ruff: noqa: T201
 from __future__ import annotations
 
@@ -35,9 +36,19 @@ def _is_transient(exc: Exception) -> bool:
     if "timeout" in type(exc).__qualname__.lower():
         return True
     msg = str(exc).lower()
-    return any(p in msg for p in (
-        "429", "rate", "timeout", "500", "502", "503", "504", "invalid_function_call",
-    ))
+    return any(
+        p in msg
+        for p in (
+            "429",
+            "rate",
+            "timeout",
+            "500",
+            "502",
+            "503",
+            "504",
+            "invalid_function_call",
+        )
+    )
 
 
 async def _run_agent(make_coro, attempts: int = 3) -> object:
@@ -58,9 +69,7 @@ async def _run_agent(make_coro, attempts: int = 3) -> object:
 
 async def run_once(driver) -> bool:
     async with driver.session() as session:
-        await session.run(
-            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ
-        )
+        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ)
         await session.run(
             "MERGE (e:GenEntity {id: 'vorvane', project: $p})"
             " SET e.name = 'Vorvane', e.entity_type = 'lieu'",
@@ -72,17 +81,18 @@ async def run_once(driver) -> bool:
     await _run_agent(lambda: agent.run(BEAT, deps=deps))
 
     entities = await all_entities(driver, project=PROJ)
-    vorvane = next(
-        (e for e in entities if str(e.get("id", "")) == "vorvane"), None
-    )
+    vorvane = next((e for e in entities if str(e.get("id", "")) == "vorvane"), None)
     if vorvane is None:
         print("    ✗ Vorvane a disparu de la base")
         return False
     etype = str(vorvane.get("entity_type", "?"))
-    type_props = {k: v for k, v in vorvane.items() if "type" in k.lower()
-                  and k != "entity_type"}
+    type_props = {
+        k: v for k, v in vorvane.items() if "type" in k.lower() and k != "entity_type"
+    }
     ok = etype != "lieu" and not type_props
-    detail = f"entity_type={etype!r}" + (f", props parasites {type_props}" if type_props else "")
+    detail = f"entity_type={etype!r}" + (
+        f", props parasites {type_props}" if type_props else ""
+    )
     print(f"    {'✓' if ok else '✗'} {detail}")
     return ok
 
@@ -96,7 +106,9 @@ async def main() -> int:
             print(f"\n[pass {i}/{N}]")
             passes += await run_once(driver)
         ok = passes >= MAJORITY
-        print(f"\n{'✓' if ok else '✗'} correction de type : {passes}/{N} passes (seuil {MAJORITY}/{N})")
+        print(
+            f"\n{'✓' if ok else '✗'} correction de type : {passes}/{N} passes (seuil {MAJORITY}/{N})"
+        )
         return 0 if ok else 1
     finally:
         async with driver.session() as session:

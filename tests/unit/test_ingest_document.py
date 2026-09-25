@@ -3,6 +3,7 @@ et le graphe helper `link_described_in`. Fixture SX-40 (sertisseuse synthétique
 cf. [[feedback_prompt_test_leakage]]) — 4 pages, en-tête sur page 1 seulement,
 pied de page répété sur les 4.
 """
+
 from __future__ import annotations
 
 import json
@@ -51,7 +52,10 @@ ingest_document_suite = ProTestSuite("IngestDocument")
 
 FIXTURE = (
     Path(__file__).resolve().parents[2]
-    / "evals" / "maintenance" / "fixtures" / "sx40_fiche.txt"
+    / "evals"
+    / "maintenance"
+    / "fixtures"
+    / "sx40_fiche.txt"
 )
 
 PROJ = "test-ingest-document"
@@ -60,7 +64,8 @@ PROJ = "test-ingest-document"
 async def _wipe(driver: AsyncDriver) -> None:
     async with driver.session() as session:
         await session.run(
-            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ,
+            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n",
+            p=PROJ,
         )
 
 
@@ -151,7 +156,9 @@ def test_clean_pages_below_three_pages_skips_repetition_rule() -> None:
 # ──────────────────── chunk_pages / Chunk.prompt ────────────────────
 @ingest_document_suite.test()
 def test_chunk_pages_merges_small_consecutive_pages() -> None:
-    chunks = chunk_pages(["petite page 1", "petite page 2", "petite page 3"], max_chars=3000)
+    chunks = chunk_pages(
+        ["petite page 1", "petite page 2", "petite page 3"], max_chars=3000
+    )
     assert len(chunks) == 1
     assert chunks[0].page_start == 1
     assert chunks[0].page_end == 3
@@ -228,7 +235,9 @@ def test_guess_title_fallback_on_empty_pages() -> None:
 @ingest_document_suite.test()
 def test_guess_title_on_sx40_fixture() -> None:
     cleaned = clean_pages(read_pages(FIXTURE))
-    assert guess_title(cleaned, "repli") == "Fiche réglage sertisseuse SX-40 — Version 3"
+    assert (
+        guess_title(cleaned, "repli") == "Fiche réglage sertisseuse SX-40 — Version 3"
+    )
 
 
 @ingest_document_suite.test()
@@ -290,7 +299,9 @@ def test_read_title_ignores_generic_or_filename_title(
     tmp: Annotated[Path, Use(tmp_path)],
 ) -> None:
     for title, filename in (
-        ("Untitled", "a.pdf"), ("Microsoft Word - fiche.docx", "b.pdf"), ("c", "c.pdf"),
+        ("Untitled", "a.pdf"),
+        ("Microsoft Word - fiche.docx", "b.pdf"),
+        ("c", "c.pdf"),
         # Vu en live sur une facture exportée par un logiciel de gestion : /Title = « M ».
         ("M", "facture.pdf"),
     ):
@@ -312,7 +323,9 @@ def test_is_document_duplicate_catches_reworded_title() -> None:  # bug #2c
 
 
 @ingest_document_suite.test()
-def test_is_document_duplicate_spares_a_real_entity_named_like_a_title_substring() -> None:
+def test_is_document_duplicate_spares_a_real_entity_named_like_a_title_substring() -> (
+    None
+):
     """Mesuré : `token_set_ratio` seul donne 100 pour un nom de machine
     simplement CONTENU dans le titre — `is_document_duplicate` ne doit PAS
     fusionner la vraie fiche machine dans le document."""
@@ -353,7 +366,10 @@ async def test_link_described_in_creates_relation_with_page(
             await session.run(
                 "MERGE (e:GenEntity {id: $id, project: $project})"
                 " SET e.name = $name, e.entity_type = $type",
-                id=eid, name=name, type=etype, project=PROJ,
+                id=eid,
+                name=name,
+                type=etype,
+                project=PROJ,
             )
     await link_described_in(driver, ["pedale-sx40"], "fiche-sx40", 2, project=PROJ)
 
@@ -382,11 +398,16 @@ async def test_link_described_in_appends_new_page_idempotently(
             await session.run(
                 "MERGE (e:GenEntity {id: $id, project: $project})"
                 " SET e.name = $name, e.entity_type = $type",
-                id=eid, name=name, type=etype, project=PROJ,
+                id=eid,
+                name=name,
+                type=etype,
+                project=PROJ,
             )
     await link_described_in(driver, ["mors-sx40"], "fiche-sx40", 2, project=PROJ)
     await link_described_in(driver, ["mors-sx40"], "fiche-sx40", 3, project=PROJ)
-    await link_described_in(driver, ["mors-sx40"], "fiche-sx40", 2, project=PROJ)  # rejoué
+    await link_described_in(
+        driver, ["mors-sx40"], "fiche-sx40", 2, project=PROJ
+    )  # rejoué
 
     async with driver.session() as session:
         result = await session.run(
@@ -448,36 +469,51 @@ async def test_merge_document_duplicates_merges_matching_entity_and_keeps_relati
             await session.run(
                 "MERGE (e:GenEntity {id: $id, project: $project})"
                 " SET e.name = $name, e.entity_type = $type",
-                id=eid, name=name, type=etype, project=PROJ,
+                id=eid,
+                name=name,
+                type=etype,
+                project=PROJ,
             )
         # Relation posée à tort vers le doublon au lieu du vrai document.
         await session.run(
             "MATCH (a:GenEntity {id: $a, project: $p}), (b:GenEntity {id: $b, project: $p})"
             " MERGE (a)-[:REL {rel_type: 'APPLIES_TO'}]->(b)",
-            a="butee-bx9", b=dup_id, p=PROJ,
+            a="butee-bx9",
+            b=dup_id,
+            p=PROJ,
         )
 
     touched = {dup_id, machine_id}
     remaining = await merge_document_duplicates(
-        driver, touched, document_id, title, project=PROJ,
+        driver,
+        touched,
+        document_id,
+        title,
+        project=PROJ,
     )
-    assert remaining == {machine_id}, "le doublon disparaît de touched, la vraie machine reste"
+    assert remaining == {machine_id}, (
+        "le doublon disparaît de touched, la vraie machine reste"
+    )
 
     async with driver.session() as session:
         dup_still = await (
             await session.run(
                 "MATCH (e:GenEntity {id: $id, project: $p}) RETURN e",
-                id=dup_id, p=PROJ,
+                id=dup_id,
+                p=PROJ,
             )
         ).single()
-        assert dup_still is None, "le doublon a été supprimé (DETACH DELETE, merge_entity_into)"
+        assert dup_still is None, (
+            "le doublon a été supprimé (DETACH DELETE, merge_entity_into)"
+        )
 
         rel = await (
             await session.run(
                 "MATCH (:GenEntity {id: 'butee-bx9', project: $p})"
                 "-[r:REL {rel_type: 'APPLIES_TO'}]->(:GenEntity {id: $doc, project: $p})"
                 " RETURN count(r) AS n",
-                p=PROJ, doc=document_id,
+                p=PROJ,
+                doc=document_id,
             )
         ).single()
         assert rel["n"] == 1, "la relation suit désormais le document"
@@ -485,7 +521,8 @@ async def test_merge_document_duplicates_merges_matching_entity_and_keeps_relati
         machine_still = await (
             await session.run(
                 "MATCH (e:GenEntity {id: $id, project: $p}) RETURN e.entity_type AS t",
-                id=machine_id, p=PROJ,
+                id=machine_id,
+                p=PROJ,
             )
         ).single()
         assert machine_still["t"] == "machine", "la vraie machine n'a pas été fusionnée"
@@ -506,10 +543,17 @@ async def test_merge_document_duplicates_noop_when_nothing_matches(
             await session.run(
                 "MERGE (e:GenEntity {id: $id, project: $project})"
                 " SET e.name = $name, e.entity_type = $type",
-                id=eid, name=name, type=etype, project=PROJ,
+                id=eid,
+                name=name,
+                type=etype,
+                project=PROJ,
             )
     remaining = await merge_document_duplicates(
-        driver, {"butee-bx9"}, document_id, title, project=PROJ,
+        driver,
+        {"butee-bx9"},
+        document_id,
+        title,
+        project=PROJ,
     )
     assert remaining == {"butee-bx9"}
 
@@ -528,13 +572,17 @@ _SX40_PAGES = {
 def test_pages_mentioning_finds_name_case_and_accent_insensitive() -> None:
     assert pages_mentioning(["bouton start"], _SX40_PAGES) == [2]
     assert pages_mentioning(["Pression d'approche"], _SX40_PAGES) == [3]
-    assert pages_mentioning(["Pression dapproche"], _SX40_PAGES) == [3]  # tolère une coquille
+    assert pages_mentioning(["Pression dapproche"], _SX40_PAGES) == [
+        3
+    ]  # tolère une coquille
 
 
 @ingest_document_suite.test()
 def test_pages_mentioning_uses_property_values_when_name_is_invented() -> None:
     # Nom forgé par le modèle, absent du texte ; sa valeur verbatim, elle, y est.
-    assert pages_mentioning(["Réglage de course", "1 cran = 0,5 mm"], _SX40_PAGES) == [4]
+    assert pages_mentioning(["Réglage de course", "1 cran = 0,5 mm"], _SX40_PAGES) == [
+        4
+    ]
 
 
 @ingest_document_suite.test()
@@ -548,8 +596,12 @@ def test_entity_pages_prefers_name_over_loose_property_matches() -> None:
     # Vu en live : « à gauche du pupitre » (prop) matchait flou la page 1
     # (« les boutons du pupitre ») → Bouton START attribué pages 1-3 au lieu de 2.
     pages = {1: "Cette fiche couvre les boutons du pupitre.", **_SX40_PAGES}
-    node = {"id": "bouton-start", "name": "Bouton START",
-            "emplacement": "à gauche du pupitre", "role": "lance le cycle"}
+    node = {
+        "id": "bouton-start",
+        "name": "Bouton START",
+        "emplacement": "à gauche du pupitre",
+        "role": "lance le cycle",
+    }
     assert entity_pages(node, pages) == [2]
 
 
@@ -567,8 +619,14 @@ def test_entity_pages_falls_back_to_properties_then_to_all_pages() -> None:
 # phase → « Bloc i/N… », propagation des cartes tool, event report final) — pas le
 # comportement du pipeline d'extraction partagé, déjà couvert ailleurs.
 _STUB_TOOL_CARD = {
-    "kind": "tool", "tool": "fiche", "title": "Fiche", "subject": "Test",
-    "field": "x", "added": "y", "entity_id": "stub-id", "relation": None,
+    "kind": "tool",
+    "tool": "fiche",
+    "title": "Fiche",
+    "subject": "Test",
+    "field": "x",
+    "added": "y",
+    "entity_id": "stub-id",
+    "relation": None,
 }
 
 
@@ -588,11 +646,13 @@ def _make_touch_stub(entity_id: str):
     message_history, chunk_deps, profile) : `args[6]` est `chunk_deps`. Nécessaire
     pour vérifier que `IngestReport.touched_ids`/la provenance PRODUCED reflètent
     de VRAIES entités touchées, sans dépendre d'un modèle réel."""
+
     async def _stub(*args: object, **_kwargs: object):
         args[6].touched_ids.add(entity_id)  # type: ignore[attr-defined]
         yield ServerSentEvent(data="Felix met à jour la bible…", event="phase")
         yield ServerSentEvent(data=json.dumps(_STUB_TOOL_CARD), event="tool")
         yield ServerSentEvent(data="Felix relie les fiches…", event="phase")
+
     return _stub
 
 
@@ -602,7 +662,8 @@ _STREAM_PROJ = "test-ingest-stream-v1"
 async def _wipe_stream_proj(driver: AsyncDriver) -> None:
     async with driver.session() as session:
         await session.run(
-            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=_STREAM_PROJ,
+            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n",
+            p=_STREAM_PROJ,
         )
 
 
@@ -614,10 +675,14 @@ async def test_stream_ingest_document_emits_phase_then_tool_then_report(
     try:
         with patch("felix.ingest.document.run_extractors", _stub_run_extractors):
             events = [
-                ev async for ev in stream_ingest_document(
-                    driver, ["Page de test avec du contenu."],
+                ev
+                async for ev in stream_ingest_document(
+                    driver,
+                    ["Page de test avec du contenu."],
                     profile=MAINTENANCE_PROFILE,
-                    agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                    agent=MagicMock(),
+                    relation_agent=MagicMock(),
+                    chronicle_agent=MagicMock(),
                     project=_STREAM_PROJ,
                 )
             ]
@@ -653,9 +718,14 @@ async def test_ingest_document_await_helper_matches_stream_final_report(
     try:
         with patch("felix.ingest.document.run_extractors", _stub_run_extractors):
             events = [
-                ev async for ev in stream_ingest_document(
-                    driver, pages, profile=MAINTENANCE_PROFILE,
-                    agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                ev
+                async for ev in stream_ingest_document(
+                    driver,
+                    pages,
+                    profile=MAINTENANCE_PROFILE,
+                    agent=MagicMock(),
+                    relation_agent=MagicMock(),
+                    chronicle_agent=MagicMock(),
                     project=_STREAM_PROJ,
                 )
             ]
@@ -664,8 +734,12 @@ async def test_ingest_document_await_helper_matches_stream_final_report(
         await _wipe_stream_proj(driver)
         with patch("felix.ingest.document.run_extractors", _stub_run_extractors):
             actual = await ingest_document(
-                driver, pages, profile=MAINTENANCE_PROFILE,
-                agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                driver,
+                pages,
+                profile=MAINTENANCE_PROFILE,
+                agent=MagicMock(),
+                relation_agent=MagicMock(),
+                chronicle_agent=MagicMock(),
                 project=_STREAM_PROJ,
             )
         assert actual == expected
@@ -679,6 +753,7 @@ async def test_ingest_document_raises_if_generator_never_reports(
 ) -> None:
     """Garde-fou : si le générateur ne produit jamais d'event `report` (bug
     interne), `ingest_document` échoue fort plutôt que de retourner `None`."""
+
     async def _no_report(*_args: object, **_kwargs: object):
         yield ServerSentEvent(data="Lecture du document…", event="phase")
 
@@ -687,8 +762,12 @@ async def test_ingest_document_raises_if_generator_never_reports(
             raised = False
             try:
                 await ingest_document(
-                    driver, ["page"], profile=MAINTENANCE_PROFILE,
-                    agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                    driver,
+                    ["page"],
+                    profile=MAINTENANCE_PROFILE,
+                    agent=MagicMock(),
+                    relation_agent=MagicMock(),
+                    chronicle_agent=MagicMock(),
                     project=_STREAM_PROJ,
                 )
             except RuntimeError:
@@ -718,14 +797,22 @@ async def test_stream_ingest_document_prefers_pdf_metadata_title(  # bug #2a
     await _wipe_stream_proj(driver)
     try:
         with (
-            patch("felix.ingest.document.read_pages", lambda _p: ["Machines Atelier Fabrycom"]),
+            patch(
+                "felix.ingest.document.read_pages",
+                lambda _p: ["Machines Atelier Fabrycom"],
+            ),
             patch("felix.ingest.document.run_extractors", _stub_run_extractors),
         ):
             events = [
-                ev async for ev in stream_ingest_document(
-                    driver, p, profile=MAINTENANCE_PROFILE,
-                    agent=MagicMock(), relation_agent=MagicMock(),
-                    chronicle_agent=MagicMock(), project=_STREAM_PROJ,
+                ev
+                async for ev in stream_ingest_document(
+                    driver,
+                    p,
+                    profile=MAINTENANCE_PROFILE,
+                    agent=MagicMock(),
+                    relation_agent=MagicMock(),
+                    chronicle_agent=MagicMock(),
+                    project=_STREAM_PROJ,
                 )
             ]
         report = IngestReport.model_validate_json(events[-1].data)
@@ -735,6 +822,7 @@ async def test_stream_ingest_document_prefers_pdf_metadata_title(  # bug #2a
 
 
 # ──────────────── route POST /api/ingest/document : content-type SSE ────────────────
+
 
 @ingest_document_suite.test()
 async def test_ingest_route_streams_text_event_stream(
@@ -760,15 +848,29 @@ async def test_ingest_route_streams_text_event_stream(
     test_app = FastAPI()
     test_app.include_router(ingest_routes.router)
     test_app.dependency_overrides[api_deps.get_driver] = lambda: driver
-    test_app.dependency_overrides[api_deps.get_atelier_agents] = lambda: {"maintenance": stub_agent}
-    test_app.dependency_overrides[api_deps.get_relation_agents] = lambda: {"maintenance": stub_agent}
-    test_app.dependency_overrides[api_deps.get_chronicle_agents] = lambda: {"maintenance": stub_agent}
+    test_app.dependency_overrides[api_deps.get_atelier_agents] = lambda: {
+        "maintenance": stub_agent
+    }
+    test_app.dependency_overrides[api_deps.get_relation_agents] = lambda: {
+        "maintenance": stub_agent
+    }
+    test_app.dependency_overrides[api_deps.get_chronicle_agents] = lambda: {
+        "maintenance": stub_agent
+    }
     try:
         transport = httpx.ASGITransport(app=test_app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
             response = await client.post(
                 "/api/ingest/document",
-                files={"file": ("note.txt", b"Une fiche de test minimaliste.", "text/plain")},
+                files={
+                    "file": (
+                        "note.txt",
+                        b"Une fiche de test minimaliste.",
+                        "text/plain",
+                    )
+                },
                 data={"profile": "maintenance", "project": proj},
             )
         assert response.status_code == 200
@@ -778,10 +880,13 @@ async def test_ingest_route_streams_text_event_stream(
         assert "event: report" in body or "event: error" in body, body
     finally:
         async with driver.session() as session:
-            await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
+            await session.run(
+                "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj
+            )
 
 
 # ──────────────── provenance (#83) : PRODUCED depuis le message d'import ────────────────
+
 
 @ingest_document_suite.test()
 async def test_stream_ingest_document_report_exposes_touched_ids(
@@ -796,15 +901,20 @@ async def test_stream_ingest_document_report_exposes_touched_ids(
         await session.run(
             "MERGE (e:GenEntity {id: $id, project: $p})"
             " SET e.name = 'Stub touchée', e.entity_type = 'organe'",
-            id=entity_id, p=_STREAM_PROJ,
+            id=entity_id,
+            p=_STREAM_PROJ,
         )
     try:
         with patch("felix.ingest.document.run_extractors", _make_touch_stub(entity_id)):
             events = [
-                ev async for ev in stream_ingest_document(
-                    driver, ["Une page avec du contenu de test."],
+                ev
+                async for ev in stream_ingest_document(
+                    driver,
+                    ["Une page avec du contenu de test."],
                     profile=MAINTENANCE_PROFILE,
-                    agent=MagicMock(), relation_agent=MagicMock(), chronicle_agent=MagicMock(),
+                    agent=MagicMock(),
+                    relation_agent=MagicMock(),
+                    chronicle_agent=MagicMock(),
                     project=_STREAM_PROJ,
                 )
             ]
@@ -831,34 +941,52 @@ async def test_ingest_route_links_produced_from_import_message(
     async with driver.session() as session:
         await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
         await session.run("MATCH (m:Message {project: $p}) DETACH DELETE m", p=proj)
-        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=other_proj)
+        await session.run(
+            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=other_proj
+        )
         await session.run(
             "MERGE (e:GenEntity {id: $id, project: $p})"
             " SET e.name = 'Stub provenance', e.entity_type = 'organe'",
-            id=entity_id, p=proj,
+            id=entity_id,
+            p=proj,
         )
         # Même id, projet DIFFÉRENT : ne doit recevoir AUCUNE arête (le message
         # importé appartient à `proj`, jamais à `other_proj`).
         await session.run(
             "MERGE (e:GenEntity {id: $id, project: $p})"
             " SET e.name = 'Stub autre projet', e.entity_type = 'organe'",
-            id=entity_id, p=other_proj,
+            id=entity_id,
+            p=other_proj,
         )
 
     stub_agent = Agent(TestModel())
     test_app = FastAPI()
     test_app.include_router(ingest_routes.router)
     test_app.dependency_overrides[api_deps.get_driver] = lambda: driver
-    test_app.dependency_overrides[api_deps.get_atelier_agents] = lambda: {"maintenance": stub_agent}
-    test_app.dependency_overrides[api_deps.get_relation_agents] = lambda: {"maintenance": stub_agent}
-    test_app.dependency_overrides[api_deps.get_chronicle_agents] = lambda: {"maintenance": stub_agent}
+    test_app.dependency_overrides[api_deps.get_atelier_agents] = lambda: {
+        "maintenance": stub_agent
+    }
+    test_app.dependency_overrides[api_deps.get_relation_agents] = lambda: {
+        "maintenance": stub_agent
+    }
+    test_app.dependency_overrides[api_deps.get_chronicle_agents] = lambda: {
+        "maintenance": stub_agent
+    }
     try:
         with patch("felix.ingest.document.run_extractors", _make_touch_stub(entity_id)):
             transport = httpx.ASGITransport(app=test_app)
-            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
                 response = await client.post(
                     "/api/ingest/document",
-                    files={"file": ("note.txt", b"Une fiche de test minimaliste.", "text/plain")},
+                    files={
+                        "file": (
+                            "note.txt",
+                            b"Une fiche de test minimaliste.",
+                            "text/plain",
+                        )
+                    },
                     data={"profile": "maintenance", "project": proj},
                 )
         assert response.status_code == 200
@@ -869,7 +997,8 @@ async def test_ingest_route_links_produced_from_import_message(
                 "MATCH (m:Message {project: $p, role: 'user'})"
                 "-[:PRODUCED]->(e:GenEntity {id: $id, project: $p})"
                 " RETURN m.body AS body",
-                p=proj, id=entity_id,
+                p=proj,
+                id=entity_id,
             )
             record = await result.single()
             assert record is not None, "aucune arête PRODUCED posée"
@@ -881,15 +1010,20 @@ async def test_ingest_route_links_produced_from_import_message(
                 await session.run(
                     "MATCH (:Message)-[:PRODUCED]->(e:GenEntity {id: $id, project: $p})"
                     " RETURN count(e) AS n",
-                    p=other_proj, id=entity_id,
+                    p=other_proj,
+                    id=entity_id,
                 )
             ).single()
             assert leak["n"] == 0
     finally:
         async with driver.session() as session:
-            await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj)
+            await session.run(
+                "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=proj
+            )
             await session.run("MATCH (m:Message {project: $p}) DETACH DELETE m", p=proj)
-            await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=other_proj)
+            await session.run(
+                "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=other_proj
+            )
 
 
 @ingest_document_suite.test()

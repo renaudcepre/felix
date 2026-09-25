@@ -9,6 +9,7 @@ extracteurs, chroniqueur — le gate n'a aucun tool) et vérifie que chaque tool
 qu'ils enregistrent a un libellé, pour qu'un tool ajouté sans libellé fasse
 échouer la suite plutôt que de s'afficher vide en prod.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -32,6 +33,7 @@ tool_labels_suite = ProTestSuite("ToolLabels")
 
 # ─────────── structurel : tout tool enregistré sur un agent de l'app a un libellé ───────────
 
+
 def _agents_built_by_the_app() -> dict[str, Agent[Any, Any]]:
     """Les agents PORTEURS de tools construits par felix.atelier.agent — le gate
     (build_gate_agent) est délibérément absent : `output_type=RouteDecision`,
@@ -51,7 +53,9 @@ def _agents_built_by_the_app() -> dict[str, Agent[Any, Any]]:
 def test_every_tool_registered_on_an_app_agent_has_a_label() -> None:
     for agent_name, agent in _agents_built_by_the_app().items():
         registered = agent._function_toolset.tools
-        assert registered, f"{agent_name} n'a enregistré aucun tool (agent mal construit ?)"
+        assert registered, (
+            f"{agent_name} n'a enregistré aucun tool (agent mal construit ?)"
+        )
         for tool_name in registered:
             assert tool_name in TOOL_LABELS, (
                 f"tool « {tool_name} » enregistré sur « {agent_name} » sans "
@@ -61,6 +65,7 @@ def test_every_tool_registered_on_an_app_agent_has_a_label() -> None:
 
 
 # ─────────── label_for_tool_call : gabarits + repli gracieux ───────────
+
 
 @tool_labels_suite.test()
 def test_find_entity_label_uses_name_arg() -> None:
@@ -89,19 +94,29 @@ def test_update_entity_label_uses_name_arg() -> None:
 
 @tool_labels_suite.test()
 def test_add_relation_label_prefers_verbe_over_rel_type() -> None:
-    label = label_for_tool_call("add_relation", {
-        "from_name": "Zorvun", "to_name": "Kelphi",
-        "rel_type": "LIE_A", "verbe": "protège",
-    })
+    label = label_for_tool_call(
+        "add_relation",
+        {
+            "from_name": "Zorvun",
+            "to_name": "Kelphi",
+            "rel_type": "LIE_A",
+            "verbe": "protège",
+        },
+    )
     assert label == "Lien « protège » entre Zorvun et Kelphi"
 
 
 @tool_labels_suite.test()
 def test_add_relation_label_falls_back_to_rel_type_without_verbe() -> None:
-    label = label_for_tool_call("add_relation", {
-        "from_name": "Zorvun", "to_name": "Kelphi",
-        "rel_type": "MEMBER_OF", "verbe": "",
-    })
+    label = label_for_tool_call(
+        "add_relation",
+        {
+            "from_name": "Zorvun",
+            "to_name": "Kelphi",
+            "rel_type": "MEMBER_OF",
+            "verbe": "",
+        },
+    )
     assert label == "Lien « MEMBER_OF » entre Zorvun et Kelphi"
 
 
@@ -114,7 +129,8 @@ def test_add_event_label_uses_resume_arg() -> None:
 @tool_labels_suite.test()
 def test_move_event_label_uses_resume_arg() -> None:
     label = label_for_tool_call(
-        "move_event", {"resume": "Zorvun franchit le seuil", "position": "avant", "reference": "x"}
+        "move_event",
+        {"resume": "Zorvun franchit le seuil", "position": "avant", "reference": "x"},
     )
     assert label == "Déplacement de l'événement « Zorvun franchit le seuil »"
 

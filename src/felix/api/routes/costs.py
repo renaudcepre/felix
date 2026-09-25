@@ -5,6 +5,7 @@ et compte d'opérations par nature (`chat`/`ingest`), depuis les nœuds
 rafraîchi après chaque tour/import) — INDÉPENDANT de l'historique des
 messages, survit à « nouvelle conversation »/archivage.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter

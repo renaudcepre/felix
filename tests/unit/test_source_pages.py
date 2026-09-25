@@ -8,6 +8,7 @@ pour toujours, même si le document existe.
 
 Noms univers isolé pour ces tests — inédits : Verrun, Oskad.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -31,8 +32,12 @@ PROJ_B = "test-source-pages-b-v1"
 
 async def _wipe(driver: AsyncDriver, project: str) -> None:
     async with driver.session() as session:
-        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=project)
-        await session.run("MATCH (n:SourcePage {project: $p}) DETACH DELETE n", p=project)
+        await session.run(
+            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=project
+        )
+        await session.run(
+            "MATCH (n:SourcePage {project: $p}) DETACH DELETE n", p=project
+        )
 
 
 @fixture(max_concurrency=1)
@@ -49,6 +54,7 @@ async def _driver() -> AsyncGenerator[AsyncDriver]:
 
 # ──────────────────── persist_source_pages ────────────────────
 
+
 @source_pages_suite.test()
 async def test_persist_source_pages_creates_one_node_per_nonblank_page(
     driver: Annotated[AsyncDriver, Use(_driver)],
@@ -64,7 +70,10 @@ async def test_persist_source_pages_creates_one_node_per_nonblank_page(
             p=PROJ_A,
         )
         rows = await result.data()
-    assert [(r["page"], r["text"]) for r in rows] == [(1, "page un"), (4, "page quatre")]
+    assert [(r["page"], r["text"]) for r in rows] == [
+        (1, "page un"),
+        (4, "page quatre"),
+    ]
 
 
 @source_pages_suite.test()
@@ -80,7 +89,9 @@ async def test_persist_source_pages_is_idempotent_and_updates_text(
             p=PROJ_A,
         )
         rows = await result.data()
-    assert [r["text"] for r in rows] == ["texte corrigé"], "MERGE doit mettre à jour, pas dupliquer"
+    assert [r["text"] for r in rows] == ["texte corrigé"], (
+        "MERGE doit mettre à jour, pas dupliquer"
+    )
 
 
 @source_pages_suite.test()
@@ -100,19 +111,27 @@ async def test_persist_source_pages_noop_on_all_blank_pages(
 
 # ──────────────────── source_pages_for ────────────────────
 
+
 @source_pages_suite.test()
 async def test_source_pages_for_returns_page_text_via_described_in(
     driver: Annotated[AsyncDriver, Use(_driver)],
 ) -> None:
     await _wipe(driver, PROJ_A)
-    await create_entity(driver, "fiche-verrun", "Fiche Verrun", "document", {}, project=PROJ_A)
-    await create_entity(driver, "levier-verrun", "levier Verrun", "organe", {}, project=PROJ_A)
+    await create_entity(
+        driver, "fiche-verrun", "Fiche Verrun", "document", {}, project=PROJ_A
+    )
+    await create_entity(
+        driver, "levier-verrun", "levier Verrun", "organe", {}, project=PROJ_A
+    )
     await persist_source_pages(
-        driver, "fiche-verrun",
+        driver,
+        "fiche-verrun",
         ["page un", "le levier Verrun se règle en page deux"],
         project=PROJ_A,
     )
-    await link_described_in(driver, ["levier-verrun"], "fiche-verrun", 2, project=PROJ_A)
+    await link_described_in(
+        driver, ["levier-verrun"], "fiche-verrun", 2, project=PROJ_A
+    )
 
     pages = await source_pages_for(driver, ["levier-verrun"], project=PROJ_A)
     assert pages == [("Fiche Verrun", 2, "le levier Verrun se règle en page deux")]
@@ -123,7 +142,9 @@ async def test_source_pages_for_empty_when_no_described_in(
     driver: Annotated[AsyncDriver, Use(_driver)],
 ) -> None:
     await _wipe(driver, PROJ_A)
-    await create_entity(driver, "orphelin-verrun", "orphelin Verrun", "organe", {}, project=PROJ_A)
+    await create_entity(
+        driver, "orphelin-verrun", "orphelin Verrun", "organe", {}, project=PROJ_A
+    )
     assert await source_pages_for(driver, ["orphelin-verrun"], project=PROJ_A) == []
 
 
@@ -142,13 +163,21 @@ async def test_source_pages_for_project_isolation(
     d'une entité de l'histoire B, même avec le même id d'entité des deux côtés."""
     await _wipe(driver, PROJ_A)
     await _wipe(driver, PROJ_B)
-    await create_entity(driver, "fiche-oskad", "Fiche Oskad", "document", {}, project=PROJ_A)
-    await create_entity(driver, "piece-oskad", "pièce Oskad", "organe", {}, project=PROJ_A)
-    await persist_source_pages(driver, "fiche-oskad", ["texte histoire A"], project=PROJ_A)
+    await create_entity(
+        driver, "fiche-oskad", "Fiche Oskad", "document", {}, project=PROJ_A
+    )
+    await create_entity(
+        driver, "piece-oskad", "pièce Oskad", "organe", {}, project=PROJ_A
+    )
+    await persist_source_pages(
+        driver, "fiche-oskad", ["texte histoire A"], project=PROJ_A
+    )
     await link_described_in(driver, ["piece-oskad"], "fiche-oskad", 1, project=PROJ_A)
 
     # Même id d'entité dans l'histoire B, mais SANS DESCRIBED_IN ni SourcePage.
-    await create_entity(driver, "piece-oskad", "pièce Oskad (B)", "organe", {}, project=PROJ_B)
+    await create_entity(
+        driver, "piece-oskad", "pièce Oskad (B)", "organe", {}, project=PROJ_B
+    )
 
     pages_b = await source_pages_for(driver, ["piece-oskad"], project=PROJ_B)
     assert pages_b == [], "le texte source de l'histoire A a fuité dans l'histoire B"

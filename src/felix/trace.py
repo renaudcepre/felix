@@ -10,6 +10,7 @@ Cypher AU MOMENT où elle s'exécute, quel que soit l'endroit du code qui
 l'émet (tools.py, graph.py, …) — la trace est donc TOUJOURS exacte, jamais une
 reconstruction qui peut driver du code réel.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -85,7 +86,9 @@ class QueryTrace:
     def add_query(self, query: str, params: dict[str, Any]) -> None:
         self._queries_seen += 1
         if len(self._queries) < _MAX_QUERIES:
-            self._queries.append(QueryEntry(query=query, params=_truncate_params(params)))
+            self._queries.append(
+                QueryEntry(query=query, params=_truncate_params(params))
+            )
 
     def merge(self, other: QueryTrace) -> None:
         """Fusionne les entrées d'un autre trace (ex. le trace d'un bloc

@@ -8,6 +8,7 @@ ATTENTION : le wipe est global (MATCH (n) DETACH DELETE n) — même base que le
 dev local, comme `just db-clean`. Un lock sérialise les cas entre eux, mais ne
 pas lancer cette session en même temps que la session legacy.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -97,7 +98,10 @@ async def _seed_entities(driver: AsyncDriver, seed: list[dict[str, Any]]) -> Non
             await session.run(
                 "MERGE (x:GenEntity {id: $id, project: $project})"
                 " SET x.name = $name, x.entity_type = $type, x += $props",
-                id=slugify(e["name"]), name=e["name"], type=etype, props=props,
+                id=slugify(e["name"]),
+                name=e["name"],
+                type=etype,
+                props=props,
                 project=DEFAULT_PROJECT,
             )
 
@@ -130,14 +134,18 @@ async def run_atelier_case(
             # touchées) préfixé au prompt des passes entités/relieur — sans elle le
             # harness ne testerait pas le mécanisme anti-doublon (baptême différé).
             block = render_recent_block(
-                await recent_entities(driver, settings.recent_entities_limit, project=deps.project_id)
+                await recent_entities(
+                    driver, settings.recent_entities_limit, project=deps.project_id
+                )
             )
             extract_beat = f"{block}\n\n{beat}" if block else beat
             result = await with_backoff(
                 lambda: agent.run(extract_beat, deps=deps, message_history=prev)  # noqa: B023
             )
             rel_result = await with_backoff(
-                lambda: relation_agent.run(extract_beat, deps=deps, message_history=prev)  # noqa: B023
+                lambda: relation_agent.run(
+                    extract_beat, deps=deps, message_history=prev
+                )  # noqa: B023
             )
             # Chroniqueur SANS historique : il ne chronique que le beat courant (sinon
             # re-chronique les tours passés → doublons) ; entités relues du graphe.
@@ -150,15 +158,16 @@ async def run_atelier_case(
                 in_tok += u.request_tokens or 0
                 out_tok += u.response_tokens or 0
 
-        assert result is not None and deps is not None  # beats non vide → boucle exécutée
+        assert (
+            result is not None and deps is not None
+        )  # beats non vide → boucle exécutée
 
         entities = await all_entities(driver, project=deps.project_id)
         relations = await all_relations(driver, project=deps.project_id)
         # Sous-ensemble personnages : une entité « lieu » créée en passant ne doit
         # pas fausser les graph_char_count des cas mono-tour.
         characters = [
-            e for e in entities
-            if "personnage" in str(e.get("entity_type", "")).lower()
+            e for e in entities if "personnage" in str(e.get("entity_type", "")).lower()
         ]
 
         # Rejoue le check de cohérence si le cas le demande (comme run_generic_case) :
@@ -166,7 +175,13 @@ async def run_atelier_case(
         alert = None
         if inputs.get("check"):
             verdict = await with_backoff(
-                lambda: consistency_check(driver, inputs["check"], deps.write_log, SCENARIO_PROFILE, project=deps.project_id)
+                lambda: consistency_check(
+                    driver,
+                    inputs["check"],
+                    deps.write_log,
+                    SCENARIO_PROFILE,
+                    project=deps.project_id,
+                )
             )
             alert = verdict.model_dump()
 
@@ -206,7 +221,14 @@ def _check_act_then_death(result: AtelierRunResult) -> bool:
 # Clés réservées du nœud Neo4j — exclues du contrôle des props biographiques.
 _ENTITY_META_KEYS = {"id", "name", "entity_type", "project"}
 # Fragments de clés qui trahissent une prop biographique inventée (#56).
-_BIO_KEY_FRAGMENTS = {"age", "background", "traits", "backstory", "personnalite", "historique"}
+_BIO_KEY_FRAGMENTS = {
+    "age",
+    "background",
+    "traits",
+    "backstory",
+    "personnalite",
+    "historique",
+}
 
 
 def _gabarit_ambiance_check(result: AtelierRunResult) -> bool:
@@ -236,10 +258,7 @@ def _subordonnee_fiche_check(result: AtelierRunResult) -> bool:
         keys.add(normalize(str(c.get("name", ""))))
         keys.add(normalize(str(c.get("id", ""))))
     keys.discard("")
-    return (
-        any("lera" in k for k in keys)
-        and any("fenn" in k for k in keys)
-    )
+    return any("lera" in k for k in keys) and any("fenn" in k for k in keys)
 
 
 def _sujet_apposition_check(result: AtelierRunResult) -> bool:
@@ -277,10 +296,7 @@ def _subordonnee_contexte_check(result: AtelierRunResult) -> bool:
         keys.add(normalize(str(c.get("name", ""))))
         keys.add(normalize(str(c.get("id", ""))))
     keys.discard("")
-    return (
-        any("paya" in k for k in keys)
-        and any("gorn" in k for k in keys)
-    )
+    return any("paya" in k for k in keys) and any("gorn" in k for k in keys)
 
 
 def _flashback_correction_check(result: AtelierRunResult) -> bool:
@@ -291,19 +307,25 @@ def _flashback_correction_check(result: AtelierRunResult) -> bool:
     Vert si ordre(annonce) < ordre(mort). normalize() pour l'insensibilité aux accents."""
     events = [e for e in result.entities if e.get("entity_type") == "evenement"]
     acclame = next(
-        (e for e in events
-         if "acclame" in normalize(str(e.get("resume", "")))
-         or "annonce" in normalize(str(e.get("resume", "")))),
+        (
+            e
+            for e in events
+            if "acclame" in normalize(str(e.get("resume", "")))
+            or "annonce" in normalize(str(e.get("resume", "")))
+        ),
         None,
     )
     mort = next(
-        (e for e in events
-         if "jovan" in normalize(str(e.get("resume", "")))
-         and (
-             "meurt" in normalize(str(e.get("resume", "")))
-             or "mort" in normalize(str(e.get("resume", "")))
-             or "ecrase" in normalize(str(e.get("resume", "")))
-         )),
+        (
+            e
+            for e in events
+            if "jovan" in normalize(str(e.get("resume", "")))
+            and (
+                "meurt" in normalize(str(e.get("resume", "")))
+                or "mort" in normalize(str(e.get("resume", "")))
+                or "ecrase" in normalize(str(e.get("resume", "")))
+            )
+        ),
         None,
     )
     if acclame is None or mort is None:
@@ -319,15 +341,21 @@ def _flashback_creation_check(result: AtelierRunResult) -> bool:
     Vert si ordre(tempête) < ordre(arrivée Imra)."""
     events = [e for e in result.entities if e.get("entity_type") == "evenement"]
     arrive = next(
-        (e for e in events
-         if "imra" in str(e.get("resume", "")).lower()
-         and "arriv" in str(e.get("resume", "")).lower()),
+        (
+            e
+            for e in events
+            if "imra" in str(e.get("resume", "")).lower()
+            and "arriv" in str(e.get("resume", "")).lower()
+        ),
         None,
     )
     tempete = next(
-        (e for e in events
-         if "tempete" in normalize(str(e.get("resume", "")))
-         or "antenne" in normalize(str(e.get("resume", "")))),
+        (
+            e
+            for e in events
+            if "tempete" in normalize(str(e.get("resume", "")))
+            or "antenne" in normalize(str(e.get("resume", "")))
+        ),
         None,
     )
     if arrive is None or tempete is None:
@@ -361,8 +389,7 @@ def _naissance_verbatim_check(result: AtelierRunResult) -> bool:
     - la fiche Romeck existe et porte '1989' dans une de SES props ;
     - aucun motif « NN ans » nulle part dans le graphe."""
     romeck = next(
-        (c for c in result.characters
-         if "romeck" in normalize(str(c.get("name", "")))),
+        (c for c in result.characters if "romeck" in normalize(str(c.get("name", "")))),
         None,
     )
     if romeck is None:
@@ -384,15 +411,12 @@ def _correction_seche_check(result: AtelierRunResult) -> bool:
     fiche : le chroniqueur crée parfois un event parasite « Lioba a 71 ans »
     (état chroniqué = famille #46, hors du périmètre de CE cas)."""
     lioba = next(
-        (c for c in result.characters
-         if "lioba" in normalize(str(c.get("name", "")))),
+        (c for c in result.characters if "lioba" in normalize(str(c.get("name", "")))),
         None,
     )
     if lioba is None:
         return False
-    own_blob = " ".join(
-        str(v) for k, v in lioba.items() if k.lower() not in _TECH_KEYS
-    )
+    own_blob = " ".join(str(v) for k, v in lioba.items() if k.lower() not in _TECH_KEYS)
     return bool(re.search(r"\b67\b", own_blob)) and not re.search(r"\b71\b", own_blob)
 
 
@@ -442,7 +466,9 @@ async def run_atelier_multirun_case(
             # Erreur modèle (ex. UnexpectedModelBehavior « desc_schema extra args »,
             # UsageLimitExceeded...) : variance du LLM, pas un bug protest.
             # Compté comme FAIL pour ne pas crasher le verdict multirun.
-            print(f"  [multirun] pass {i}/{n} → MODEL_ERROR ({type(exc).__name__}: {str(exc)[:60]})")
+            print(
+                f"  [multirun] pass {i}/{n} → MODEL_ERROR ({type(exc).__name__}: {str(exc)[:60]})"
+            )
             continue
         total_in += tr.input_tokens or 0
         total_out += tr.output_tokens or 0
@@ -451,12 +477,16 @@ async def run_atelier_multirun_case(
         status = "PASS" if ok else "FAIL"
         chars = ", ".join(str(c.get("name", "?")) for c in tr.output.characters)
         # Visible avec `just evals-atelier -s -k bapteme_differe`
-        print(f"  [multirun] pass {i}/{n} → {status}  ({len(tr.output.characters)} perso(s) : {chars or '—'})")
+        print(
+            f"  [multirun] pass {i}/{n} → {status}  ({len(tr.output.characters)} perso(s) : {chars or '—'})"
+        )
         last_tr = tr
 
     if last_tr is None:
         # Tous les passes ont levé une erreur modèle — résultat vide.
-        empty = AtelierRunResult(answer="", characters=[], entities=[], relations=[], cards=[])
+        empty = AtelierRunResult(
+            answer="", characters=[], entities=[], relations=[], cards=[]
+        )
         empty.multirun_passes = 0
         empty.multirun_total = n
         print(f"  [multirun] verdict : 0/{n} passes (tous en erreur modèle)")
@@ -470,5 +500,6 @@ async def run_atelier_multirun_case(
         output=last_tr.output,
         input_tokens=total_in,
         output_tokens=total_out,
-        cost=total_in * MISTRAL_SMALL_INPUT_COST + total_out * MISTRAL_SMALL_OUTPUT_COST,
+        cost=total_in * MISTRAL_SMALL_INPUT_COST
+        + total_out * MISTRAL_SMALL_OUTPUT_COST,
     )

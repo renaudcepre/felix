@@ -16,6 +16,7 @@ via build_master_agent (pattern de evals/atelier/master_ab.py).
 
 Usage : uv run python tools/check_alert_followup.py
 """
+
 # ruff: noqa: T201
 from __future__ import annotations
 
@@ -44,8 +45,18 @@ AUTHOR_MSG = "Korvax ouvre la porte et entre dans la salle."
 # Mots-clés attendus dans la réplique : nom du perso + signal d'incohérence.
 # Tolérant au phrasé : mort/tué/déjà/incohérence/impossible/contradict…
 _PERSO_KW = "korvax"
-_SIGNAL_KW = ("mort", "tué", "déjà", "incohérence", "impossible",
-              "contradi", "anachroni", "disparu", "flash-back", "flash")
+_SIGNAL_KW = (
+    "mort",
+    "tué",
+    "déjà",
+    "incohérence",
+    "impossible",
+    "contradi",
+    "anachroni",
+    "disparu",
+    "flash-back",
+    "flash",
+)
 
 N = 3
 THRESHOLD = 2
@@ -57,10 +68,19 @@ def _is_transient(exc: Exception) -> bool:
     if "timeout" in type(exc).__qualname__.lower():
         return True
     msg = str(exc).lower()
-    return any(p in msg for p in (
-        "429", "rate", "timeout", "500", "502", "503", "504",
-        "invalid_function_call",
-    ))
+    return any(
+        p in msg
+        for p in (
+            "429",
+            "rate",
+            "timeout",
+            "500",
+            "502",
+            "503",
+            "504",
+            "invalid_function_call",
+        )
+    )
 
 
 async def _run_with_backoff(make_coro, attempts: int = 3) -> object:
@@ -87,12 +107,8 @@ def _reply_mentions_incoherence(reply: str) -> bool:
 
 async def _clean(driver) -> None:
     async with driver.session() as session:
-        await session.run(
-            "MATCH (a:Alert {project: $p}) DETACH DELETE a", p=PROJ
-        )
-        await session.run(
-            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ
-        )
+        await session.run("MATCH (a:Alert {project: $p}) DETACH DELETE a", p=PROJ)
+        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ)
 
 
 async def run_once(driver) -> bool:
@@ -110,9 +126,7 @@ async def run_once(driver) -> bool:
     # 3. Joue le maître réel (build_master_agent — même config qu'en prod).
     agent = build_master_agent(CHOICE)
     deps = GenericDeps(driver=driver, profile=CHOICE.profile, project_id=PROJ)
-    result = await _run_with_backoff(
-        lambda: agent.run(prefixed_msg, deps=deps)
-    )
+    result = await _run_with_backoff(lambda: agent.run(prefixed_msg, deps=deps))
     reply = (result.output or "").strip()  # type: ignore[union-attr]
     print(f"    felix  : {reply[:200]!r}")
 

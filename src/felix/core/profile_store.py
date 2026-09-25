@@ -15,6 +15,7 @@ round-trip exact, tuples reconstruits) + deux fonctions Neo4j (``load``/``save``
 ``Profile`` lui-même (il n'a pas à savoir ce qu'on a refusé, seulement ce qui a
 été validé) — round-trip de ``profile_to_dict``/``profile_from_dict`` intact.
 """
+
 from __future__ import annotations
 
 import json
@@ -100,7 +101,9 @@ async def load_project_profile(driver: AsyncDriver, *, project: str) -> Profile 
     return profile_from_dict(json.loads(record["data"]))
 
 
-async def save_project_profile(driver: AsyncDriver, profile: Profile, *, project: str) -> int:
+async def save_project_profile(
+    driver: AsyncDriver, profile: Profile, *, project: str
+) -> int:
     """Sauvegarde le profil ÉVOLUÉ du projet, version incrémentée. Rend la
     nouvelle version (1 à la première sauvegarde)."""
     data = json.dumps(profile_to_dict(profile))
@@ -112,7 +115,8 @@ async def save_project_profile(driver: AsyncDriver, profile: Profile, *, project
             SET p.data = $data, p.version = p.version + 1
             RETURN p.version AS version
             """,
-            project=project, data=data,
+            project=project,
+            data=data,
         )
         record = await result.single()
     assert record is not None  # MERGE ... RETURN garantit toujours une ligne
@@ -165,5 +169,6 @@ async def save_rejected_change(
             ON CREATE SET p.version = 0
             SET p.rejected = coalesce(p.rejected, []) + $payload
             """,
-            project=project, payload=payload,
+            project=project,
+            payload=payload,
         )

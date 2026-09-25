@@ -11,6 +11,7 @@ longue. Invariants vérifiés ici :
   (chaque ToolReturnPart gardé a son ToolCallPart) ;
 - estimate_tokens croît avec la taille du contenu.
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite
@@ -44,8 +45,12 @@ def _tool_turn(prompt: str, tool: str, tcid: str, result: str, reply: str) -> li
     """
     return [
         ModelRequest(parts=[UserPromptPart(content=prompt)]),
-        ModelResponse(parts=[ToolCallPart(tool_name=tool, args={"q": prompt}, tool_call_id=tcid)]),
-        ModelRequest(parts=[ToolReturnPart(tool_name=tool, content=result, tool_call_id=tcid)]),
+        ModelResponse(
+            parts=[ToolCallPart(tool_name=tool, args={"q": prompt}, tool_call_id=tcid)]
+        ),
+        ModelRequest(
+            parts=[ToolReturnPart(tool_name=tool, content=result, tool_call_id=tcid)]
+        ),
         ModelResponse(parts=[TextPart(content=reply)]),
     ]
 
@@ -55,7 +60,8 @@ def _turn_starts(messages: list) -> int:
     return sum(
         1
         for m in messages
-        if isinstance(m, ModelRequest) and any(isinstance(p, UserPromptPart) for p in m.parts)
+        if isinstance(m, ModelRequest)
+        and any(isinstance(p, UserPromptPart) for p in m.parts)
     )
 
 
@@ -107,7 +113,9 @@ def test_always_keeps_last_turn_even_when_oversize() -> None:
 def test_no_orphan_tool_return() -> None:
     """Couper sur une frontière de tour ne sépare JAMAIS un ToolReturnPart de son ToolCallPart."""
     old = _user_turn("vieux tour à jeter " + "z" * 200, "ok")
-    recent = _tool_turn("cherche Nora", "find_entity", "call-1", '{"name":"Nora"}', "trouvée")
+    recent = _tool_turn(
+        "cherche Nora", "find_entity", "call-1", '{"name":"Nora"}', "trouvée"
+    )
     messages = [*old, *recent]
     # Budget qui ne garde que le tour récent (avec l'appel d'outil).
     per_old = sum(estimate_tokens(m) for m in old)
@@ -143,10 +151,18 @@ def test_estimate_tokens_grows_with_content() -> None:
 def test_estimate_counts_tool_call_and_return() -> None:
     """L'estimation inclut les args d'outils et le contenu des ToolReturnPart (pas que le texte)."""
     call = ModelResponse(
-        parts=[ToolCallPart(tool_name="add_entity", args={"name": "Nora " * 100}, tool_call_id="c")]
+        parts=[
+            ToolCallPart(
+                tool_name="add_entity", args={"name": "Nora " * 100}, tool_call_id="c"
+            )
+        ]
     )
     ret = ModelRequest(
-        parts=[ToolReturnPart(tool_name="add_entity", content="résultat " * 100, tool_call_id="c")]
+        parts=[
+            ToolReturnPart(
+                tool_name="add_entity", content="résultat " * 100, tool_call_id="c"
+            )
+        ]
     )
     assert estimate_tokens(call) > 0
     assert estimate_tokens(ret) > 0

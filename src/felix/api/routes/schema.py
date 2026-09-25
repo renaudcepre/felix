@@ -7,6 +7,7 @@ Le seul choix évolutif aujourd'hui est ``emergent`` (cf. ``felix.atelier.agent`
 ces routes s'y rattachent explicitement plutôt que de généraliser à un profil
 arbitraire : pas de première abstraction avant un second cas concret.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -77,7 +78,9 @@ async def get_profile(driver: Neo4jDriver, project: str = DEFAULT_PROJECT) -> di
 
 @router.get("/proposals")
 async def get_proposals(
-    driver: Neo4jDriver, project: str = DEFAULT_PROJECT, profile: str = _CHOICE_KEY,
+    driver: Neo4jDriver,
+    project: str = DEFAULT_PROJECT,
+    profile: str = _CHOICE_KEY,
 ) -> list[Proposal]:
     """Propositions déterministes (aucun appel LLM) pour ce projet — chacune
     porte son rapport en PREVIEW, exactement ce que ferait le clic « accepter »."""
@@ -87,14 +90,20 @@ async def get_proposals(
 
 
 @router.post("/apply")
-async def post_apply_change(driver: Neo4jDriver, body: ApplyChangeRequest) -> ApplyChangeResponse:
+async def post_apply_change(
+    driver: Neo4jDriver, body: ApplyChangeRequest
+) -> ApplyChangeResponse:
     """Applique un changement VALIDÉ par l'humain : migre le passé (le graphe),
     fait évoluer le profil (en partant du seed si rien n'est encore stocké) et
     sauvegarde la nouvelle version. Retourne le rapport ET le nouveau profil —
     la file de validation affiche les deux."""
     choice = ATELIER_CHOICES[_CHOICE_KEY]
-    report = await apply_schema_change(driver, body.change, project=body.project, preview=False)
-    current = _require_profile(await resolve_profile(driver, choice, project=body.project))
+    report = await apply_schema_change(
+        driver, body.change, project=body.project, preview=False
+    )
+    current = _require_profile(
+        await resolve_profile(driver, choice, project=body.project)
+    )
     new_profile = evolve_profile(current, body.change, report)
     version = await save_project_profile(driver, new_profile, project=body.project)
     return ApplyChangeResponse(
@@ -103,7 +112,9 @@ async def post_apply_change(driver: Neo4jDriver, body: ApplyChangeRequest) -> Ap
 
 
 @router.post("/reject")
-async def post_reject_change(driver: Neo4jDriver, body: RejectChangeRequest) -> list[dict]:
+async def post_reject_change(
+    driver: Neo4jDriver, body: RejectChangeRequest
+) -> list[dict]:
     """Refuse UNE proposition : persistée (``profile_store.save_rejected_change``)
     pour que ``detect_proposals`` ne la re-propose plus (même ensemble source —
     verbe_slugs ou sources — quel que soit le nom cible tenté ensuite). Rend la

@@ -3,6 +3,7 @@ pur + charge/sauvegarde Neo4j sur le méta-nœud ``:ProjectProfile``.
 
 Univers de TEST : presse à balles BX-9 (cf. [[feedback_prompt_test_leakage]]).
 """
+
 from __future__ import annotations
 
 import json
@@ -39,7 +40,8 @@ async def _wipe(driver: AsyncDriver) -> None:
     async with driver.session() as session:
         await session.run(
             "MATCH (n:ProjectProfile) WHERE n.project IN [$p, $p2] DETACH DELETE n",
-            p=PROJ, p2=PROJ_B,
+            p=PROJ,
+            p2=PROJ_B,
         )
 
 
@@ -55,7 +57,8 @@ async def _driver() -> AsyncGenerator[AsyncDriver]:
 
 
 _RICH_PROFILE = Profile(
-    name="pilote", description="un profil de test riche",
+    name="pilote",
+    description="un profil de test riche",
     entity_types=(
         EntityType("organe", ("fonction", "emplacement"), "note sur organe"),
         EntityType("commande", ("nature",)),
@@ -64,12 +67,20 @@ _RICH_PROFILE = Profile(
     consistency_rules=("cohérence 1",),
     relation_vocabulary=(
         RelationSpec(
-            "CONTROLS", "pilote un réglage",
-            subjects=("commande",), objects=("organe", "parametre"),
-            allow_self=False, examples="règle, pilote",
+            "CONTROLS",
+            "pilote un réglage",
+            subjects=("commande",),
+            objects=("organe", "parametre"),
+            allow_self=False,
+            examples="règle, pilote",
         ),
-        RelationSpec("PART_OF", "fait partie de", subjects=("organe",), objects=("organe",),
-                     allow_self=True),
+        RelationSpec(
+            "PART_OF",
+            "fait partie de",
+            subjects=("organe",),
+            objects=("organe",),
+            allow_self=True,
+        ),
     ),
     narrative_rel=NARRATIVE_REL,
     manages_events=False,
@@ -79,6 +90,7 @@ _RICH_PROFILE = Profile(
 
 # ──────────────────── profile_to_dict / profile_from_dict (pur) ────────────────────
 
+
 @profile_store_suite.test()
 def test_round_trip_exact_on_rich_profile() -> None:
     assert profile_from_dict(profile_to_dict(_RICH_PROFILE)) == _RICH_PROFILE
@@ -86,7 +98,10 @@ def test_round_trip_exact_on_rich_profile() -> None:
 
 @profile_store_suite.test()
 def test_round_trip_exact_on_seed_profile() -> None:
-    assert profile_from_dict(profile_to_dict(EMERGENT_SEED_PROFILE)) == EMERGENT_SEED_PROFILE
+    assert (
+        profile_from_dict(profile_to_dict(EMERGENT_SEED_PROFILE))
+        == EMERGENT_SEED_PROFILE
+    )
 
 
 @profile_store_suite.test()
@@ -109,6 +124,7 @@ def test_round_trip_survives_json_serialization() -> None:
 
 
 # ──────────────────── load/save (Neo4j) ────────────────────
+
 
 @profile_store_suite.test()
 async def test_load_returns_none_when_nothing_stored(
@@ -152,6 +168,7 @@ async def test_save_scoped_per_project(
 # Un `rejected` SIBLING de `data` sur le même :ProjectProfile — pas dans le
 # Profile lui-même (round-trip profile_to_dict intact, cf. tests ci-dessus).
 
+
 @profile_store_suite.test()
 async def test_load_rejected_changes_empty_when_nothing_stored(
     driver: Annotated[AsyncDriver, Use(_driver)],
@@ -176,10 +193,14 @@ async def test_save_rejected_change_accumulates(
 ) -> None:
     await _wipe(driver)
     await save_rejected_change(
-        driver, PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"), project=PROJ,
+        driver,
+        PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"),
+        project=PROJ,
     )
     await save_rejected_change(
-        driver, MergeTypes(sources=["verins"], target="verin"), project=PROJ,
+        driver,
+        MergeTypes(sources=["verins"], target="verin"),
+        project=PROJ,
     )
     rejected = await load_rejected_changes(driver, project=PROJ)
     assert len(rejected) == 2
@@ -192,7 +213,9 @@ async def test_save_rejected_change_scoped_per_project(
 ) -> None:
     await _wipe(driver)
     await save_rejected_change(
-        driver, PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"), project=PROJ,
+        driver,
+        PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"),
+        project=PROJ,
     )
     assert await load_rejected_changes(driver, project=PROJ_B) == []
 
@@ -205,12 +228,15 @@ async def test_save_rejected_change_does_not_create_stored_profile(
     un profil stocké (`data` reste absent) — seul `rejected` est posé."""
     await _wipe(driver)
     await save_rejected_change(
-        driver, PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"), project=PROJ,
+        driver,
+        PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS"),
+        project=PROJ,
     )
     assert await load_project_profile(driver, project=PROJ) is None
 
 
 # ──────────────────── version (lecture seule, GET /api/schema/profile) ────────────────────
+
 
 @profile_store_suite.test()
 async def test_load_version_is_zero_when_nothing_stored(

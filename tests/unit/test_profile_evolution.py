@@ -5,6 +5,7 @@ Univers de TEST : presse à balles BX-9 (cf. [[feedback_prompt_test_leakage]]).
 Aucun accès Neo4j — ``evolve_profile`` est pure, testée sur des ``ChangeReport``
 construits à la main.
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite
@@ -17,6 +18,7 @@ profile_evolution_suite = ProTestSuite("ProfileEvolution")
 
 
 # ──────────────────── PromoteVerbs : création ────────────────────
+
 
 @profile_evolution_suite.test()
 def test_promote_creates_new_relation_spec_on_seed_profile() -> None:
@@ -41,7 +43,9 @@ def test_promote_creates_new_relation_spec_on_seed_profile() -> None:
 def test_promote_does_not_mutate_original_profile() -> None:
     change = PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS")
     report = ChangeReport(
-        change=change, observed_pairs=[("commande", "organe")], verbes=["règle"],
+        change=change,
+        observed_pairs=[("commande", "organe")],
+        verbes=["règle"],
     )
     evolve_profile(EMERGENT_SEED_PROFILE, change, report)
     assert EMERGENT_SEED_PROFILE.relation_vocabulary == ()
@@ -50,13 +54,17 @@ def test_promote_does_not_mutate_original_profile() -> None:
 @profile_evolution_suite.test()
 def test_promote_on_populated_profile_appends_new_spec() -> None:
     base = Profile(
-        name="test", description="", entity_types=(),
+        name="test",
+        description="",
+        entity_types=(),
         relation_vocabulary=(RelationSpec("PART_OF", "fait partie de"),),
         narrative_rel="LIE_A",
     )
     change = PromoteVerbs(verbe_slugs=["indique"], rel_type="INDICATES")
     report = ChangeReport(
-        change=change, observed_pairs=[("commande", "mode")], verbes=["indique"],
+        change=change,
+        observed_pairs=[("commande", "mode")],
+        verbes=["indique"],
     )
     evolved = evolve_profile(base, change, report)
 
@@ -66,19 +74,29 @@ def test_promote_on_populated_profile_appends_new_spec() -> None:
 
 # ──────────────────── PromoteVerbs : extension ────────────────────
 
+
 @profile_evolution_suite.test()
 def test_promote_extends_existing_spec_unions_subjects_and_objects() -> None:
     base = Profile(
-        name="test", description="", entity_types=(),
+        name="test",
+        description="",
+        entity_types=(),
         relation_vocabulary=(
-            RelationSpec("CONTROLS", "pilote", subjects=("commande",), objects=("organe",),
-                         examples="règle"),
+            RelationSpec(
+                "CONTROLS",
+                "pilote",
+                subjects=("commande",),
+                objects=("organe",),
+                examples="règle",
+            ),
         ),
         narrative_rel="LIE_A",
     )
     change = PromoteVerbs(verbe_slugs=["regule"], rel_type="CONTROLS")
     report = ChangeReport(
-        change=change, observed_pairs=[("mode", "parametre")], verbes=["régule"],
+        change=change,
+        observed_pairs=[("mode", "parametre")],
+        verbes=["régule"],
     )
     evolved = evolve_profile(base, change, report)
 
@@ -93,16 +111,25 @@ def test_promote_extends_existing_spec_unions_subjects_and_objects() -> None:
 @profile_evolution_suite.test()
 def test_promote_extends_does_not_duplicate_known_verb() -> None:
     base = Profile(
-        name="test", description="", entity_types=(),
+        name="test",
+        description="",
+        entity_types=(),
         relation_vocabulary=(
-            RelationSpec("CONTROLS", "pilote", subjects=("commande",), objects=("organe",),
-                         examples="règle, pilote"),
+            RelationSpec(
+                "CONTROLS",
+                "pilote",
+                subjects=("commande",),
+                objects=("organe",),
+                examples="règle, pilote",
+            ),
         ),
         narrative_rel="LIE_A",
     )
     change = PromoteVerbs(verbe_slugs=["regle"], rel_type="CONTROLS")
     report = ChangeReport(
-        change=change, observed_pairs=[("commande", "organe")], verbes=["règle"],
+        change=change,
+        observed_pairs=[("commande", "organe")],
+        verbes=["règle"],
     )
     evolved = evolve_profile(base, change, report)
     assert evolved.relation_vocabulary[0].examples == "règle, pilote"
@@ -110,10 +137,12 @@ def test_promote_extends_does_not_duplicate_known_verb() -> None:
 
 # ──────────────────── MergeTypes ────────────────────
 
+
 @profile_evolution_suite.test()
 def test_merge_renames_entity_type() -> None:
     base = Profile(
-        name="test", description="",
+        name="test",
+        description="",
         entity_types=(EntityType("piston", ("diametre",)),),
     )
     change = MergeTypes(sources=["piston"], target="organe")
@@ -127,7 +156,8 @@ def test_merge_renames_entity_type() -> None:
 @profile_evolution_suite.test()
 def test_merge_collapses_source_into_existing_target_union_keys() -> None:
     base = Profile(
-        name="test", description="",
+        name="test",
+        description="",
         entity_types=(
             EntityType("organe", ("fonction",), "note organe"),
             EntityType("piston", ("diametre",)),
@@ -147,13 +177,16 @@ def test_merge_collapses_source_into_existing_target_union_keys() -> None:
 @profile_evolution_suite.test()
 def test_merge_renames_type_everywhere_in_relation_vocabulary() -> None:
     base = Profile(
-        name="test", description="",
+        name="test",
+        description="",
         entity_types=(EntityType("piston", ()),),
         relation_vocabulary=(
-            RelationSpec("CONTROLS", "pilote", subjects=("commande",),
-                         objects=("piston", "mode")),
-            RelationSpec("PART_OF", "fait partie de", subjects=("piston",),
-                         objects=("piston",)),
+            RelationSpec(
+                "CONTROLS", "pilote", subjects=("commande",), objects=("piston", "mode")
+            ),
+            RelationSpec(
+                "PART_OF", "fait partie de", subjects=("piston",), objects=("piston",)
+            ),
         ),
     )
     change = MergeTypes(sources=["piston"], target="organe")
@@ -170,7 +203,8 @@ def test_merge_renames_type_everywhere_in_relation_vocabulary() -> None:
 @profile_evolution_suite.test()
 def test_merge_leaves_untouched_types_unchanged() -> None:
     base = Profile(
-        name="test", description="",
+        name="test",
+        description="",
         entity_types=(EntityType("commande", ("role",)), EntityType("piston", ())),
     )
     change = MergeTypes(sources=["piston"], target="organe")

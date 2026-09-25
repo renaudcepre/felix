@@ -19,6 +19,7 @@ Mesuré de bout en bout, par session :
 À lancer à la demande (≈30-40 appels LLM) : `just e2e-conductor`. Wipe la base
 partagée, NE PAS lancer en // de l'API. Sort en code 1 si une métrique casse.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,13 +40,22 @@ PLACEHOLDERS = {"alice", "bob", "charlie", "paris", "jean dupont", "john doe"}
 TURNS: list[tuple[str, bool]] = [
     ("salut !", False),
     ("j'ai une idée de thriller mais je sais pas trop par où commencer", False),
-    ("Une journaliste, Nora, débarque à Port-Vendres pour enquêter sur le maire "
-     "Castan, soupçonné de détourner l'argent du port.", True),
+    (
+        "Une journaliste, Nora, débarque à Port-Vendres pour enquêter sur le maire "
+        "Castan, soupçonné de détourner l'argent du port.",
+        True,
+    ),
     ("qui est Nora, déjà ?", False),
-    ("Castan a un homme de main, Veil, qui commence à repérer Nora dans la ville.", True),
+    (
+        "Castan a un homme de main, Veil, qui commence à repérer Nora dans la ville.",
+        True,
+    ),
     ("merci, c'est top", False),
-    ("À l'aube, sur le quai, un vieux pêcheur glisse une clé USB à Nora. Veil les "
-     "observe de loin.", True),
+    (
+        "À l'aube, sur le quai, un vieux pêcheur glisse une clé USB à Nora. Veil les "
+        "observe de loin.",
+        True,
+    ),
     ("tu peux me résumer ce qu'on a pour l'instant ?", False),
 ]
 
@@ -54,13 +64,18 @@ TURNS: list[tuple[str, bool]] = [
 # après un tour 1 ambigu. Univers dédié (Vada/Tilio/Sorne), absent des prompts
 # (cf. feedback_prompt_test_leakage) et des autres cas.
 RUT_TURNS: list[tuple[str, bool]] = [
-    ("franchement je sais pas trop par où commencer... peut-être une histoire avec "
-     "une luthière, à Sorne, qui recueillerait un apprenti muet ? un truc comme ça ?",
-     True),
+    (
+        "franchement je sais pas trop par où commencer... peut-être une histoire avec "
+        "une luthière, à Sorne, qui recueillerait un apprenti muet ? un truc comme ça ?",
+        True,
+    ),
     ("ouais enfin, c'est encore super vague tout ça", False),
     ("bon, allez : la luthière s'appelle Vada, et l'apprenti, Tilio.", True),
-    ("Vada découvre que Tilio grave des messages interdits sous les tables "
-     "d'harmonie des violons qu'il vernit.", True),
+    (
+        "Vada découvre que Tilio grave des messages interdits sous les tables "
+        "d'harmonie des violons qu'il vernit.",
+        True,
+    ),
 ]
 
 WRITE_TITLES = {"Entité créée", "Relation ajoutée", "Événement"}
@@ -108,20 +123,25 @@ async def play_session(
         empty += not text.strip() and not err
         per_turn.append(writes)
         exp = "CONTENU" if is_content else "—      "
-        got = (f"ERREUR: {err[:48]}" if err else text.strip()[:72])
+        got = f"ERREUR: {err[:48]}" if err else text.strip()[:72]
         print(f"  [{exp} | {writes} écr.] «{msg[:46]}» → {got}")
     return per_turn, empty, errors
 
 
 def check_session(
-    turns: list[tuple[str, bool]], per_turn: list[int], empty: int,
-    ents: list[dict], *, full_recall: bool
+    turns: list[tuple[str, bool]],
+    per_turn: list[int],
+    empty: int,
+    ents: list[dict],
+    *,
+    full_recall: bool,
 ) -> int:
     """Imprime métriques + invariants d'une session ; renvoie le nb de checks cassés.
 
     `full_recall=True` (session ornière) : TOUS les tours de contenu doivent être
     captés, tour 1 hedgé compris — c'est l'objet du test. La session mêlée garde
     la tolérance n-1 (variance Small sur un tour limite)."""
+
     def is_event(e: dict) -> bool:
         return "evenement" in str(e.get("entity_type", "")).lower()
 
@@ -140,20 +160,34 @@ def check_session(
 
     print(f"  entités réelles ({len(reals)}) : {reals}")
     print(f"  événements (chroniqueur) : {n_events}")
-    print(f"  ⓘ réifications d'action (extracteur, chantier séparé) : {len(reified)} {reified}")
+    print(
+        f"  ⓘ réifications d'action (extracteur, chantier séparé) : {len(reified)} {reified}"
+    )
     # Invariants DU ROUTAGE (gate / hallucination) — la qualité d'extraction est un
     # autre chantier et ne fait pas échouer cet e2e (sinon flaky sur la variance Small).
     checks = [
-        (f"0 hallucination sur {n_chat} tours sans contenu", halluc == 0,
-         f"{halluc} écriture(s) à tort"),
+        (
+            f"0 hallucination sur {n_chat} tours sans contenu",
+            halluc == 0,
+            f"{halluc} écriture(s) à tort",
+        ),
         ("aucun placeholder générique (Alice/Bob/Paris)", not junk, f"{junk}"),
         ("aucune réponse vide (hors erreur)", empty == 0, f"{empty} vide(s)"),
-        (f"recall ≥ {min_recall}/{n_content} tours de contenu captés",
-         (n_content - miss) >= min_recall, f"{n_content - miss}/{n_content} captés"),
+        (
+            f"recall ≥ {min_recall}/{n_content} tours de contenu captés",
+            (n_content - miss) >= min_recall,
+            f"{n_content - miss}/{n_content} captés",
+        ),
     ]
     if full_recall:
-        checks.insert(0, ("le tour 1 hedgé+contenu est routé (anti-ornière)",
-                          per_turn[0] > 0, "0 écriture au tour 1"))
+        checks.insert(
+            0,
+            (
+                "le tour 1 hedgé+contenu est routé (anti-ornière)",
+                per_turn[0] > 0,
+                "0 écriture au tour 1",
+            ),
+        )
     failed = 0
     for label, ok, detail in checks:
         print(f"  {'✓' if ok else '✗'} {label}" + ("" if ok else f"  → {detail}"))
@@ -166,8 +200,9 @@ async def main() -> int:
     async with lifespan(app):
         driver = get_driver()
         transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                     timeout=180) as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test", timeout=180
+        ) as client:
             for name, turns, full_recall in (
                 ("SESSION MÊLÉE (salutations / contenu / questions)", TURNS, False),
                 ("SESSION ORNIÈRE (tour 1 hedgé + contenu)", RUT_TURNS, True),
@@ -177,13 +212,18 @@ async def main() -> int:
                 errors += errs
                 ents = await all_entities(driver, project=DEFAULT_PROJECT)
                 print()
-                failed += check_session(turns, per_turn, empty, ents,
-                                        full_recall=full_recall)
+                failed += check_session(
+                    turns, per_turn, empty, ents, full_recall=full_recall
+                )
         await driver.close()
 
     if errors:
-        print(f"\n  ⚠ {errors} tour(s) en erreur (backend transient) — résultats partiels")
-    print(f"\n{'✓ E2E CONDUCTOR OK' if not failed else f'✗ {failed} métrique(s) cassée(s)'}")
+        print(
+            f"\n  ⚠ {errors} tour(s) en erreur (backend transient) — résultats partiels"
+        )
+    print(
+        f"\n{'✓ E2E CONDUCTOR OK' if not failed else f'✗ {failed} métrique(s) cassée(s)'}"
+    )
     return 1 if failed else 0
 
 

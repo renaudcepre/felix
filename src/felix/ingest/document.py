@@ -24,6 +24,7 @@ chat (`felix.api.routes.atelier`), consommé par la route d'ingestion ET par
 rapport final — pour le CLI (`tools/ingest_doc.py`) et les scripts e2e
 (`evals/maintenance/emergent_e2e.py`), inchangés.
 """
+
 from __future__ import annotations
 
 import json
@@ -231,7 +232,9 @@ def _split_paragraphs(text: str, max_chars: int) -> list[str]:
             if buf:
                 parts.append(buf)
                 buf = ""
-            parts.extend(para[i:i + max_chars] for i in range(0, len(para), max_chars))
+            parts.extend(
+                para[i : i + max_chars] for i in range(0, len(para), max_chars)
+            )
             continue
         candidate = f"{buf}\n\n{para}" if buf else para
         if len(candidate) <= max_chars:
@@ -246,7 +249,8 @@ def _split_paragraphs(text: str, max_chars: int) -> list[str]:
 
 
 def chunk_pages(
-    pages: list[str], max_chars: int = DEFAULT_MAX_CHARS,
+    pages: list[str],
+    max_chars: int = DEFAULT_MAX_CHARS,
     min_chars: int = DEFAULT_MIN_CHARS,
 ) -> list[Chunk]:
     """Découpe des pages NETTOYÉES en blocs bornés par `max_chars` : fusionne
@@ -272,7 +276,9 @@ def chunk_pages(
             continue
         if len(page_text) > max_chars:
             flush()
-            chunks.extend(Chunk(i, i, part) for part in _split_paragraphs(page_text, max_chars))
+            chunks.extend(
+                Chunk(i, i, part) for part in _split_paragraphs(page_text, max_chars)
+            )
             continue
         candidate = f"{buf_text}\n\n{page_text}" if buf_text else page_text
         mergeable = len(buf_text) < min_chars or len(page_text) < min_chars
@@ -330,8 +336,11 @@ def entity_pages(node: dict, pages: dict[int, str]) -> list[int]:
     name = node.get("name")
     if isinstance(name, str) and (hits := pages_mentioning([name], pages)):
         return hits
-    values = [v for k, v in node.items()
-              if isinstance(v, str) and k not in _NON_TEXT_KEYS and k != "name"]
+    values = [
+        v
+        for k, v in node.items()
+        if isinstance(v, str) and k not in _NON_TEXT_KEYS and k != "name"
+    ]
     return pages_mentioning(values, pages) or sorted(pages)
 
 
@@ -385,8 +394,10 @@ def _is_header_noise_line(line: str) -> bool:
 
 
 class _TitleGuess(BaseModel):
-    titre: str = Field(description="le titre du document, tel qu'écrit dedans ; "
-                       "chaîne vide s'il n'y en a pas")
+    titre: str = Field(
+        description="le titre du document, tel qu'écrit dedans ; "
+        "chaîne vide s'il n'y en a pas"
+    )
 
 
 _TITLE_PROMPT = """\
@@ -411,8 +422,12 @@ async def llm_title(pages: list[str], fallback: str, ledger: CostLedger) -> str:
     excerpt = "\n".join(pages)[:_TITLE_EXCERPT_CHARS]
     if not excerpt.strip():
         return fallback
-    titler = Agent(build_gate_model(), output_type=_TitleGuess,
-                   model_settings=ModelSettings(temperature=0.0), retries=2)
+    titler = Agent(
+        build_gate_model(),
+        output_type=_TitleGuess,
+        model_settings=ModelSettings(temperature=0.0),
+        retries=2,
+    )
     try:
         run = await titler.run(_TITLE_PROMPT.format(excerpt=excerpt))
     except Exception:
@@ -426,8 +441,12 @@ async def llm_title(pages: list[str], fallback: str, ledger: CostLedger) -> str:
 
 
 async def _resolve_title(
-    meta_title: str | None, pages: list[str], fallback: str, ledger: CostLedger,
-    *, from_caller: bool,
+    meta_title: str | None,
+    pages: list[str],
+    fallback: str,
+    ledger: CostLedger,
+    *,
+    from_caller: bool,
 ) -> str:
     """Métadonnées PDF d'abord ; pages fournies par l'appelant (tests,
     extraction maison) → heuristique, pas d'appel LLM caché ; sinon titrage LLM."""
@@ -478,7 +497,12 @@ def is_document_duplicate(name: str, title: str) -> bool:
 
 
 async def merge_document_duplicates(
-    driver: AsyncDriver, touched: set[str], document_id: str, title: str, *, project: str,
+    driver: AsyncDriver,
+    touched: set[str],
+    document_id: str,
+    title: str,
+    *,
+    project: str,
 ) -> set[str]:
     """Fusionne DANS le document (`merge_entity_into`) toute entité `touched`
     dont le nom matche le titre (`is_document_duplicate`) — filet de sécurité
@@ -488,7 +512,9 @@ async def merge_document_duplicates(
     `DETACH DELETE` dans `merge_entity_into`) — l'appelant ne doit plus les
     traiter (DESCRIBED_IN, check de cohérence…)."""
     nodes = {
-        n["id"]: n for n in await all_entities(driver, project=project) if n["id"] in touched
+        n["id"]: n
+        for n in await all_entities(driver, project=project)
+        if n["id"] in touched
     }
     remaining = set(touched)
     for entity_id, node in nodes.items():
@@ -540,7 +566,8 @@ _INGEST_PASS_LABELS = ("fiches", "liens", "événements")
 def _block_label(index: int, n_chunks: int, chunk: Chunk) -> str:
     """« Bloc 2/5 (pages 3-4) » — préfixe des phases émises pour ce bloc."""
     pages_label = (
-        f"page {chunk.page_start}" if chunk.page_start == chunk.page_end
+        f"page {chunk.page_start}"
+        if chunk.page_start == chunk.page_end
         else f"pages {chunk.page_start}-{chunk.page_end}"
     )
     return f"Bloc {index}/{n_chunks} ({pages_label})"
@@ -592,7 +619,10 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
     # LLM comme les autres, il se paie et s'affiche (cf. CostLedger).
     totals = GenericDeps(driver=driver, profile=profile, project_id=project)
     title = await _resolve_title(
-        meta_title, pages, Path(source_name).stem, totals.cost_ledger,
+        meta_title,
+        pages,
+        Path(source_name).stem,
+        totals.cost_ledger,
         from_caller=isinstance(path_or_pages, list),
     )
     chunks = chunk_pages(pages, max_chars=max_chars)
@@ -603,7 +633,10 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
     await create_project(driver, project)
     document_id = slugify(title)
     await create_entity(
-        driver, document_id, title, "document",
+        driver,
+        document_id,
+        title,
+        "document",
         {"titre": title, "pages": str(len(pages)), "source": source_name},
         project=project,
     )
@@ -626,7 +659,9 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         # touchées, pour que l'extracteur relise la base avant d'écrire — sans
         # lui, un paramètre déjà créé au bloc précédent renaît en doublon.
         block = render_recent_block(
-            await recent_entities(driver, settings.recent_entities_limit, project=project)
+            await recent_entities(
+                driver, settings.recent_entities_limit, project=project
+            )
         )
         chunk_prompt = chunk.prompt(title, len(pages))
         extract_prompt = "\n\n".join(part for part in (block, chunk_prompt) if part)
@@ -634,12 +669,19 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         pass_idx = 0
         try:
             async for ev in run_extractors(
-                agent, relation_agent, chronicle_agent,
-                extract_prompt, chunk_prompt, None,
-                chunk_deps, profile,
+                agent,
+                relation_agent,
+                chronicle_agent,
+                extract_prompt,
+                chunk_prompt,
+                None,
+                chunk_deps,
+                profile,
             ):
                 if ev.event == "phase":
-                    step = _INGEST_PASS_LABELS[min(pass_idx, len(_INGEST_PASS_LABELS) - 1)]
+                    step = _INGEST_PASS_LABELS[
+                        min(pass_idx, len(_INGEST_PASS_LABELS) - 1)
+                    ]
                     pass_idx += 1
                     yield ServerSentEvent(data=f"{label} : {step}…", event="phase")
                     continue
@@ -651,7 +693,8 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         except Exception as exc:
             logger.exception(
                 "bloc pages %s-%s échoué (ingestion non bloquée)",
-                chunk.page_start, chunk.page_end,
+                chunk.page_start,
+                chunk.page_end,
             )
             errors.append(f"pages {chunk.page_start}-{chunk.page_end} : {exc}")
 
@@ -663,15 +706,20 @@ async def stream_ingest_document(  # noqa: PLR0913, PLR0915 — orchestrateur : 
         # `touched` : ces nœuds n'existent plus (DETACH DELETE).
         merged_before = set(touched)
         touched = await merge_document_duplicates(
-            driver, touched, document_id, title, project=project,
+            driver,
+            touched,
+            document_id,
+            title,
+            project=project,
         )
-        chunk_deps.check_candidates -= (merged_before - touched)
+        chunk_deps.check_candidates -= merged_before - touched
 
         chunk_pages_text = {
             p: pages[p - 1] for p in range(chunk.page_start, chunk.page_end + 1)
         }
         nodes = {
-            n["id"]: n for n in await all_entities(driver, project=project)
+            n["id"]: n
+            for n in await all_entities(driver, project=project)
             if n["id"] in touched
         }
         for entity_id in touched:
@@ -740,13 +788,20 @@ async def ingest_document(  # noqa: PLR0913 — même signature que stream_inges
     inchangé pour ces appelants (même signature, même valeur de retour)."""
     report: IngestReport | None = None
     async for ev in stream_ingest_document(
-        driver, path_or_pages,
-        profile=profile, agent=agent, relation_agent=relation_agent,
-        chronicle_agent=chronicle_agent, project=project, max_chars=max_chars,
+        driver,
+        path_or_pages,
+        profile=profile,
+        agent=agent,
+        relation_agent=relation_agent,
+        chronicle_agent=chronicle_agent,
+        project=project,
+        max_chars=max_chars,
     ):
         if ev.event == "report":
             report = IngestReport.model_validate_json(sse_text(ev))
     if report is None:
-        msg = "ingest_document : aucun event report émis par le générateur (bug interne)"
+        msg = (
+            "ingest_document : aucun event report émis par le générateur (bug interne)"
+        )
         raise RuntimeError(msg)
     return report

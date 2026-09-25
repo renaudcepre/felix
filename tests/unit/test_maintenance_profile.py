@@ -4,6 +4,7 @@ Univers de TEST : sertisseuse SX-40 (fixture synthétique, cf.
 [[feedback_prompt_test_leakage]]) — distinct de la presse plieuse PL-7 utilisée
 dans les exemples des prompts, jamais l'inverse.
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite
@@ -20,14 +21,25 @@ maintenance_profile_suite = ProTestSuite("MaintenanceProfile")
 
 P = MAINTENANCE_PROFILE
 
-ENTITY_TYPES = ("machine", "organe", "commande", "parametre", "mode", "consigne", "document")
+ENTITY_TYPES = (
+    "machine",
+    "organe",
+    "commande",
+    "parametre",
+    "mode",
+    "consigne",
+    "document",
+)
 
 
 # ──────────────────── validate_relation ────────────────────
 @maintenance_profile_suite.test()
 def test_controls_commande_to_parametre_ok() -> None:
     """Le sélecteur de force CONTROLS le paramètre pression_sertissage (SX-40)."""
-    assert P.validate_relation("CONTROLS", "commande", "parametre", same_node=False) is None
+    assert (
+        P.validate_relation("CONTROLS", "commande", "parametre", same_node=False)
+        is None
+    )
 
 
 @maintenance_profile_suite.test()
@@ -58,16 +70,21 @@ def test_described_in_every_declared_type_to_document_ok() -> None:
     """DESCRIBED_IN — posée par le code à l'ingestion — accepte chacun des types
     déclarés du domaine comme sujet, document comme cible."""
     for entity_type in ENTITY_TYPES:
-        assert P.validate_relation(
-            "DESCRIBED_IN", entity_type, "document", same_node=False
-        ) is None, entity_type
+        assert (
+            P.validate_relation(
+                "DESCRIBED_IN", entity_type, "document", same_node=False
+            )
+            is None
+        ), entity_type
 
 
 @maintenance_profile_suite.test()
 def test_applies_to_consigne_to_organe_ok() -> None:
     """« ne jamais dépasser 12 kN sur la mâchoire » — consigne APPLIES_TO organe
     (la mâchoire de la SX-40)."""
-    assert P.validate_relation("APPLIES_TO", "consigne", "organe", same_node=False) is None
+    assert (
+        P.validate_relation("APPLIES_TO", "consigne", "organe", same_node=False) is None
+    )
 
 
 # ──────────────────── render_prompt_block ────────────────────

@@ -11,6 +11,7 @@ re-création du même nom sous un autre type est refusée en code.
 Anti-leakage : les noms de ce module (Cendral, Brulvie) ne doivent PAS apparaître
 dans les prompts des agents (src/felix/) — vérification dans test_no_test_names_in_prompts.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -33,6 +34,7 @@ _PROF = SCENARIO_PROFILE
 
 # ──────────── 1. Le slug du nom refusé entre dans refused_names ─────────────
 
+
 @refusal_terminal_suite.test()
 def test_evenement_refus_signale_ajout() -> None:
     """check_add_entity_guards(type='evenement') → add_to_refused=True."""
@@ -52,6 +54,7 @@ def test_evenement_refus_message_non_nul() -> None:
 
 
 # ──────────── 2. Re-création bloquée (avec et sans article) ─────────────────
+
 
 @refusal_terminal_suite.test()
 def test_retente_avec_article_bloquee() -> None:
@@ -75,29 +78,24 @@ def test_retente_sans_article_meme_slug() -> None:
 def test_retente_sans_article_bloquee() -> None:
     """Après refus, re-création 'bataille des Cendral' (sans article) → bloquée."""
     slug = slugify("la bataille des Cendral")
-    msg, _add = check_add_entity_guards(
-        "bataille des Cendral", "groupe", {slug}, _PROF
-    )
+    msg, _add = check_add_entity_guards("bataille des Cendral", "groupe", {slug}, _PROF)
     assert msg is not None, "la re-création sans article doit être refusée (même slug)"
 
 
 # ──────────── 3. Même séquence pour la garde anti-état ──────────────────────
 
+
 @refusal_terminal_suite.test()
 def test_maladie_refus_signale_ajout() -> None:
     """check_add_entity_guards(type='maladie') → add_to_refused=True."""
-    _msg, add = check_add_entity_guards(
-        "la fièvre de Brulvie", "maladie", set(), _PROF
-    )
+    _msg, add = check_add_entity_guards("la fièvre de Brulvie", "maladie", set(), _PROF)
     assert add is True
 
 
 @refusal_terminal_suite.test()
 def test_maladie_refus_message_non_nul() -> None:
     """check_add_entity_guards(type='maladie') → message de refus non vide."""
-    msg, _add = check_add_entity_guards(
-        "la fièvre de Brulvie", "maladie", set(), _PROF
-    )
+    msg, _add = check_add_entity_guards("la fièvre de Brulvie", "maladie", set(), _PROF)
     assert msg is not None
 
 
@@ -105,13 +103,14 @@ def test_maladie_refus_message_non_nul() -> None:
 def test_maladie_retente_objet_bloquee() -> None:
     """Après refus maladie, re-création du même nom type='objet' → bloquée."""
     slug = slugify("la fièvre de Brulvie")
-    msg, _add = check_add_entity_guards(
-        "la fièvre de Brulvie", "objet", {slug}, _PROF
+    msg, _add = check_add_entity_guards("la fièvre de Brulvie", "objet", {slug}, _PROF)
+    assert msg is not None, (
+        "la re-création d'un état refusé sous type='objet' doit être bloquée"
     )
-    assert msg is not None, "la re-création d'un état refusé sous type='objet' doit être bloquée"
 
 
 # ──────────── 4. Message evenement sans liste de types alternatifs ───────────
+
 
 @refusal_terminal_suite.test()
 def test_message_evenement_sans_personnage() -> None:
@@ -138,6 +137,7 @@ def test_message_evenement_sans_lieu_ni_objet() -> None:
 
 # ──────────── 5. Non-régression du chemin nominal ────────────────────────────
 
+
 @refusal_terminal_suite.test()
 def test_nom_valide_type_valide_passe() -> None:
     """Nom inconnu, type valide, refused_names vide → (None, False) = chemin nominal."""
@@ -151,14 +151,13 @@ def test_nom_valide_type_valide_passe() -> None:
 @refusal_terminal_suite.test()
 def test_refused_names_vide_ne_bloque_pas_personnage() -> None:
     """refused_names={} = aucun refus mémoire — non-régression base vierge."""
-    msg, add = check_add_entity_guards(
-        "Tornel le guetteur", "personnage", set(), _PROF
-    )
+    msg, add = check_add_entity_guards("Tornel le guetteur", "personnage", set(), _PROF)
     assert msg is None
     assert add is False
 
 
 # ──────────── Anti-leakage ──────────────────────────────────────────────────
+
 
 @refusal_terminal_suite.test()
 def test_no_test_names_in_prompts() -> None:

@@ -15,6 +15,7 @@ Univers Romeck/Lioba/Carstier/Madra — absent de tous les prompts (anti-leakage
 
 Usage : uv run python tools/check_gate_meta.py
 """
+
 # ruff: noqa: T201
 from __future__ import annotations
 
@@ -31,34 +32,46 @@ CASES: list[tuple[str, str, bool, str | None, str | None]] = [
     (
         "remarque sur la fiche sans valeur corrigée → muet",
         "tu mets pas à jour l'âge dans la fiche de Romeck ? tu as écrit 52",
-        False, None, None,
+        False,
+        None,
+        None,
     ),
     (
         "question sur ce qui est noté → muet",
         "pourquoi tu as noté « borgne » sur la fiche de Lioba ?",
-        False, None, None,
+        False,
+        None,
+        None,
     ),
     (
         "plan de narration (parler de…) → muet",
         "ce qui serait intéressant dans cette histoire, ce serait de parler "
         "de la jeunesse de Romeck",
-        False, None, None,
+        False,
+        None,
+        None,
     ),
     (
         "correction sèche avec la valeur → notée, valeur verbatim",
         "non, Lioba a 67 ans",
-        True, "67", None,
+        True,
+        "67",
+        None,
     ),
     (
         "année de naissance → fait verbatim, JAMAIS d'âge calculé",
         "Romeck, le veilleur du port de Carstier, est né en 1962",
-        True, "1962", r"\b\d{2}\s*ans\b",
+        True,
+        "1962",
+        r"\b\d{2}\s*ans\b",
     ),
     (
         "contrôle positif : récit normal → noté",
         "Madra, la patronne de la halle aux grains, surveille Romeck "
         "depuis des semaines",
-        True, "madra", None,
+        True,
+        "madra",
+        None,
     ),
 ]
 
@@ -70,9 +83,19 @@ def _is_transient(exc: Exception) -> bool:
     if "timeout" in type(exc).__qualname__.lower():
         return True
     msg = str(exc).lower()
-    return any(p in msg for p in (
-        "429", "rate", "timeout", "500", "502", "503", "504", "invalid_function_call",
-    ))
+    return any(
+        p in msg
+        for p in (
+            "429",
+            "rate",
+            "timeout",
+            "500",
+            "502",
+            "503",
+            "504",
+            "invalid_function_call",
+        )
+    )
 
 
 async def _run_gate(agent, message: str, attempts: int = 3):

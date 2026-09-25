@@ -10,6 +10,7 @@ absent de la table (défauts + surcharge) a un prix INCONNU : jamais remplacé
 par 0€ (un faux 0 mentirait sur le coût réel), le champ `cost_usd` reste
 `None` et l'UI affiche « prix inconnu ».
 """
+
 from __future__ import annotations
 
 import json
@@ -63,7 +64,9 @@ DEFAULT_PRICING: dict[str, PriceEntry] = {
     "mistral-small-latest": PriceEntry(input_per_million=0.15, output_per_million=0.60),
     "mistral-small-2506": PriceEntry(input_per_million=0.15, output_per_million=0.60),
     "mistral-large-latest": PriceEntry(input_per_million=0.50, output_per_million=1.50),
-    "mistral-medium-latest": PriceEntry(input_per_million=1.50, output_per_million=7.50),
+    "mistral-medium-latest": PriceEntry(
+        input_per_million=1.50, output_per_million=7.50
+    ),
 }
 
 
@@ -90,8 +93,10 @@ def parse_pricing_overrides(raw: str) -> dict[str, PriceEntry]:
                 input_per_million=float(prices["input"]),
                 output_per_million=float(prices["output"]),
             )
-        except (KeyError, TypeError, ValueError):
-            logger.warning("entrée de prix invalide pour %r dans FLX_PRICING_JSON — ignorée", name)
+        except KeyError, TypeError, ValueError:
+            logger.warning(
+                "entrée de prix invalide pour %r dans FLX_PRICING_JSON — ignorée", name
+            )
     return out
 
 
@@ -107,7 +112,9 @@ def build_pricing_table(overrides_json: str | None = None) -> dict[str, PriceEnt
     return table
 
 
-def price_for_model(model_name: str, *, overrides_json: str | None = None) -> PriceEntry | None:
+def price_for_model(
+    model_name: str, *, overrides_json: str | None = None
+) -> PriceEntry | None:
     """Prix du modèle, ou `None` si absent de la table (prix inconnu)."""
     return build_pricing_table(overrides_json).get(model_name)
 
@@ -167,8 +174,11 @@ class CostLedger:
             existing = by_model.get(model_name)
             if existing is None:
                 by_model[model_name] = ModelCost(
-                    model=model_name, request_tokens=req_tok, response_tokens=resp_tok,
-                    total_tokens=req_tok + resp_tok, cost_usd=None,
+                    model=model_name,
+                    request_tokens=req_tok,
+                    response_tokens=resp_tok,
+                    total_tokens=req_tok + resp_tok,
+                    cost_usd=None,
                 )
             else:
                 existing.request_tokens += req_tok
@@ -194,7 +204,9 @@ class CostLedger:
                     total_cost += mc.cost_usd
 
         return CostSummary(
-            request_tokens=total_request, response_tokens=total_response,
-            total_tokens=total_tokens, cost_usd=total_cost,
+            request_tokens=total_request,
+            response_tokens=total_response,
+            total_tokens=total_tokens,
+            cost_usd=total_cost,
             by_model=list(by_model.values()),
         )

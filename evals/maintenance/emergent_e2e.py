@@ -17,6 +17,7 @@ sont jamais touchées (garantie #60, cf. felix.core.projects).
 À lancer à la demande (2 fiches x ~3 blocs, quelques dizaines d'appels LLM) :
 ``just e2e-emergent``. Sort en code 1 si un invariant casse.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -58,10 +59,12 @@ async def _wipe_project(driver) -> None:
     jamais touchées (cf. #60, garantie structurelle du scoping projet)."""
     async with driver.session() as session:
         await session.run(
-            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJECT,
+            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n",
+            p=PROJECT,
         )
         await session.run(
-            "MATCH (n:ProjectProfile {project: $p}) DETACH DELETE n", p=PROJECT,
+            "MATCH (n:ProjectProfile {project: $p}) DETACH DELETE n",
+            p=PROJECT,
         )
 
 
@@ -86,8 +89,13 @@ async def _ingest(driver, path: Path, profile: Profile) -> IngestReport:
     relation_agent = build_relation_agent(CHOICE, profile)
     chronicle_agent = build_chronicle_agent(CHOICE, profile)
     return await ingest_document(
-        driver, path, profile=profile, agent=agent, relation_agent=relation_agent,
-        chronicle_agent=chronicle_agent, project=PROJECT,
+        driver,
+        path,
+        profile=profile,
+        agent=agent,
+        relation_agent=relation_agent,
+        chronicle_agent=chronicle_agent,
+        project=PROJECT,
     )
 
 
@@ -137,37 +145,47 @@ async def main() -> int:  # noqa: PLR0915 — script e2e narratif, pas une lib
                 promoted_rel_types.add(proposal.change.rel_type)
         stored_version = None
         if proposals:
-            stored_version = await save_project_profile(driver, profile, project=PROJECT)
+            stored_version = await save_project_profile(
+                driver, profile, project=PROJECT
+            )
 
         # ── Invariants post-validation ──
         relations_after_accept = await all_relations(driver, project=PROJECT)
         remaining_promoted_lie_a = [
-            r for r in relations_after_accept
+            r
+            for r in relations_after_accept
             if r["rel_type"] == NARRATIVE_REL
             and r["props"].get("verbe_slug") in promoted_slugs
         ]
         stored_profile = await load_project_profile(driver, project=PROJECT)
         stored_rel_types = (
             {s.name for s in stored_profile.relation_vocabulary}
-            if stored_profile is not None else set()
+            if stored_profile is not None
+            else set()
         )
 
-        checks.append((
-            "zéro LIE_A restant sur les slugs promus",
-            not remaining_promoted_lie_a,
-            f"{len(remaining_promoted_lie_a)} arête(s) restante(s)",
-        ))
+        checks.append(
+            (
+                "zéro LIE_A restant sur les slugs promus",
+                not remaining_promoted_lie_a,
+                f"{len(remaining_promoted_lie_a)} arête(s) restante(s)",
+            )
+        )
         if proposals:
-            checks.append((
-                "profil stocké version ≥ 1",
-                stored_version is not None and stored_version >= 1,
-                f"version={stored_version}",
-            ))
-            checks.append((
-                "profil stocké porte les nouveaux RelationSpec",
-                promoted_rel_types <= stored_rel_types,
-                f"attendu ⊆ {promoted_rel_types}, stocké {stored_rel_types}",
-            ))
+            checks.append(
+                (
+                    "profil stocké version ≥ 1",
+                    stored_version is not None and stored_version >= 1,
+                    f"version={stored_version}",
+                )
+            )
+            checks.append(
+                (
+                    "profil stocké porte les nouveaux RelationSpec",
+                    promoted_rel_types <= stored_rel_types,
+                    f"attendu ⊆ {promoted_rel_types}, stocké {stored_rel_types}",
+                )
+            )
 
         # ── Fiche 2 : ingérée avec le profil ÉVOLUÉ ──
         # Compte AVANT fiche 2 (après accept-all) — sert de base aux deltas
@@ -190,22 +208,37 @@ async def main() -> int:  # noqa: PLR0915 — script e2e narratif, pas une lib
         # Toute arête écrite doit rester dans (vocab du profil ÉVOLUÉ UNION
         # {LIE_A, DESCRIBED_IN}) — garanti par construction (validate_relation
         # refuse tout le reste au write), vérifié ici sur le graphe réel.
-        allowed = {s.name for s in profile.relation_vocabulary} | {NARRATIVE_REL, "DESCRIBED_IN"}
-        outside = sorted({
-            r["rel_type"] for r in relations_after_fiche2 if r["rel_type"] not in allowed
-        })
-        checks.append((
-            "aucune arête hors du vocabulaire du profil évolué",
-            not outside,
-            f"types hors vocab : {outside}",
-        ))
+        allowed = {s.name for s in profile.relation_vocabulary} | {
+            NARRATIVE_REL,
+            "DESCRIBED_IN",
+        }
+        outside = sorted(
+            {
+                r["rel_type"]
+                for r in relations_after_fiche2
+                if r["rel_type"] not in allowed
+            }
+        )
+        checks.append(
+            (
+                "aucune arête hors du vocabulaire du profil évolué",
+                not outside,
+                f"types hors vocab : {outside}",
+            )
+        )
 
         # ── Bilan final ──
         print("\n===== BILAN =====")
-        print(f"  tokens fiche 1 : {report1.total_tokens}  |  fiche 2 : {report2.total_tokens}")
-        print(f"  propositions détectées : {len(proposals)}, acceptées : {len(proposals)}")
-        print(f"  ratio de réutilisation (typé/(typé+LIE_A)) : "
-              f"fiche 1 = {ratio_1:.0%}  →  fiche 2 = {ratio_2:.0%}")
+        print(
+            f"  tokens fiche 1 : {report1.total_tokens}  |  fiche 2 : {report2.total_tokens}"
+        )
+        print(
+            f"  propositions détectées : {len(proposals)}, acceptées : {len(proposals)}"
+        )
+        print(
+            f"  ratio de réutilisation (typé/(typé+LIE_A)) : "
+            f"fiche 1 = {ratio_1:.0%}  →  fiche 2 = {ratio_2:.0%}"
+        )
 
         print("\n===== INVARIANTS =====")
         failed = 0

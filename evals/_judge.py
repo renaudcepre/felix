@@ -1,4 +1,5 @@
 """Judge LLM partagé entre les sessions d'evals (legacy + atelier)."""
+
 from __future__ import annotations
 
 from protest.evals import JudgeResponse
@@ -30,5 +31,6 @@ class FelixJudge:
             output=result.output,
             input_tokens=in_tok,
             output_tokens=out_tok,
-            cost=in_tok * MISTRAL_SMALL_INPUT_COST + out_tok * MISTRAL_SMALL_OUTPUT_COST,
+            cost=in_tok * MISTRAL_SMALL_INPUT_COST
+            + out_tok * MISTRAL_SMALL_OUTPUT_COST,
         )

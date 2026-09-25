@@ -14,6 +14,7 @@ Trois rendus, un par point d'injection :
 - ``render_schema_hint``   → réponse de describe_schema quand la base est vide ;
 - ``render_check_rules``   → section « RÈGLES DE COHÉRENCE DU DOMAINE » du check.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -113,8 +114,11 @@ class Profile:
 
     def render_prompt_block(self) -> str:
         """Bloc concaténé au system prompt — volontairement compact (petit modèle)."""
-        lines = [f"=== DOMAINE : {self.name} ===", self.description,
-                 "Types d'entités usuels (réutilise-les quand le sens correspond) :"]
+        lines = [
+            f"=== DOMAINE : {self.name} ===",
+            self.description,
+            "Types d'entités usuels (réutilise-les quand le sens correspond) :",
+        ]
         for et in self.entity_types:
             note = f" — {et.note}" if et.note else ""
             lines.append(f"- {et.name} : {', '.join(et.keys)}{note}")
@@ -152,7 +156,8 @@ class Profile:
             lines.append("Types : " + ", ".join(et.name for et in self.entity_types))
         if self.relation_vocabulary:
             lines.append(
-                "Relations : " + ", ".join(spec.name for spec in self.relation_vocabulary)
+                "Relations : "
+                + ", ".join(spec.name for spec in self.relation_vocabulary)
             )
         return "\n".join(lines)
 
@@ -165,7 +170,9 @@ class Profile:
         for et in self.entity_types:
             lines.append(f"- {et.name} · propriétés usuelles : {', '.join(et.keys)}")
         if self.relation_vocabulary:
-            lines.append("Types de relations STRUCTURELLES (CAPITALES anglaises, EXACTS) :")
+            lines.append(
+                "Types de relations STRUCTURELLES (CAPITALES anglaises, EXACTS) :"
+            )
             for spec in self.relation_vocabulary:
                 ex = f"  (ex. : {spec.examples})" if spec.examples else ""
                 lines.append(f"- {spec.name} : {spec.gloss}{ex}")
@@ -199,7 +206,12 @@ class Profile:
         return frozenset(types)
 
     def validate_relation(  # noqa: PLR0911 — chaque refus est un message GUIDANT distinct
-        self, rel_type: str, subject_type: str, object_type: str, *, same_node: bool,
+        self,
+        rel_type: str,
+        subject_type: str,
+        object_type: str,
+        *,
+        same_node: bool,
         verbe: str = "",
     ) -> str | None:
         """Valide une relation à l'écriture. Retourne ``None`` si OK, sinon un message
@@ -289,19 +301,23 @@ SCENARIO_PROFILE = Profile(
     "événements et objets.",
     entity_types=(
         EntityType(
-            "personnage", ("background", "age", "traits", "alibi"),
+            "personnage",
+            ("background", "age", "traits", "alibi"),
             "Un alibi, un trait ou un âge est une PROPRIÉTÉ du personnage, pas une entité.",
         ),
         EntityType(
-            "lieu", ("description", "ambiance"),
+            "lieu",
+            ("description", "ambiance"),
             "Une ville, un bâtiment, une pièce sont des lieux.",
         ),
         EntityType(
-            "objet", ("description", "proprietaire"),
+            "objet",
+            ("description", "proprietaire"),
             "Une arme, un indice, un objet de l'intrigue.",
         ),
         EntityType(
-            "groupe", ("description", "camp"),
+            "groupe",
+            ("description", "camp"),
             "Une faction, une organisation, une armée (ex. le FLN). Un personnage en "
             "est MEMBER_OF ; ne crée PAS un groupe comme un personnage.",
         ),
@@ -349,17 +365,27 @@ SCENARIO_PROFILE = Profile(
     # complet du tapis roulant (soupe d'Alger → vocab dur → trous infinis) est
     # dans l'issue #68.
     relation_vocabulary=(
-        RelationSpec("LOCATED_AT", "se trouve / se déroule dans un lieu",
-                     subjects=("personnage", "objet", "evenement", "groupe"),
-                     objects=("lieu",),
-                     examples="est à, vit à, se trouve dans, se déroule à, "
-                              "le groupe vit à"),
-        RelationSpec("MEMBER_OF", "appartient à un groupe / une organisation",
-                     subjects=("personnage",), objects=("groupe",),
-                     examples="est membre du FLN, appartient à la police, est dans le gang"),
-        RelationSpec("PART_OF", "fait partie d'un ensemble plus grand",
-                     subjects=("lieu", "objet", "groupe"), objects=("lieu", "objet", "groupe"),
-                     examples="la cave fait partie de l'école, une aile d'un bâtiment"),
+        RelationSpec(
+            "LOCATED_AT",
+            "se trouve / se déroule dans un lieu",
+            subjects=("personnage", "objet", "evenement", "groupe"),
+            objects=("lieu",),
+            examples="est à, vit à, se trouve dans, se déroule à, le groupe vit à",
+        ),
+        RelationSpec(
+            "MEMBER_OF",
+            "appartient à un groupe / une organisation",
+            subjects=("personnage",),
+            objects=("groupe",),
+            examples="est membre du FLN, appartient à la police, est dans le gang",
+        ),
+        RelationSpec(
+            "PART_OF",
+            "fait partie d'un ensemble plus grand",
+            subjects=("lieu", "objet", "groupe"),
+            objects=("lieu", "objet", "groupe"),
+            examples="la cave fait partie de l'école, une aile d'un bâtiment",
+        ),
     ),
     narrative_rel=NARRATIVE_REL,
     manages_events=True,
@@ -374,19 +400,23 @@ CHANTIER_PROFILE = Profile(
     "et intervenants.",
     entity_types=(
         EntityType(
-            "outil", ("date_achat", "prix", "fournisseur", "etat"),
+            "outil",
+            ("date_achat", "prix", "fournisseur", "etat"),
             "Une perceuse, un marteau ; prix et date sont des propriétés.",
         ),
         EntityType(
-            "materiau", ("essence", "quantite", "prix", "fournisseur"),
+            "materiau",
+            ("essence", "quantite", "prix", "fournisseur"),
             "Du bois, des panneaux ; la quantité est une propriété.",
         ),
         EntityType(
-            "ouvrage", ("largeur", "longueur", "hauteur", "date"),
+            "ouvrage",
+            ("largeur", "longueur", "hauteur", "date"),
             "Une dalle, un abri ; ses dimensions sont des propriétés.",
         ),
         EntityType(
-            "intervenant", ("role", "tarif_jour", "telephone"),
+            "intervenant",
+            ("role", "tarif_jour", "telephone"),
             "Un maçon, un client ; son métier est une propriété 'role'.",
         ),
     ),
@@ -413,37 +443,44 @@ MAINTENANCE_PROFILE = Profile(
     "commandes, réglages, modes de fonctionnement et consignes de sécurité.",
     entity_types=(
         EntityType(
-            "machine", ("modele", "reperes", "fabricant", "site"),
+            "machine",
+            ("modele", "reperes", "fabricant", "site"),
             "La machine documentée (ex. une presse plieuse). `reperes` est UNE "
             "propriété qui liste tous les repères machine, jamais une entité "
             "par repère.",
         ),
         EntityType(
-            "organe", ("fonction", "emplacement"),
+            "organe",
+            ("fonction", "emplacement"),
             "Un sous-ensemble physique de la machine (tablier, butée arrière, "
             "pédale) ; sa fonction et son emplacement sont des propriétés.",
         ),
         EntityType(
-            "commande", ("nature", "role", "emplacement"),
+            "commande",
+            ("nature", "role", "emplacement"),
             "Un bouton, un voyant ou un sélecteur ; `nature` précise lequel des "
             "trois, `role` ce qu'il déclenche ou signale.",
         ),
         EntityType(
-            "parametre", ("unite", "plage", "valeur_usuelle", "contrainte"),
+            "parametre",
+            ("unite", "plage", "valeur_usuelle", "contrainte"),
             "Un réglage numérique (force de pliage, vitesse d'approche). Unité, "
             "plage et valeur sont VERBATIM (copiées de la fiche), jamais calculées.",
         ),
         EntityType(
-            "mode", ("description", "usage"),
+            "mode",
+            ("description", "usage"),
             "Un mode de fonctionnement de la machine (manuel, automatique, réglage).",
         ),
         EntityType(
-            "consigne", ("texte", "gravite", "motif"),
+            "consigne",
+            ("texte", "gravite", "motif"),
             "Une mise en garde ou une interdiction. `texte` est le VERBATIM de la "
             "fiche, jamais paraphrasé.",
         ),
         EntityType(
-            "document", ("titre", "version", "date_maj", "auteur", "valideur"),
+            "document",
+            ("titre", "version", "date_maj", "auteur", "valideur"),
             "La fiche technique source. Créée EN CODE à l'ingestion, jamais par toi.",
         ),
     ),
@@ -474,22 +511,28 @@ MAINTENANCE_PROFILE = Profile(
     # ne jamais la créer lui-même.
     relation_vocabulary=(
         RelationSpec(
-            "PART_OF", "fait partie d'un ensemble physique plus grand",
-            subjects=("organe", "commande"), objects=("machine", "organe"),
+            "PART_OF",
+            "fait partie d'un ensemble physique plus grand",
+            subjects=("organe", "commande"),
+            objects=("machine", "organe"),
             examples="le tablier fait partie de la PL-7, la pédale fait partie "
-                     "du pupitre de commande",
+            "du pupitre de commande",
         ),
         RelationSpec(
-            "CONTROLS", "commande / pilote un réglage, un mode ou un organe",
-            subjects=("commande",), objects=("parametre", "mode", "organe"),
+            "CONTROLS",
+            "commande / pilote un réglage, un mode ou un organe",
+            subjects=("commande",),
+            objects=("parametre", "mode", "organe"),
             examples="la pédale commande la vitesse d'approche, le sélecteur "
-                     "pilote le mode automatique",
+            "pilote le mode automatique",
         ),
         RelationSpec(
-            "INDICATES", "signale l'état d'un organe, d'un réglage ou d'un mode",
-            subjects=("commande",), objects=("organe", "parametre", "mode"),
+            "INDICATES",
+            "signale l'état d'un organe, d'un réglage ou d'un mode",
+            subjects=("commande",),
+            objects=("organe", "parametre", "mode"),
             examples="le voyant rouge indique le dépassement de la force de "
-                     "pliage, le voyant vert indique le mode automatique actif",
+            "pliage, le voyant vert indique le mode automatique actif",
         ),
         RelationSpec(
             "APPLIES_TO",
@@ -498,17 +541,27 @@ MAINTENANCE_PROFILE = Profile(
             subjects=("consigne", "mode", "parametre", "document"),
             objects=("machine", "organe", "commande", "parametre"),
             examples="la consigne de sécurité s'applique à la butée arrière, "
-                     "le mode réglage s'applique à la PL-7",
+            "le mode réglage s'applique à la PL-7",
         ),
         RelationSpec(
-            "DEPENDS_ON", "dépend de la valeur d'un autre réglage",
-            subjects=("parametre",), objects=("parametre",),
+            "DEPENDS_ON",
+            "dépend de la valeur d'un autre réglage",
+            subjects=("parametre",),
+            objects=("parametre",),
             examples="la vitesse d'approche dépend de la force de pliage réglée",
         ),
         RelationSpec(
-            "DESCRIBED_IN", "décrit dans un document source (posée par le code)",
-            subjects=("machine", "organe", "commande", "parametre", "mode",
-                      "consigne", "document"),
+            "DESCRIBED_IN",
+            "décrit dans un document source (posée par le code)",
+            subjects=(
+                "machine",
+                "organe",
+                "commande",
+                "parametre",
+                "mode",
+                "consigne",
+                "document",
+            ),
             objects=("document",),
         ),
     ),

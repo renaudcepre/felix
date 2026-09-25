@@ -12,6 +12,7 @@ qui touchent :GenEntity (ou :UserEdit) dans les modules d'accès, et chacune doi
 mentionner `project`. Même esprit que le test anti-leakage des prompts : la loi
 est vérifiée sur le CODE, pas sur la bonne volonté.
 """
+
 from __future__ import annotations
 
 import ast
@@ -33,11 +34,15 @@ CYPHER_MODULES = [
     SRC / "core" / "tools.py",
     SRC / "core" / "projects.py",
     SRC / "core" / "user_edits.py",
-    SRC / "core" / "alerts.py",     # méta-nœud :Alert (#50-a)
+    SRC / "core" / "alerts.py",  # méta-nœud :Alert (#50-a)
     SRC / "core" / "messages.py",  # brique #63 — :Message / :Thread
-    SRC / "core" / "schema_changes.py",  # migration du passé — appliquer un schéma validé
+    SRC
+    / "core"
+    / "schema_changes.py",  # migration du passé — appliquer un schéma validé
     SRC / "core" / "schema_detector.py",  # détecteur déterministe de propositions
-    SRC / "core" / "source_pages.py",  # :SourcePage — texte source persisté (#vérif-source)
+    SRC
+    / "core"
+    / "source_pages.py",  # :SourcePage — texte source persisté (#vérif-source)
     SRC / "api" / "routes" / "entities.py",
 ]
 

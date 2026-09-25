@@ -50,7 +50,11 @@ def test_slugify_special_chars() -> None:
 def test_slugify_strips_leading_article() -> None:
     assert slugify("le pêcheur") == slugify("pêcheur") == "pecheur"
     assert slugify("les Sentinelles") == slugify("Sentinelles") == "sentinelles"
-    assert slugify("l'équipe de Castan") == slugify("équipe de Castan") == "equipe-de-castan"
+    assert (
+        slugify("l'équipe de Castan")
+        == slugify("équipe de Castan")
+        == "equipe-de-castan"
+    )
     assert slugify("une balise") == slugify("balise") == "balise"
 
 
@@ -63,8 +67,8 @@ def test_slugify_strips_curly_apostrophe_article() -> None:
 @resolver_suite.test()
 def test_slugify_keeps_non_article_words() -> None:
     # Un mot qui COMMENCE par les lettres d'un article n'est pas un article (pas d'espace après).
-    assert slugify("lapin") == "lapin"        # pas « la » + reste
-    assert slugify("larme") == "larme"        # pas « l' » (aucune apostrophe)
+    assert slugify("lapin") == "lapin"  # pas « la » + reste
+    assert slugify("larme") == "larme"  # pas « l' » (aucune apostrophe)
     assert slugify("Léviathan") == "leviathan"
     # « de » au milieu n'est pas un article de tête → conservé.
     assert slugify("sabre de Korr") == "sabre-de-korr"
