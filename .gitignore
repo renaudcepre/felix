@@ -38,6 +38,7 @@ web/.nuxt/
 web/.output/
 web/dist/
 data/archives/
+data/parc/
 exports/
 /evals/results/
 !/evals/results/history.jsonl

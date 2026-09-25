@@ -25,6 +25,7 @@ from tests.unit.test_schema_changes import schema_changes_suite
 from tests.unit.test_schema_detector import schema_detector_suite
 from tests.unit.test_source_pages import source_pages_suite
 from tests.unit.test_source_verify import source_verify_suite
+from tests.unit.test_synthetic_parc import synthetic_parc_suite
 from tests.unit.test_tool_labels import tool_labels_suite
 from tests.unit.test_tool_trace import tool_trace_suite
 from tests.unit.test_update_entity_changes import update_entity_changes_suite
@@ -65,3 +66,4 @@ session.add_suite(entity_list_summary_suite)
 session.add_suite(update_entity_changes_suite)
 session.add_suite(tool_labels_suite)
 session.add_suite(tool_trace_suite)
+session.add_suite(synthetic_parc_suite)
