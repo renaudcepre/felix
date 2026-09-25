@@ -36,6 +36,18 @@
 - **Tests** (protest, 11, purs) : même seed → octet-identique, seeds différents → parcs différents, ids uniques = slugify(name), relations sur ids existants, chaque entité décrite apparaît dans sa fiche, chaque piège présent et réel, tailles demandées = obtenues, tailles impossibles refusées, pied de page présent puis retiré par `clean_pages`. Vérifié par mutation : variante de code = code canonique → `test_traps_are_real` casse. 418 → 429.
 - **Accrocs** : premier jet refusé par le hook lint (S311 sur `random.Random`, trop d'arguments) ; `just test -t`/`-k SyntheticParc` ne filtre pas par nom de suite (0 test lancé, « ALL PASSED » quand même), il faut `-k` sur le nom du test. Piège à retenir pour une vérif par mutation.
 
+## 2026-09-25 — mesure(parc): première ingestion du parc synthétique, 2 pièges sur 4, 45 alertes dont ~3 vraies
+
+**Protocole** : base vidée (archive `data/archives/neo4j-20260925-091704.txt`), `just gen-parc` (seed 42 : 3 usines, 12 machines, 24 personnes, 15 fiches, 4 pièges), ingestion en série par `tools/ingest_doc.py --profile emergent --project parc-demo`, devstral-2512. **16 min, 1,66 $ (0,11 $/fiche), 0 échec**, 6 deadlocks Neo4j rattrapés par re-tentative du modèle (#91 : appels d'outils concurrents + `session.run` auto-commit sans retry).
+
+**Pièges** : 2/4. Attrapés : la valeur usuelle hors contrainte (BV-9883, 3 alertes la nomment) et le code variant « GB 1058 » (fusionné par `slugify`, une seule machine). Ratés : les deux contradictions de plage inter-fiches (42,5 bar, 53,0 m/min n'apparaissent dans aucune alerte).
+
+**Alertes (45)** : ~3 vraies sur le piège BV ; ~6 erreurs d'extraction correctement relevées (« la fiche fait partie du parc de la machine », « la machine est le créateur de B. Falcourdin ») ; ~12 « la plage dépasse la contrainte » (le générateur pose la limite DANS la plage, le checker y voit une contradiction — à trancher côté générateur ou règle de profil) ; **~20 fantômes** : les paramètres et organes homonymes de machines de même famille (« pression de serrage du mandrin » × 3 tours CN, « vitesse de bande » × 3 convoyeurs, « moteur principal » × 2 compresseurs) ont fusionné en une entité, d'où « ne peut pas être à la fois 15,5–53 et 0,5–48 ». C'est la résolution d'entités par nom seul qui casse, pas le checker.
+
+**Entités** : 12/12 machines, 3/3 usines, 4/4 marques, 24/24 personnes retrouvées par nom. Mais 31 personnes (7 doublons initiale/prénom : « B. Falcourdin » et « Benoît Falcourdin », l'en-tête Créateur/Valideur abrège) ; 13/15 documents (#92 : `merge_document_duplicates` avale une fiche sœur de même famille, titre à 91 % de similarité) ; le profil émergent éclate en entités ce qui devrait être des props (`valeur` 26, `plage` 26, `modèle` 12, `année` 9). Relations : 429 LIE_A + 318 DESCRIBED_IN, zéro relation typée (aucune proposition validée, attendu en HITL).
+
+**Ce que ça dit** : la peur « incohérence du graphe » (démo au taf ce matin) se mesure maintenant. Le bruit dominant n'est pas le juge mais la fusion d'homonymes ; sans elle, ~20 alertes disparaissent. Prochaines briques : le comparateur automatique graphe/vérité (fait à la main ici, scripts `/tmp/q3.py`…), la résolution d'entités contextuelle (nom + machine voisine), #92, #91.
+
 ## 2026-09-25 — refactor(prompts): prompts génériques neutres de domaine, la fiction reste au profil scénario
 
 - **Déclencheur** : `CHECK_PROMPT` consacrait deux tiers de ses exemples à « vivant ET mort », « agit après sa mort », « flash-back » pendant qu'on vérifiait une fiche technique, et un document qui décrit deux modes puis dit lequel est utilisé sortait en contradiction.
