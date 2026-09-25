@@ -62,20 +62,27 @@ async def consume_unnotified_alerts(driver: AsyncDriver, *, project: str) -> lis
         return [r["body"] for r in await result.data()]
 
 
-def render_alerts_block(bodies: list[str]) -> str:
+def render_alerts_block(bodies: list[str], *, chronology: bool = False) -> str:
     """Bloc d'alerte préfixé EN CODE au maître (pur, testable).
 
     Rend "" si aucune alerte → le prompt reste nu, aucun cas dégénéré. Balisé
-    comme contexte (pas du récit), ton sobre conforme au MASTER_SYSTEM_PROMPT
+    comme contexte (pas du contenu), ton sobre conforme au MASTER_SYSTEM_PROMPT
     (bloc-notes, pas interviewer) : signaler en une phrase sans questionner.
+    ``chronology`` (cf. ``runs_chronicle``) ajoute les pistes propres à un domaine
+    qui tient une chronologie d'événements (flash-back, erreur d'ordre).
     """
     if not bodies:
         return ""
     listing = " ; ".join(f"« {b} »" for b in bodies)
+    hints = (
+        "incohérence possible, piste flash-back ou erreur chronologique"
+        if chronology
+        else "incohérence possible ou erreur de saisie"
+    )
     return (
-        "[CONTEXTE, pas du récit — le vérificateur de cohérence a relevé ceci APRÈS "
-        f"ta dernière réplique : {listing}. Si c'est toujours pertinent, SIGNALE-LE "
-        "à l'auteur en une phrase sobre au début de ta réplique (incohérence possible, "
-        "piste flash-back ou erreur chronologique) — sans questionner. Si le message "
-        "de l'auteur corrige déjà cela, n'en parle pas.]"
+        "[CONTEXTE, pas du contenu à enregistrer — le vérificateur de cohérence a "
+        f"relevé ceci APRÈS ta dernière réplique : {listing}. Si c'est toujours "
+        "pertinent, SIGNALE-LE à l'utilisateur en une phrase sobre au début de ta "
+        f"réplique ({hints}) — sans questionner. Si le message de l'utilisateur "
+        "corrige déjà cela, n'en parle pas.]"
     )

@@ -106,7 +106,7 @@ def render_user_edits_block(rows: list[dict[str, str]]) -> str:
         return ""
     listing = " ; ".join(r["detail"] for r in rows)
     return (
-        "[CONTEXTE, pas du récit — l'auteur a corrigé la bible À LA MAIN depuis "
-        f"l'interface : {listing}. Ces décisions sont définitives : ne recrée pas "
+        "[CONTEXTE, pas du contenu à extraire — l'utilisateur a corrigé les fiches "
+        f"À LA MAIN depuis l'interface : {listing}. Ces décisions sont définitives : ne recrée pas "
         "ce qui a été supprimé, garde les noms et valeurs corrigés.]"
     )

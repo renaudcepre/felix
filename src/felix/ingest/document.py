@@ -557,7 +557,7 @@ class IngestReport(BaseModel):
 
 
 # Traduction des events `phase` génériques de `run_extractors` (« Felix met à
-# jour la bible… », etc. — pensés pour le chat) en un libellé situé dans le
+# jour les fiches… », etc. — pensés pour le chat) en un libellé situé dans le
 # document : la Nᵉ phase d'un bloc est entités/relations/événements, DANS CET
 # ORDRE (cf. `run_extractors`, qui construit ses passes dans cet ordre-là).
 _INGEST_PASS_LABELS = ("fiches", "liens", "événements")

@@ -111,6 +111,21 @@ class Profile:
     # add_relation (felix.core.tools) refuse ces types avec un message guidant —
     # AVANT même de consulter validate_relation. Vide = aucune relation réservée.
     code_only_relations: tuple[str, ...] = ()
+    # Illustrations du canal NARRATIF, propres au domaine : les prompts génériques
+    # n'en portent plus (elles y parlaient de fiction à un technicien). ``link_hint``
+    # liste des liens typiques (« aimer, commander… »), ``verb_example`` un verbe
+    # verbatim (« était la maîtresse de »). Vide = rendu sans exemple.
+    narrative_link_hint: str = ""
+    narrative_verb_example: str = ""
+    # Faux positifs connus du checker pour ce domaine : rendus dans la section
+    # « différent n'est PAS incompatible » du CHECK_PROMPT (cf. render_check_prompt).
+    non_contradiction_examples: tuple[str, ...] = ()
+
+    def _verb_example(self, prefix: str = " ") -> str:
+        """« (ex. verbe='…') » si le domaine fournit un exemple de verbe, sinon ""."""
+        if not self.narrative_verb_example:
+            return ""
+        return f"{prefix}(ex. verbe='{self.narrative_verb_example}')"
 
     def render_prompt_block(self) -> str:
         """Bloc concaténé au system prompt — volontairement compact (petit modèle)."""
@@ -134,12 +149,12 @@ class Profile:
                 ex = f"  (ex. : {spec.examples})" if spec.examples else ""
                 lines.append(f"- {spec.name} : {spec.gloss}{ex}")
         if self.narrative_rel:
+            hint = f" ({self.narrative_link_hint}…)" if self.narrative_link_hint else ""
             lines.append(
-                f"TOUT AUTRE lien entre deux fiches (aimer, commander, surveiller, "
-                f"faire chanter…) : add_relation avec rel_type={self.narrative_rel} "
-                f"et verbe=« les mots EXACTS de l'auteur » (ex. verbe='était la "
-                f"maîtresse de'). Ne traduis pas, ne résume pas : le verbe de "
-                f"l'auteur EST la donnée."
+                f"TOUT AUTRE lien entre deux fiches{hint} : add_relation avec "
+                f"rel_type={self.narrative_rel} et verbe=« les mots EXACTS du "
+                f"texte »{self._verb_example()}. Ne traduis pas, ne résume pas : "
+                f"le verbe du texte EST la donnée."
             )
         return "\n".join(lines)
 
@@ -179,7 +194,7 @@ class Profile:
         if self.narrative_rel:
             lines.append(
                 f"Tout AUTRE lien : rel_type={self.narrative_rel} + verbe=« les mots "
-                f"exacts de l'auteur » (ex. verbe='était la maîtresse de')."
+                f"exacts du texte »{self._verb_example()}."
             )
         return "\n".join(lines)
 
@@ -232,7 +247,7 @@ class Profile:
                 return (
                     f"Une relation {self.narrative_rel} porte son sens dans son "
                     f"verbe : rappelle add_relation avec verbe=« les mots exacts "
-                    f"de l'auteur » (ex. verbe='était la maîtresse de')."
+                    f"du texte »{self._verb_example()}."
                 )
             if same_node:
                 return "Une relation ne peut pas relier une entité à elle-même."
@@ -255,14 +270,14 @@ class Profile:
                         f"« {rel_type} » n'est pas (encore) un type structurel du "
                         f"domaine « {self.name} » (aucun type appris pour l'instant). "
                         f"Pour tout lien réel du texte, utilise rel_type="
-                        f"{self.narrative_rel} avec verbe=« les mots exacts de "
-                        f"l'auteur ». Si le texte ne pose pas ce lien, n'écris rien."
+                        f"{self.narrative_rel} avec verbe=« les mots exacts du "
+                        f"texte ». Si le texte ne pose pas ce lien, n'écris rien."
                     )
                 return (
                     f"« {rel_type} » n'est pas un type du domaine « {self.name} ». "
                     f"Types STRUCTURELS exacts : {allowed}. Pour tout AUTRE lien "
                     f"réel du texte, utilise rel_type={self.narrative_rel} avec "
-                    f"verbe=« les mots exacts de l'auteur ». Si le texte ne pose "
+                    f"verbe=« les mots exacts du texte ». Si le texte ne pose "
                     f"pas ce lien, n'écris rien."
                 )
             # Sortie LÉGALE au trou de vocab : sans elle, le modèle se rabat sur
@@ -389,6 +404,8 @@ SCENARIO_PROFILE = Profile(
     ),
     narrative_rel=NARRATIVE_REL,
     manages_events=True,
+    narrative_link_hint="aimer, commander, surveiller, faire chanter",
+    narrative_verb_example="était la maîtresse de",
 )
 
 
@@ -430,6 +447,18 @@ CHANTIER_PROFILE = Profile(
         "Les dates (achat, coulage, livraison) doivent être cohérentes entre elles.",
         "Une quantité ou un prix ne peut pas être négatif.",
     ),
+)
+
+
+# Faux positifs du checker propres à la documentation technique (maintenance ET
+# émergent) — vu le 2026-09-25 : une fiche qui décrit deux modes puis dit lequel
+# est utilisé était signalée comme contradictoire.
+_DOC_NON_CONTRADICTIONS = (
+    "Un document décrit plusieurs modes, variantes ou options ET précise "
+    "lequel est utilisé : ce n'est pas une contradiction, c'est un choix "
+    "documenté.",
+    "Une valeur usuelle ou réglée qui tombe DANS la plage autorisée du même "
+    "paramètre : ce n'est pas une contradiction.",
 )
 
 
@@ -480,7 +509,7 @@ MAINTENANCE_PROFILE = Profile(
         ),
         EntityType(
             "document",
-            ("titre", "version", "date_maj", "auteur", "valideur"),
+            ("titre", "version", "date_maj", "redacteur", "valideur"),
             "La fiche technique source. Créée EN CODE à l'ingestion, jamais par toi.",
         ),
     ),
@@ -568,6 +597,14 @@ MAINTENANCE_PROFILE = Profile(
     narrative_rel=NARRATIVE_REL,
     manages_events=False,
     code_only_relations=("DESCRIBED_IN",),
+    narrative_link_hint="alimenter, protéger, verrouiller, remplacer",
+    narrative_verb_example="est alimenté par",
+    non_contradiction_examples=(
+        *_DOC_NON_CONTRADICTIONS,
+        "Ex. : la PL-7 propose un mode manuel et un mode automatique, et la "
+        "fiche précise que la production tourne en automatique — deux modes "
+        "décrits, un seul utilisé, aucune contradiction.",
+    ),
 )
 
 
@@ -607,4 +644,7 @@ EMERGENT_SEED_PROFILE = Profile(
     narrative_rel=NARRATIVE_REL,
     manages_events=False,
     code_only_relations=("DESCRIBED_IN",),
+    narrative_link_hint="alimenter, protéger, verrouiller, remplacer",
+    narrative_verb_example="est alimenté par",
+    non_contradiction_examples=_DOC_NON_CONTRADICTIONS,
 )

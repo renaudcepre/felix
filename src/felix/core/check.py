@@ -38,6 +38,10 @@ class CheckVerdict(BaseModel):
     sujets: list[str] = []
 
 
+# Prompt du juge, NEUTRE de domaine : ce qui est propre à une chronologie
+# d'événements (mort puis agit, flash-back) ne s'injecte que si le profil tient
+# des événements (`manages_events`, cf. `_EVENT_*`), et ce qui est propre à un
+# domaine vient de son profil (règles de cohérence, non-contradictions connues).
 CHECK_PROMPT = """\
 Tu vérifies la cohérence d'une base de connaissances après une écriture.
 
@@ -49,20 +53,13 @@ Tu vérifies la cohérence d'une base de connaissances après une écriture.
 
 Dans `reason`, raisonne pas à pas en COMMENÇANT par les écritures récentes.
 Compare les dates entre elles, les dimensions entre elles, les lieux entre eux.
-Si une CHRONOLOGIE est fournie (événements numérotés par ordre croissant),
-repère l'événement où le sujet meurt / est détruit, puis vérifie s'il AGIT de
-lui-même à un événement d'ordre SUPÉRIEUR.
-
+{event_reasoning}
 Puis conclus avec `contradiction` : deux informations ne peuvent-elles
 normalement pas être vraies ENSEMBLE pour le même sujet ? Exemples de
 contradictions à signaler :
 - une interdiction ou une règle explicite, et un fait qui la viole
-- deux états qui s'excluent (vivant ET mort ; à deux lieux différents au même instant)
-- impossibilité temporelle : le sujet AGIT de lui-même (parle, frappe, se
-  déplace, verrouille…) à un événement d'ordre SUPÉRIEUR à celui de sa mort, de
-  sa destruction ou de sa fin. Un ordre INFÉRIEUR ou ÉGAL est NORMAL — il a agi
-  AVANT, ne signale pas. Sans chronologie, un statut terminal déjà posé ET une
-  NOUVELLE action dans les écritures récentes sont suspects.
+- deux états qui s'excluent (à deux lieux différents au même instant)
+{event_contradictions}\
 - impossibilité spatiale : un objet plus grand que ce qui le porte ou le contient
 - valeurs qui s'excluent pour une même propriété
 {domain_rules}
@@ -70,19 +67,66 @@ ATTENTION : « différent » n'est PAS « incompatible ». Un sujet cumule des
 attributs (coder en Rust ET gérer son ops avec AWS ; être X ET Y). Une valeur
 nouvelle, mise à jour, ou remplacée par une autre qui POURRAIT coexister n'est
 qu'une mise à jour, PAS une contradiction. Une information absente ou imprécise
-non plus. Un sujet mort ou détruit peut RESTER SUJET PASSIF sans contradiction :
-on retrouve son corps, on l'enterre, on le venge, on examine l'épave — seul son
-AGIR PROPRE après sa fin est impossible ; un retour en arrière assumé (flash-back)
-non plus. Ne signale que si la lecture naturelle des deux faits est réellement
+non plus.
+{non_contradictions}\
+Ne signale que si la lecture naturelle des deux faits est réellement
 incompatible.
 
 Enfin, si `contradiction` est vrai, écris dans `message` UNE phrase courte et
-concrète pour l'auteur : nomme les deux faits qui s'opposent, sans numérotation
-ni vocabulaire d'analyse (« écriture récente », « propriété », « entité »…).
-Sinon, laisse `message` vide.
+concrète pour l'utilisateur : nomme les deux faits qui s'opposent, sans
+numérotation ni vocabulaire d'analyse (« écriture récente », « propriété »,
+« entité »…). Sinon, laisse `message` vide.
 Si `contradiction` est vrai, liste dans `sujets` les NOMS exacts des entités
 dont les faits s'opposent (tels qu'écrits dans l'état actuel). Sinon, liste vide.
 """
+
+# ── Blocs CHRONOLOGIE : injectés seulement si le profil tient des événements ──
+_EVENT_REASONING = """\
+Si une CHRONOLOGIE est fournie (événements numérotés par ordre croissant),
+repère l'événement où le sujet meurt / est détruit, puis vérifie s'il AGIT de
+lui-même à un événement d'ordre SUPÉRIEUR.
+"""
+
+_EVENT_CONTRADICTIONS = """\
+- deux états terminaux qui s'excluent (vivant ET mort)
+- impossibilité temporelle : le sujet AGIT de lui-même (parle, frappe, se
+  déplace, verrouille…) à un événement d'ordre SUPÉRIEUR à celui de sa mort, de
+  sa destruction ou de sa fin. Un ordre INFÉRIEUR ou ÉGAL est NORMAL — il a agi
+  AVANT, ne signale pas. Sans chronologie, un statut terminal déjà posé ET une
+  NOUVELLE action dans les écritures récentes sont suspects.
+"""
+
+_EVENT_NON_CONTRADICTIONS = (
+    "Un sujet mort ou détruit peut RESTER SUJET PASSIF sans contradiction : on "
+    "retrouve son corps, on l'enterre, on le venge, on examine l'épave — seul "
+    "son AGIR PROPRE après sa fin est impossible.",
+    "Un retour en arrière assumé (flash-back) n'est pas une contradiction.",
+)
+
+
+def render_check_prompt(context: str, writes: str, profile: Profile | None) -> str:
+    """Le prompt du juge pour un profil : tronc générique + blocs chronologie si
+    ``profile.manages_events`` + règles et non-contradictions du domaine. Pur —
+    c'est aussi ce que le test de neutralité de domaine inspecte."""
+    events = profile is not None and profile.manages_events
+    non_contradictions: list[str] = []
+    if events:
+        non_contradictions.extend(_EVENT_NON_CONTRADICTIONS)
+    if profile is not None:
+        non_contradictions.extend(profile.non_contradiction_examples)
+    nc_block = ""
+    if non_contradictions:
+        nc_block = "Ne sont PAS non plus des contradictions :\n" + "".join(
+            f"- {line}\n" for line in non_contradictions
+        )
+    return CHECK_PROMPT.format(
+        context=context,
+        writes=writes,
+        event_reasoning=_EVENT_REASONING if events else "",
+        event_contradictions=_EVENT_CONTRADICTIONS if events else "",
+        domain_rules=profile.render_check_rules() if profile is not None else "",
+        non_contradictions=nc_block,
+    )
 
 
 def _subject_key(verdict: CheckVerdict) -> frozenset[str]:
@@ -142,16 +186,13 @@ async def consistency_check(  # noqa: PLR0913 — driver + contexte + profil + p
     if timeline:
         context = f"{context}\n\n{timeline}"
     writes = "\n".join(f"- {w}" for w in write_log) if write_log else "(aucune)"
-    domain_rules = profile.render_check_rules() if profile is not None else ""
     judge = judge or Agent(
         build_checker_model(),
         output_type=CheckVerdict,
         model_settings=ModelSettings(temperature=0.0),
         retries=3,
     )
-    result = await judge.run(
-        CHECK_PROMPT.format(context=context, writes=writes, domain_rules=domain_rules)
-    )
+    result = await judge.run(render_check_prompt(context, writes, profile))
     if cost_ledger is not None:
         cost_ledger.add_usage(agent_model_name(judge), result.usage())
     return result.output
@@ -214,7 +255,7 @@ Puis conclus avec `kind` :
   d'une mauvaise lecture à l'extraction (valeur mal reportée, ligne confondue
   avec une autre, total pris pour un sous-total…).
 
-Dans `explanation`, écris UNE phrase courte pour l'auteur qui dit ce qui a été
+Dans `explanation`, écris UNE phrase courte pour l'utilisateur qui dit ce qui a été
 mal lu (si "extraction") ou pourquoi le document se contredit lui-même (si
 "document").
 

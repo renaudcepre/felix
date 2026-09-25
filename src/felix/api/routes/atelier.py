@@ -62,6 +62,7 @@ from felix.core import (
     render_alerts_block,
     render_recent_block,
     render_user_edits_block,
+    runs_chronicle,
     save_llm_history,
 )
 from felix.core.projects import DEFAULT_PROJECT
@@ -78,7 +79,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/atelier", tags=["atelier"])
 
 
-async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str:
+async def _master_prompt(
+    driver: AsyncDriver, message: str, project: str, *, chronology: bool
+) -> str:
     """Préfixe le message du maître de deux blocs « une fois » consommés :
 
     1. Décisions manuelles PAS ENCORE annoncées (#61) — tombstones :UserEdit.
@@ -92,7 +95,8 @@ async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str
         await consume_unnotified_edits(driver, project=project)
     )
     alerts_block = render_alerts_block(
-        await consume_unnotified_alerts(driver, project=project)
+        await consume_unnotified_alerts(driver, project=project),
+        chronology=chronology,
     )
     parts = [p for p in (edits_block, alerts_block, message) if p]
     return "\n\n".join(parts)
@@ -209,7 +213,12 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             master: dict[str, Any] = {}
             async for ev in stream_pass(
                 master_agent,
-                await _master_prompt(driver, body.message, body.project),
+                await _master_prompt(
+                    driver,
+                    body.message,
+                    body.project,
+                    chronology=runs_chronicle(profile),
+                ),
                 message_history,
                 deps,
                 stream_text=True,
