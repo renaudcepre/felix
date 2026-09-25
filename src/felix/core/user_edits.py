@@ -43,7 +43,7 @@ async def record_user_edit(
 
 async def recent_user_edits(
     driver: AsyncDriver, limit: int, ttl_minutes: int, *, project: str
-) -> list[dict]:
+) -> list[dict[str, str]]:
     """Les actions manuelles encore vivantes (TTL), plus anciennes d'abord — et PURGE
     au passage celles qui ont expiré (un appel par tour de chat suffit comme GC).
 
@@ -74,7 +74,9 @@ async def recent_user_edits(
     return rows
 
 
-async def consume_unnotified_edits(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def consume_unnotified_edits(
+    driver: AsyncDriver, *, project: str
+) -> list[dict[str, str]]:
     """Les actions pas encore annoncées au MAÎTRE — marquées `notified` au passage.
 
     Le maître est threadé : une fois le marqueur entré dans son fil, le répéter
@@ -94,7 +96,7 @@ async def consume_unnotified_edits(driver: AsyncDriver, *, project: str) -> list
         return [dict(r) for r in await result.data()]
 
 
-def render_user_edits_block(rows: list[dict]) -> str:
+def render_user_edits_block(rows: list[dict[str, str]]) -> str:
     """Bloc « décisions de l'auteur » préfixé en code aux prompts (pur, testable).
 
     Rend "" sans action manuelle → le prompt reste nu, aucun cas dégénéré. Balisé

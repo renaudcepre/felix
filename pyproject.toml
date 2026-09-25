@@ -83,6 +83,10 @@ ignore = [
 strict = true
 plugins = ["pydantic.mypy"]
 
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
 [dependency-groups]
 dev = [
     "mypy>=1.10",

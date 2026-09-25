@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from rapidfuzz import fuzz
@@ -250,13 +250,15 @@ def suggest_rel_type(verbe: str) -> str:
     return "_".join(chosen).upper()
 
 
-def cluster_verbs(edges: list[dict], *, min_count: int) -> dict[str, list[dict]]:
+def cluster_verbs(
+    edges: list[dict[str, str]], *, min_count: int
+) -> dict[str, list[dict[str, str]]]:
     """Groupe des arêtes LIE_A (dicts avec au moins la clé ``verbe``) par tête de
     verbe — pure, testable sans Neo4j. Ne garde que les clusters atteignant
     ``min_count`` arêtes ; un verbe sans tête substantielle (pur mot de
     fonction) n'entre dans aucun cluster, ni un verbe dont la tête est en fait
     une conjonction/subordonnant (#81, cf. ``_CONJUNCTION_HEADS``)."""
-    clusters: dict[str, list[dict]] = {}
+    clusters: dict[str, list[dict[str, str]]] = {}
     for edge in edges:
         head = verb_head(str(edge.get("verbe", "")))
         if not head or head in _CONJUNCTION_HEADS:
@@ -303,7 +305,7 @@ def pair_near_duplicate_types(counts: dict[str, int]) -> list[MergeTypes]:
     return merges
 
 
-def _rejection_signature(change: dict) -> tuple[str, frozenset[str]]:
+def _rejection_signature(change: dict[str, Any]) -> tuple[str, frozenset[str]]:
     """Signature stable d'un changement, pour comparer une proposition à un refus
     passé — INDÉPENDANTE du nom cible choisi (``rel_type``/``target``) : ce qui
     définit « le même refus », c'est l'ensemble SOURCE (les verbes ou les types
@@ -332,7 +334,9 @@ class Proposal(BaseModel):
     pairs_readable: str = ""
 
 
-async def _fetch_narrative_edges(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def _fetch_narrative_edges(
+    driver: AsyncDriver, *, project: str
+) -> list[dict[str, str]]:
     """Arêtes LIE_A du projet — exclut celles dont la SOURCE OU LA CIBLE est le
     nœud ``document`` (#81 : la moitié des propositions vues en direct étaient
     du bruit — CONCERNE/COUVRE, des liens du nœud document VERS tout le

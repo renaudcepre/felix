@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import chromadb
+from chromadb.api import ClientAPI
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
 from felix.config import settings
@@ -14,18 +15,20 @@ def _get_embedding_function() -> SentenceTransformerEmbeddingFunction:
     return SentenceTransformerEmbeddingFunction(model_name=_EMBEDDING_MODEL)
 
 
-def get_chroma_client() -> chromadb.ClientAPI:
+def get_chroma_client() -> ClientAPI:
     return chromadb.PersistentClient(path=settings.chroma_path)
 
 
 def get_collection(
-    client: chromadb.ClientAPI | None = None,
+    client: ClientAPI | None = None,
 ) -> chromadb.Collection:
     if client is None:
         client = get_chroma_client()
     return client.get_or_create_collection(
         name="scenes",
-        embedding_function=_get_embedding_function(),
+        # chromadb 1.5 types its own SentenceTransformer function narrower
+        # than the parameter it is meant for (text-only vs text-or-images).
+        embedding_function=_get_embedding_function(),  # type: ignore[arg-type]
     )
 
 

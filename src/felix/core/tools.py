@@ -56,7 +56,7 @@ LabelTemplate = str | Callable[[Mapping[str, Any]], str]
 TOOL_LABELS: dict[str, Callable[[Mapping[str, Any]], str]] = {}
 
 
-class _GracefulArgs(dict):
+class _GracefulArgs(dict[str, Any]):
     """Formatage TOLÉRANT : un arg manquant à l'appel (tool appelé sans un
     paramètre optionnel, ou args partiels dans un test) devient une chaîne
     vide plutôt qu'une KeyError — jamais un libellé qui plante l'affichage."""
@@ -75,8 +75,9 @@ def tool_label(template: LabelTemplate) -> Callable[[F], F]:
         if callable(template):
             TOOL_LABELS[fn.__name__] = template
         else:
+            fmt: str = template
 
-            def render(args: Mapping[str, Any], _template: str = template) -> str:
+            def render(args: Mapping[str, Any], _template: str = fmt) -> str:
                 return _template.format_map(_GracefulArgs(args))
 
             TOOL_LABELS[fn.__name__] = render
@@ -117,7 +118,7 @@ def _norm(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
-def _list_resumes(events: list[dict], limit: int = 15) -> str:
+def _list_resumes(events: list[dict[str, Any]], limit: int = 15) -> str:
     """Liste numérotée des résumés (ordre diégétique), pour les messages de refus.
 
     Sans elle, le modèle s'entête : il dit naturellement « la mort de X » quand le
@@ -132,8 +133,8 @@ def _list_resumes(events: list[dict], limit: int = 15) -> str:
 
 
 def resolve_event_fragment(
-    events: list[dict], fragment: str
-) -> tuple[dict | None, str | None]:
+    events: list[dict[str, Any]], fragment: str
+) -> tuple[dict[str, Any] | None, str | None]:
     """Résout un fragment de résumé vers un événement existant.
 
     Matching insensible à la casse et aux accents sur le champ ``resume``.
@@ -254,7 +255,7 @@ async def describe_schema(ctx: RunContext[GenericDeps]) -> str:
             return ctx.deps.profile.render_schema_hint()
         return "Base vide : aucun type, aucune propriété. Tu définis le schéma."
 
-    by_type: dict[str, dict] = {}
+    by_type: dict[str, dict[str, Any]] = {}
     for e in entities:
         t = e.get("entity_type", "?")
         slot = by_type.setdefault(t, {"count": 0, "keys": set()})
@@ -464,7 +465,7 @@ async def add_entity(
 
 
 def plan_property_update(
-    existing: dict, props: dict[str, str], *, is_correction: bool
+    existing: dict[str, Any], props: dict[str, str], *, is_correction: bool
 ) -> tuple[dict[str, str], list[str]]:
     """Partitionne les props d'un update_entity : ce qu'on APPLIQUE vs ce qu'on BLOQUE.
 
@@ -486,7 +487,7 @@ def plan_property_update(
     return to_set, blocked
 
 
-def check_update_target(node: dict | None, name: str) -> str | None:
+def check_update_target(node: dict[str, Any] | None, name: str) -> str | None:
     """Vérifie que le nœud cible d'update_entity est une vraie entité (non-événement).
 
     Retourne None si la mise à jour peut se faire, ou un message guidant

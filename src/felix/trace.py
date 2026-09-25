@@ -126,7 +126,8 @@ class _RecordingSession:
         return self
 
     async def __aexit__(self, *exc_info: object) -> Any:
-        return await self._real.__aexit__(*exc_info)
+        # neo4j leaves AsyncSession.__aexit__ unannotated.
+        return await self._real.__aexit__(*exc_info)  # type: ignore[no-untyped-call]
 
     async def run(
         self,

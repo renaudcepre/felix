@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 if TYPE_CHECKING:
     import chromadb
 
-SCENES = [
+
+class _Scene(TypedDict):
+    id: str
+    document: str
+    metadata: dict[str, str | bool]
+
+
+SCENES: list[_Scene] = [
     {
         "id": "scene-012",
         "document": (

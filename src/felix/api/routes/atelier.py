@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Query
 from pydantic_ai.messages import ModelMessagesTypeAdapter
@@ -99,7 +99,9 @@ async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str
 
 
 async def _apply_gate_verdict(
-    gate_task: asyncio.Task, gate_agent: Agent[None, RouteDecision], deps: GenericDeps
+    gate_task: asyncio.Task[Any],
+    gate_agent: Agent[None, RouteDecision],
+    deps: GenericDeps,
 ) -> None:
     """Attend le gate et pose `extraction_requested`. Best-effort FAIL-CLOSED : si le
     gate crashe (transient LLM), on n'extrait pas ce tour — l'invariant produit n°1
@@ -204,7 +206,7 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             # Passe 0 « maître » : MÈNE la conversation (texte streamé), threadée.
             # La décision d'extraire ne lui appartient plus (cf. gate ci-dessus).
             yield ServerSentEvent(data="Felix répond…", event="phase")
-            master: dict = {}
+            master: dict[str, Any] = {}
             async for ev in stream_pass(
                 master_agent,
                 await _master_prompt(driver, body.message, body.project),
@@ -372,7 +374,7 @@ async def get_conversation(
     out = []
     for m in msgs:
         payload_raw = m.get("payload")
-        payload_dict: dict | None = None
+        payload_dict: dict[str, Any] | None = None
         if payload_raw is not None:
             try:
                 payload_dict = json.loads(payload_raw)

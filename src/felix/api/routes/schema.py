@@ -10,7 +10,7 @@ arbitraire : pas de première abstraction avant un second cas concret.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -55,7 +55,7 @@ class ApplyChangeRequest(BaseModel):
 
 class ApplyChangeResponse(BaseModel):
     report: ChangeReport
-    profile: dict
+    profile: dict[str, Any]
     version: int
 
 
@@ -65,7 +65,9 @@ class RejectChangeRequest(BaseModel):
 
 
 @router.get("/profile")
-async def get_profile(driver: Neo4jDriver, project: str = DEFAULT_PROJECT) -> dict:
+async def get_profile(
+    driver: Neo4jDriver, project: str = DEFAULT_PROJECT
+) -> dict[str, Any]:
     """Le profil RÉEL de ce projet — stocké s'il existe, sinon le seed
     (cf. ``resolve_profile`` : aucun changement n'a encore été validé), avec sa
     `version` (0 tant que rien n'a été validé) — la vue en lecture seule du
@@ -114,7 +116,7 @@ async def post_apply_change(
 @router.post("/reject")
 async def post_reject_change(
     driver: Neo4jDriver, body: RejectChangeRequest
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Refuse UNE proposition : persistée (``profile_store.save_rejected_change``)
     pour que ``detect_proposals`` ne la re-propose plus (même ensemble source —
     verbe_slugs ou sources — quel que soit le nom cible tenté ensuite). Rend la

@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent
 from pydantic_ai.messages import ToolCallPart
@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
     from neo4j import AsyncDriver
+    from pydantic_ai.messages import ModelMessage
 
     from felix.core import GenericDeps, Profile
 
@@ -51,11 +52,11 @@ def sse_text(ev: ServerSentEvent) -> str:
 async def stream_pass(  # noqa: PLR0913 — une passe = agent + prompt + historique + deps partagés
     sub_agent: Agent[GenericDeps, str],
     prompt: str,
-    history: list | None,
+    history: list[ModelMessage] | None,
     deps: GenericDeps,
     *,
     stream_text: bool,
-    holder: dict,
+    holder: dict[str, Any],
 ) -> AsyncGenerator[ServerSentEvent]:
     """Joue une passe via `.iter()` : draine les cartes des tools EN LIVE (à
     chaque node) et, si `stream_text`, streame le texte. Stocke `usage` +
@@ -108,7 +109,7 @@ async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profi
     chronicle_agent: Agent[GenericDeps, str],
     extract_prompt: str,
     chronicle_prompt: str,
-    message_history: list | None,
+    message_history: list[ModelMessage] | None,
     deps: GenericDeps,
     profile: Profile | None,
 ) -> AsyncGenerator[ServerSentEvent]:
@@ -156,7 +157,7 @@ async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profi
     for sub_agent, label, prompt, hist, phase_text in passes:
         try:
             yield ServerSentEvent(data=phase_text, event="phase")
-            sub: dict = {}
+            sub: dict[str, Any] = {}
             async for ev in stream_pass(
                 sub_agent, prompt, hist, deps, stream_text=False, holder=sub
             ):

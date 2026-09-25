@@ -12,7 +12,7 @@ générique (discipline seule, aucun domaine).
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
@@ -172,7 +172,7 @@ de nouveau avec add_event dans ce cas.
 def create_core_agent(
     profile: Profile | None = None,
     persona: str = "",
-    tools: Sequence[Callable] | None = None,
+    tools: Sequence[Callable[..., Any]] | None = None,
     system_prompt: str = SYSTEM_PROMPT,
     model: Model | None = None,
 ) -> Agent[GenericDeps, str]:

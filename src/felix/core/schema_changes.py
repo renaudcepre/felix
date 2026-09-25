@@ -18,7 +18,7 @@ Deux cas concrets, pas un par fonction :
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -127,7 +127,7 @@ def _validate_change(change: PromoteVerbs | MergeTypes) -> None:
 
 async def _fetch_matching_narrative_edges(
     driver: AsyncDriver, verbe_slugs: list[str], *, project: str
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Arêtes LIE_A du projet dont le verbe_slug est promu — triées pour un
     plan déterministe (groupage et échantillons stables d'un run à l'autre)."""
     async with driver.session() as session:
@@ -151,7 +151,7 @@ async def _fetch_matching_narrative_edges(
 
 async def _fetch_existing_typed_edge(
     driver: AsyncDriver, from_id: str, to_id: str, rel_type: str, *, project: str
-) -> dict | None:
+) -> dict[str, Any] | None:
     """Propriétés de l'arête typée (pair, rel_type) déjà en base, s'il y en a une
     — c'est la cible de collapse quand une promotion retombe sur un lien déjà
     posé par le code ou un run précédent."""
@@ -178,7 +178,7 @@ async def _write_typed_edge(  # noqa: PLR0913 — l'arête finale a une clé com
     to_id: str,
     rel_type: str,
     verbe_origine: list[str],
-    extra_props: dict,
+    extra_props: dict[str, Any],
     *,
     project: str,
 ) -> None:
@@ -222,7 +222,7 @@ async def _delete_narrative_edge(
         )
 
 
-def _dedupe_verbes(rows: list[dict]) -> list[str]:
+def _dedupe_verbes(rows: list[dict[str, Any]]) -> list[str]:
     """Verbes VERBATIM d'origine, dédupliqués en ordre stable — matériau de
     l'évolution du profil (gloss/examples du RelationSpec, cf. profile_evolution)."""
     verbes: list[str] = []
@@ -243,7 +243,7 @@ async def _apply_promote_verbs(
     # Groupage par paire FINALE (après inversion éventuelle) : deux paraphrases
     # sur la même paire — ou une paraphrase qui retombe sur l'autre sens d'une
     # paire déjà inversée — doivent fusionner en UNE arête typée.
-    groups: dict[tuple[str, str], list[dict]] = {}
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for row in rows:
         key = (
             (row["to_id"], row["from_id"])
@@ -276,7 +276,7 @@ async def _apply_promote_verbs(
         # Props libres : existant gagne sur conflit (« existing values win »),
         # complétées par celles des LIE_A d'origine (rel_type/verbe/verbe_slug
         # exclus — ce ne sont plus des props de l'arête typée).
-        extra_props: dict = {
+        extra_props: dict[str, Any] = {
             k: v
             for k, v in (existing or {}).items()
             if k not in REL_RESERVED_KEYS and k != "verbe_origine"

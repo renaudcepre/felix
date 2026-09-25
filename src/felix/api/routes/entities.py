@@ -11,6 +11,8 @@ supprimée renaît au tour suivant via l'historique threadé.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 
 from felix.api.deps import Neo4jDriver
@@ -60,7 +62,7 @@ _CARD_EXCLUDED_RELS = _EVENT_RELS | {"DESCRIBED_IN"}
 _NON_DISPLAY_KEYS = RESERVED_KEYS | INTERNAL_PROPS
 
 
-def _props(entity: dict) -> dict:
+def _props(entity: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in entity.items() if k not in _NON_DISPLAY_KEYS}
 
 
@@ -170,7 +172,7 @@ async def get_entity(
 # --- Édition manuelle (#61) — chaque action laisse un tombstone :UserEdit ---
 
 
-def _label(node: dict) -> str:
+def _label(node: dict[str, Any]) -> str:
     """Libellé autoportant pour le tombstone : un événement se désigne par son
     résumé (son « nom » EST l'action), une fiche par nom (type)."""
     if node.get("entity_type") == "evenement":
@@ -185,7 +187,7 @@ async def remove_entity(
     entity_id: str,
     driver: Neo4jDriver,
     project: str = Query(default=DEFAULT_PROJECT),
-) -> dict:
+) -> dict[str, str]:
     node = await find_node(driver, entity_id, project=project)
     if not node:
         raise HTTPException(status_code=404, detail="Entity not found")
@@ -207,7 +209,7 @@ async def patch_entity(
     patch: EntityPatch,
     driver: Neo4jDriver,
     project: str = Query(default=DEFAULT_PROJECT),
-) -> dict:
+) -> dict[str, Any]:
     """Correction manuelle d'une fiche : rename (MÊME effet que le tool
     rename_entity — id migré, fusion sur collision, relations/événements
     conservés), pose/retrait de propriétés. Chaque action = un tombstone."""
@@ -284,7 +286,7 @@ async def remove_relation(  # noqa: PLR0913 — clé d'arête composite + scope 
     driver: Neo4jDriver,
     verbe_slug: str | None = Query(default=None),
     project: str = Query(default=DEFAULT_PROJECT),
-) -> dict:
+) -> dict[str, str]:
     """Supprime la relation ORIENTÉE entity —[rel_type]→ other (la direction
     affichée sur la fiche/carte est celle de la clé). Pour une arête narrative
     (LIE_A), `verbe_slug` complète la clé : la même paire peut porter plusieurs

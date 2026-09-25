@@ -13,7 +13,7 @@ personnage ni ce qu'est une date — ils lisent et écrivent des entités libres
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from felix.ingest.resolver import slugify
 
@@ -45,7 +45,7 @@ NARRATIVE_REL = "LIE_A"
 REL_RESERVED_KEYS = {"rel_type", "verbe", "verbe_slug"}
 
 
-def rel_label(rel: dict) -> str:
+def rel_label(rel: dict[str, Any]) -> str:
     """Libellé d'une arête pour l'affichage/les prompts : le VERBE de l'auteur
     pour une arête narrative (« a —[était la maîtresse de]→ b »), le type
     canonique sinon. `rel` est une ligne d'all_relations (props inclus) ou
@@ -80,7 +80,7 @@ async def touch_entities(
 
 async def recent_entities(
     driver: AsyncDriver, limit: int, *, project: str
-) -> list[dict]:
+) -> list[dict[str, str]]:
     """Les entités (non-événement) les plus récemment touchées, récentes d'abord.
 
     C'est la BORNE anti « toute la base dans le prompt » : à 400 entités, seules
@@ -101,7 +101,7 @@ async def recent_entities(
         return [dict(r) for r in await result.data()]
 
 
-def render_recent_block(rows: list[dict]) -> str:
+def render_recent_block(rows: list[dict[str, str]]) -> str:
     """Bloc « entités déjà en base » préfixé au prompt des extracteurs (pur, testable).
 
     L'ordre reçu est préservé (la récence EST l'information). Balisé comme contexte
@@ -118,7 +118,9 @@ def render_recent_block(rows: list[dict]) -> str:
     )
 
 
-async def find_node(driver: AsyncDriver, ref: str, *, project: str) -> dict | None:
+async def find_node(
+    driver: AsyncDriver, ref: str, *, project: str
+) -> dict[str, Any] | None:
     """Entité par slug exact, sinon par nom (contains, insensible à la casse).
 
     Tie-break : on PRÉFÈRE l'id qui matche exactement, puis une entité
@@ -144,7 +146,9 @@ async def find_node(driver: AsyncDriver, ref: str, *, project: str) -> dict | No
         return dict(record["e"]) if record else None
 
 
-async def find_non_event(driver: AsyncDriver, ref: str, *, project: str) -> dict | None:
+async def find_non_event(
+    driver: AsyncDriver, ref: str, *, project: str
+) -> dict[str, Any] | None:
     """Comme find_node mais IGNORE les nodes événement (entity_type='evenement').
 
     Les participants d'un événement et les extrémités d'une relation entre entités
@@ -168,7 +172,9 @@ async def find_non_event(driver: AsyncDriver, ref: str, *, project: str) -> dict
         return dict(record["e"]) if record else None
 
 
-async def entity_events(driver: AsyncDriver, ref: str, *, project: str) -> list[dict]:
+async def entity_events(
+    driver: AsyncDriver, ref: str, *, project: str
+) -> list[dict[str, Any]]:
     """Événements ORDONNÉS impliquant une entité, en lignes brutes `{ordre, resume}`.
 
     Le sujet est résolu via `find_non_event` (un événement n'est jamais le sujet
@@ -486,7 +492,7 @@ async def link_described_in(
         )
 
 
-async def all_entities(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def all_entities(driver: AsyncDriver, *, project: str) -> list[dict[str, Any]]:
     async with driver.session() as session:
         result = await session.run(
             "MATCH (e:GenEntity {project: $project}) RETURN e ORDER BY e.id",
@@ -495,7 +501,7 @@ async def all_entities(driver: AsyncDriver, *, project: str) -> list[dict]:
         return [dict(r["e"]) for r in await result.data()]
 
 
-async def all_relations(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def all_relations(driver: AsyncDriver, *, project: str) -> list[dict[str, Any]]:
     # Une relation ne traverse jamais deux projets (les deux extrémités sont
     # résolues dans le même projet au write) : filtrer la source suffit.
     async with driver.session() as session:
@@ -538,7 +544,7 @@ async def entity_relation_counts(
 
 async def entity_primary_sources(
     driver: AsyncDriver, *, project: str
-) -> dict[str, dict]:
+) -> dict[str, dict[str, Any]]:
     """Premier document DESCRIBED_IN de chaque entité (titre + pages), une seule
     requête pour tout le projet. Une entité peut décrire plusieurs documents —
     on ne garde QUE le premier (id document trié, déterministe) : la carte
@@ -558,7 +564,7 @@ async def entity_primary_sources(
         return {row["id"]: row["source"] for row in await result.data()}
 
 
-def fmt_props(props: dict, *, skip_reserved: bool = True) -> str:
+def fmt_props(props: dict[str, Any], *, skip_reserved: bool = True) -> str:
     items = [
         f"{k}={v!r}"
         for k, v in sorted(props.items())

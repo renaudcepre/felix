@@ -33,7 +33,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
@@ -327,7 +327,7 @@ def pages_mentioning(texts: list[str], pages: dict[int, str]) -> list[int]:
     return found
 
 
-def entity_pages(node: dict, pages: dict[int, str]) -> list[int]:
+def entity_pages(node: dict[str, Any], pages: dict[int, str]) -> list[int]:
     """Pages d'une fiche, par ordre de confiance : son NOM (le plus précis),
     sinon ses valeurs de propriétés, sinon toutes les pages du bloc — mieux
     vaut une source approximative qu'une fiche sans source. Le nom passe

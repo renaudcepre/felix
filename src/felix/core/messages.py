@@ -35,7 +35,7 @@ Nœud :Thread (un par projet, MERGE) :
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
@@ -140,7 +140,7 @@ async def conversation_messages(
     driver: AsyncDriver,
     *,
     project: str,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Messages NON archivés du projet, ordonnés par ord croissant.
 
     Rend les clés brutes : payload est la string JSON telle qu'en base (ou None
