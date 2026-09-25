@@ -131,7 +131,7 @@ async def run_extractors(  # noqa: PLR0913 — 3 agents + 2 prompts + deps/profi
             "entités",
             extract_prompt,
             message_history,
-            "Felix met à jour la bible…",
+            "Felix met à jour les fiches…",
         ),
         (
             relation_agent,

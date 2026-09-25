@@ -54,10 +54,12 @@ def test_block_is_marked_as_context_not_content() -> None:
 
 @user_edits_suite.test()
 def test_block_says_author_decision_and_no_recreate() -> None:
-    """Le bloc porte les DEUX consignes : c'est l'AUTEUR qui a décidé (pas un état
-    de base quelconque), et on ne recrée pas ce qui a été supprimé."""
+    """Le bloc porte les DEUX consignes : c'est l'UTILISATEUR qui a décidé (pas un
+    état de base quelconque), et on ne recrée pas ce qui a été supprimé. Le mot
+    est « utilisateur », pas « auteur » : le bloc est injecté dans TOUS les
+    profils (cf. test_prompt_domain_neutrality)."""
     block = render_user_edits_block([{"kind": "suppression", "detail": "x supprimée"}])
-    assert "auteur" in block.lower()
+    assert "utilisateur" in block.lower()
     assert "ne recrée" in block.lower()
 
 

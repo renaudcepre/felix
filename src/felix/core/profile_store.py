@@ -21,7 +21,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from felix.core.profile import EntityType, Profile, RelationSpec
+from felix.core.profile import (
+    EMERGENT_SEED_PROFILE,
+    EntityType,
+    Profile,
+    RelationSpec,
+)
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
@@ -54,6 +59,9 @@ def profile_to_dict(profile: Profile) -> dict[str, Any]:
         "narrative_rel": profile.narrative_rel,
         "manages_events": profile.manages_events,
         "code_only_relations": list(profile.code_only_relations),
+        "narrative_link_hint": profile.narrative_link_hint,
+        "narrative_verb_example": profile.narrative_verb_example,
+        "non_contradiction_examples": list(profile.non_contradiction_examples),
     }
 
 
@@ -83,6 +91,21 @@ def profile_from_dict(data: dict[str, Any]) -> Profile:
         narrative_rel=data.get("narrative_rel", ""),
         manages_events=data.get("manages_events", False),
         code_only_relations=tuple(data.get("code_only_relations", [])),
+        # Profils stockés AVANT ces champs (2026-09-25) : seul un choix évolutif
+        # (l'émergent) est stocké, donc une clé absente reprend la valeur de SON
+        # seed — sinon un projet existant perdrait ses non-contradictions.
+        narrative_link_hint=data.get(
+            "narrative_link_hint", EMERGENT_SEED_PROFILE.narrative_link_hint
+        ),
+        narrative_verb_example=data.get(
+            "narrative_verb_example", EMERGENT_SEED_PROFILE.narrative_verb_example
+        ),
+        non_contradiction_examples=tuple(
+            data.get(
+                "non_contradiction_examples",
+                EMERGENT_SEED_PROFILE.non_contradiction_examples,
+            )
+        ),
     )
 
 

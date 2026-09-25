@@ -111,7 +111,8 @@ def render_recent_block(rows: list[dict[str, str]]) -> str:
         return ""
     listing = ", ".join(f"{r['name']} [{r['entity_type']}]" for r in rows)
     return (
-        "[CONTEXTE, pas du récit — entités DÉJÀ en base (récentes d'abord) : "
+        "[CONTEXTE, pas du contenu à extraire — entités DÉJÀ en base (récentes "
+        "d'abord) : "
         f"{listing}. Si le message donne un NOM à l'une d'elles ou dit que deux "
         "d'entre elles sont la même chose, utilise rename_entity ; pour un fait "
         "nouveau sur l'une d'elles, update_entity — ne crée JAMAIS de doublon.]"

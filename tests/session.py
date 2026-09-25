@@ -15,6 +15,7 @@ from tests.unit.test_modeling_quality import modeling_quality_suite
 from tests.unit.test_profile_evolution import profile_evolution_suite
 from tests.unit.test_profile_store import profile_store_suite
 from tests.unit.test_project_scoping import project_scoping_suite
+from tests.unit.test_prompt_domain_neutrality import prompt_domain_neutrality_suite
 from tests.unit.test_recent_entities import recent_entities_suite
 from tests.unit.test_refusal_terminal import refusal_terminal_suite
 from tests.unit.test_relation_reemission import relation_reemission_suite
@@ -67,3 +68,4 @@ session.add_suite(update_entity_changes_suite)
 session.add_suite(tool_labels_suite)
 session.add_suite(tool_trace_suite)
 session.add_suite(synthetic_parc_suite)
+session.add_suite(prompt_domain_neutrality_suite)

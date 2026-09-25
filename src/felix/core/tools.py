@@ -35,6 +35,7 @@ from felix.core.graph import (
     touch_entities,
 )
 from felix.core.models import PropChange, RelationRef, ToolCard
+from felix.core.profile import runs_chronicle
 from felix.core.schema_detector import content_tokens, verb_head
 from felix.ingest.resolver import slugify
 
@@ -289,7 +290,7 @@ async def list_entities(ctx: RunContext[GenericDeps]) -> str:
     """Liste toutes les entités de la base (nom + type), groupées par type.
 
     À appeler pour répondre à une question sur le CONTENU de la base (« qu'y
-    a-t-il ? », « qui sont les personnages ? ») ou pour voir ce qui existe déjà
+    a-t-il ? », « quelles fiches existent ? ») ou pour voir ce qui existe déjà
     avant de créer. Ne devine jamais le contenu : lis-le ici.
     """
     entities = await all_entities(ctx.deps.driver, project=ctx.deps.project_id)
@@ -517,14 +518,14 @@ async def update_entity(
 
     N'ÉCRASE PAS une valeur déjà posée : une action qui se passe est un ÉVÉNEMENT (pas
     une propriété), et un fait durable nouveau se range sous une AUTRE clé. Ne mets
-    ``is_correction=True`` que si l'auteur CORRIGE explicitement une valeur (« en fait »,
+    ``is_correction=True`` que si l'utilisateur CORRIGE explicitement une valeur (« en fait »,
     « plutôt », « correction ») — alors seulement l'ancienne valeur est remplacée.
 
     Args:
         name: Nom ou id de l'entité existante.
         props: Propriétés à poser. RÉUTILISER les noms de propriétés existants
             du schéma quand le sens correspond (ne pas créer de synonyme).
-        is_correction: True UNIQUEMENT pour une correction explicite de l'auteur
+        is_correction: True UNIQUEMENT pour une correction explicite de l'utilisateur
             (autorise alors le remplacement d'une valeur existante).
     """
     node = await find_node(ctx.deps.driver, name, project=ctx.deps.project_id)
@@ -586,11 +587,18 @@ async def update_entity(
     # Écrasement refusé : message GUIDANT (pas d'exception → pas de boucle ModelRetry).
     if blocked:
         keys = ", ".join(f"« {k} »" for k in blocked)
+        # La piste « c'est un ÉVÉNEMENT » n'a de sens que pour un domaine qui tient
+        # une chronologie : ailleurs, aucun outil ne pourrait l'enregistrer.
+        event_hint = (
+            "Si c'est une action qui se passe, c'est un ÉVÉNEMENT (pas une "
+            "propriété) ; si"
+            if runs_chronicle(ctx.deps.profile)
+            else "Si"
+        )
         guide = (
-            f"Je n'écrase pas {keys} (déjà renseigné). Si c'est une action qui se passe, "
-            f"c'est un ÉVÉNEMENT (pas une propriété) ; si c'est un fait DURABLE nouveau, "
-            f"range-le sous une AUTRE clé ; si l'auteur corrige explicitement, rappelle "
-            f"update_entity avec is_correction=true."
+            f"Je n'écrase pas {keys} (déjà renseigné). {event_hint} c'est un fait "
+            f"DURABLE nouveau, range-le sous une AUTRE clé ; si l'utilisateur corrige "
+            f"explicitement, rappelle update_entity avec is_correction=true."
         )
         if to_set:
             return f"{node['name']} : {fmt_props(to_set, skip_reserved=False)} ajouté. {guide}"
@@ -609,7 +617,7 @@ async def rename_entity(
     """Renomme une entité existante — ou la FUSIONNE si `new_name` désigne déjà une AUTRE
     entité.
 
-    À utiliser quand l'auteur NOMME une entité qu'on suivait sans vrai nom (« le pêcheur
+    À utiliser quand l'utilisateur NOMME une entité qu'on suivait sans vrai nom (« le pêcheur
     s'appelle Joseph ») ou quand deux fiches sont en réalité la même chose (« Veil, c'est
     l'homme de main »). Les relations et les événements suivent AUTOMATIQUEMENT, rien
     n'est perdu. NE crée PAS une nouvelle fiche pour une entité déjà suivie : renomme-la.
@@ -681,13 +689,13 @@ async def retype_entity(
     """Corrige le TYPE d'une entité existante (« le Klarkz n'est pas un lieu,
     c'est un minerai » → retype_entity('Klarkz', 'objet')).
 
-    À utiliser quand l'auteur dit qu'une entité a été rangée sous le mauvais type.
+    À utiliser quand l'utilisateur dit qu'une entité a été rangée sous le mauvais type.
     Ne touche ni au nom, ni aux propriétés, ni aux relations — mais signale les
     relations que le nouveau type rend douteuses, sans les supprimer.
 
     Args:
         name: Nom ou id de l'entité existante.
-        nouveau_type: Le type corrigé (ex: objet, lieu, groupe, personnage).
+        nouveau_type: Le type corrigé (ex: objet, lieu, groupe).
     """
     node = await find_non_event(ctx.deps.driver, name, project=ctx.deps.project_id)
     if not node:
@@ -773,7 +781,7 @@ async def retype_entity(
         msg += (
             " Attention, ce nouveau type rend douteuse(s) : "
             + " ; ".join(doubtful)
-            + ". Rien n'a été supprimé — signale-le à l'auteur si pertinent."
+            + ". Rien n'a été supprimé — signale-le à l'utilisateur si pertinent."
         )
     return msg
 
@@ -852,8 +860,8 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
             bloc DOMAINE / describe_schema), ou LIE_A pour TOUT AUTRE lien réel
             du texte (avec le paramètre verbe). N'écris une relation que si le
             texte pose le lien.
-        verbe: REQUIS avec rel_type=LIE_A : les mots EXACTS de l'auteur pour ce
-            lien (ex: 'était la maîtresse de', 'fait chanter'). Ne traduis pas,
+        verbe: REQUIS avec rel_type=LIE_A : les mots EXACTS du texte pour ce
+            lien (ex: 'a été recommandé par', 'alimente'). Ne traduis pas,
             ne résume pas. Ignoré pour un type structurel.
         props: Propriétés factuelles de la relation (ex: date).
     """
