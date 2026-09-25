@@ -21,7 +21,7 @@ export function useProject() {
       if (!projects.value.some(p => p.id === currentProject.value)) {
         projects.value = [
           ...projects.value,
-          { id: DEFAULT_PROJECT, name: 'Histoire par défaut' },
+          { id: DEFAULT_PROJECT, name: 'Projet par défaut' },
         ]
       }
     }

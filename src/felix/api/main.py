@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 # Must be called before pydantic-ai imports so logfire can instrument the models.
 setup_logfire()
 
-from felix.api.routes import atelier, entities, projects
+from felix.api.routes import atelier, costs, entities, ingest, projects
+from felix.api.routes import schema as schema_routes
 from felix.api.routes import settings as settings_routes
 from felix.atelier.agent import (
     ATELIER_CHOICES,
@@ -44,9 +45,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     app.state.driver = driver
     app.state.collection = collection
-    # Gate de routage : UN seul, stateless et indépendant du profil (décider si un
-    # message pose un fait ne dépend pas du domaine).
-    app.state.gate_agent = build_gate_agent()
+    # Gates de routage : PAR PROFIL (comme les autres passes) — la question posée
+    # au gate (fait de récit ? fait technique ?) dépend du domaine.
+    app.state.gate_agents = {
+        key: build_gate_agent(choice) for key, choice in ATELIER_CHOICES.items()
+    }
     app.state.master_agents = {
         key: build_master_agent(choice) for key, choice in ATELIER_CHOICES.items()
     }
@@ -78,8 +81,11 @@ app.add_middleware(
 )
 
 app.include_router(atelier.router)
+app.include_router(costs.router)
 app.include_router(entities.router)
+app.include_router(ingest.router)
 app.include_router(projects.router)
+app.include_router(schema_routes.router)
 app.include_router(settings_routes.router)
 
 

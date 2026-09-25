@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AtelierMsg, ChoiceOption, ResolveOption } from '~/types/atelier'
 import { marked } from 'marked'
+import { formatCostLine } from '~/utils/formatCost'
 
 const props = defineProps<{ msg: AtelierMsg }>()
 const emit = defineEmits<{
@@ -110,7 +111,11 @@ function submitFree() {
     </div>
     <div class="msg-main">
       <!-- text (markdown rendu via marked) -->
-      <div v-if="msg.kind === 'text'" class="felix-text" v-html="html" />
+      <template v-if="msg.kind === 'text'">
+        <div class="felix-text" v-html="html" />
+        <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
+        <AtelierTrace v-if="msg.trace" :trace="msg.trace" />
+      </template>
 
       <!-- tool use -->
       <div v-else-if="msg.kind === 'tool'" class="tool-card" :class="{ 'is-removed': msg.edited === 'deleted' }">
@@ -127,7 +132,7 @@ function submitFree() {
               v-if="canDelete"
               class="tool-act danger"
               :class="{ confirming: confirmDelete }"
-              :title="msg.relation ? 'Supprimer cette relation' : 'Supprimer de la bible'"
+              :title="msg.relation ? 'Supprimer cette relation' : 'Supprimer cette fiche'"
               :disabled="busy"
               @click="removeTarget"
             >
@@ -161,11 +166,51 @@ function submitFree() {
               <span v-if="msg.edited === 'renamed'" class="tool-edited-tag">corrigé par toi</span>
             </template>
           </div>
-          <div class="tool-added">
+          <!-- champs MODIFIÉS (#72) : avant → après, au lieu de « + ajouté » -->
+          <div v-if="msg.changes && msg.changes.length" class="tool-added">
+            <span class="tool-plus">modifié</span>
+            <div class="tool-text tool-changes">
+              <div v-for="c in msg.changes" :key="c.field" class="tool-change-row">
+                <span class="tool-change-field">{{ c.field }}</span> :
+                <span class="tool-old">{{ c.before }}</span>
+                <span>→</span>
+                <span>{{ c.after }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-if="msg.added" class="tool-added">
             <span class="tool-plus">+ ajouté</span>
             <span class="tool-text">{{ msg.added }}</span>
           </div>
           <p v-if="actionError" class="tool-error">{{ actionError }}</p>
+          <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
+          <AtelierTrace v-if="msg.trace" :trace="msg.trace" />
+        </div>
+      </div>
+
+      <!-- résumé d'import de fiche (Étape 3, plans/maintenance_profile.md) -->
+      <div v-else-if="msg.kind === 'report' && msg.report" class="tool-card report-card">
+        <div class="tool-head">
+          <span class="tool-ic"><AtelierIcon name="fiche" :size="15" /></span>
+          <span class="tool-label">Fiche importée</span>
+          <span class="tool-spacer" />
+          <NuxtLink class="tool-link" to="/entities">Voir les fiches <AtelierIcon name="arrow" :size="13" /></NuxtLink>
+        </div>
+        <div class="tool-body">
+          <div class="report-title">{{ msg.report.title }}</div>
+          <div class="report-stats">
+            <span class="report-stat"><strong>{{ msg.report.chunks }}</strong> blocs lus</span>
+            <span class="report-stat"><strong>{{ msg.report.entities_touched }}</strong> entités</span>
+            <span class="report-stat"><strong>{{ msg.report.relations }}</strong> relations</span>
+          </div>
+          <ul v-if="msg.report.alerts.length" class="report-list report-alerts">
+            <li v-for="(a, i) in msg.report.alerts" :key="`alert-${i}`">{{ a }}</li>
+          </ul>
+          <ul v-if="msg.report.errors.length" class="report-list report-errors">
+            <li v-for="(err, i) in msg.report.errors" :key="`err-${i}`">{{ err }}</li>
+          </ul>
+          <div class="msg-cost">{{ formatCostLine(msg.report.total_tokens, msg.report.cost_usd) }}</div>
+          <AtelierTrace v-if="msg.report.trace" :trace="msg.report.trace" />
         </div>
       </div>
 
@@ -230,12 +275,15 @@ function submitFree() {
           <p class="alert-body">{{ msg.resolution }}</p>
         </div>
 
-        <div v-else class="alert-card">
+        <div v-else class="alert-card" :class="{ 'is-extraction': msg.source_kind === 'extraction' }">
           <div class="alert-head">
-            <span class="alert-ic"><AtelierIcon name="alert" :size="15" /></span>
+            <span class="alert-ic" :class="{ verify: msg.source_kind === 'extraction' }">
+              <AtelierIcon :name="msg.source_kind === 'extraction' ? 'verify' : 'alert'" :size="15" />
+            </span>
             <span class="alert-title">{{ msg.title }}</span>
           </div>
           <p class="alert-body">{{ msg.body }}</p>
+          <p v-if="msg.correction" class="alert-correction">{{ msg.correction }}</p>
           <div v-if="msg.status === 'resolving'" class="alert-resolves">
             <button v-for="r in msg.resolves" :key="r.id" class="resolve-opt" @click="emit('resolve', msg, r)">
               <span class="ro-label">{{ r.label }}</span>
@@ -248,6 +296,8 @@ function submitFree() {
             </button>
             <button class="btn btn-ghost" @click="emit('status', msg, 'dismissed')">Ignorer</button>
           </div>
+          <div v-if="msg.cost" class="msg-cost">{{ formatCostLine(msg.cost.total_tokens, msg.cost.cost_usd) }}</div>
+          <AtelierTrace v-if="msg.trace" :trace="msg.trace" />
         </div>
       </template>
     </div>

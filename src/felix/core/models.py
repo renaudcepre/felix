@@ -20,6 +20,18 @@ class RelationRef(BaseModel):
     verbe_slug: str | None = None
 
 
+class PropChange(BaseModel):
+    """Un champ MODIFIÉ (pas ajouté) par update_entity — avant/après (#72).
+
+    Émis UNIQUEMENT quand la valeur existait déjà et diffère de la nouvelle
+    (cf. `plan_property_update`/`update_entity`) : jamais pour un ajout,
+    jamais quand la valeur est inchangée."""
+
+    field: str
+    before: str
+    after: str
+
+
 class ToolCard(BaseModel):
     """Carte « tool » du fil atelier — alignée sur AtelierMsg côté front."""
 
@@ -29,6 +41,10 @@ class ToolCard(BaseModel):
     subject: str
     field: str
     added: str
+    # Champs MODIFIÉS (valeur remplacée), distincts de `added` — le front
+    # affiche « champ : avant → après » pour ceux-ci au lieu de « + ajouté »
+    # (#72). None/vide : cette carte n'a rien modifié, que des ajouts.
+    changes: list[PropChange] | None = None
     # Cible de la carte, pour les actions ✎/🗑 du front (#61). `entity_id` pour
     # une fiche (ou un événement), `relation` pour une arête. None : pas d'action
     # possible sur cette carte (ex. fusion — la source n'existe plus).

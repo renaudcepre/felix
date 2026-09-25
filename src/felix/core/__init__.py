@@ -9,26 +9,51 @@ Surface publique du noyau (le bot B et les evals importent d'ici).
 from __future__ import annotations
 
 from felix.core.agent import SYSTEM_PROMPT, create_core_agent
+from felix.core.alerts import (
+    consume_unnotified_alerts,
+    record_alert,
+    render_alerts_block,
+)
 from felix.core.check import CheckVerdict, consistency_check
+from felix.core.costs import project_cost_totals, record_cost_entry
 from felix.core.deps import GenericDeps
 from felix.core.graph import (
     NARRATIVE_REL,
     all_entities,
     all_relations,
+    create_entity,
+    link_described_in,
     merge_entity_into,
     recent_entities,
     rel_label,
     rename_or_merge,
     render_recent_block,
 )
+from felix.core.messages import (
+    archive_conversation,
+    conversation_messages,
+    link_produced,
+    load_llm_history,
+    record_message,
+    save_llm_history,
+)
 from felix.core.models import RelationRef, ToolCard
-from felix.core.profile import CHANTIER_PROFILE, SCENARIO_PROFILE, EntityType, Profile
+from felix.core.profile import (
+    CHANTIER_PROFILE,
+    EMERGENT_SEED_PROFILE,
+    MAINTENANCE_PROFILE,
+    SCENARIO_PROFILE,
+    EntityType,
+    Profile,
+    runs_chronicle,
+)
 from felix.core.projects import (
     DEFAULT_PROJECT,
     create_project,
     ensure_project_scoping,
     list_projects,
 )
+from felix.core.source_pages import persist_source_pages, source_pages_for
 from felix.core.user_edits import (
     consume_unnotified_edits,
     recent_user_edits,
@@ -39,6 +64,8 @@ from felix.core.user_edits import (
 __all__ = [
     "CHANTIER_PROFILE",
     "DEFAULT_PROJECT",
+    "EMERGENT_SEED_PROFILE",
+    "MAINTENANCE_PROFILE",
     "NARRATIVE_REL",
     "SCENARIO_PROFILE",
     "SYSTEM_PROMPT",
@@ -50,18 +77,34 @@ __all__ = [
     "ToolCard",
     "all_entities",
     "all_relations",
+    "archive_conversation",
     "consistency_check",
+    "consume_unnotified_alerts",
     "consume_unnotified_edits",
+    "conversation_messages",
     "create_core_agent",
+    "create_entity",
     "create_project",
     "ensure_project_scoping",
+    "link_described_in",
+    "link_produced",
     "list_projects",
+    "load_llm_history",
     "merge_entity_into",
+    "persist_source_pages",
+    "project_cost_totals",
     "recent_entities",
     "recent_user_edits",
+    "record_alert",
+    "record_cost_entry",
+    "record_message",
     "record_user_edit",
     "rel_label",
     "rename_or_merge",
+    "render_alerts_block",
     "render_recent_block",
     "render_user_edits_block",
+    "runs_chronicle",
+    "save_llm_history",
+    "source_pages_for",
 ]

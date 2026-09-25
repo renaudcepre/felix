@@ -1,269 +1,180 @@
-# Felix — Screenplay Continuity Assistant
+# Felix
 
-Felix is an AI-powered continuity assistant for multi-era screenplays. Drop your scenes as plain text files; Felix extracts characters, locations, and dates, builds a knowledge graph, detects narrative inconsistencies, and answers continuity questions in natural language.
+Felix turns documents and conversation into a knowledge graph. You import a
+document or describe something in chat, and Felix extracts entities and
+relations, checks them for consistency against the source, and answers
+questions about what is in the graph. It is domain-agnostic: a mode picks the
+vocabulary (what counts as an entity, what relations are allowed), but the
+pipeline underneath is the same for a screenplay, a construction log, or a
+maintenance manual. The `emergent` mode has no fixed vocabulary at all: it
+learns one from the documents you feed it, with a human validating every
+change before it becomes part of the schema.
+
+---
+
+## Modes
+
+| Mode | Vocabulary | Use case |
+|---|---|---|
+| `scenario` | Characters, scenes, locations, timeline events | Multi-era screenplay continuity |
+| `chantier` | Tools, materials, work items, participants | Construction site progress log |
+| `maintenance` | Machine, part, control, parameter, mode, instruction, document | Technical documentation, fixed schema |
+| `emergent` | Starts empty, learns types and relations from documents | Unknown domain, default mode |
+| `none` | No profile at all | Bare core, nothing assumed |
+
+Modes are defined in `src/felix/atelier/agent.py` (`ATELIER_CHOICES`) and
+`src/felix/core/profile.py`. The mode selector in `/chat` calls
+`GET /api/atelier/profiles`.
 
 ---
 
 ## Architecture
 
-```
-scenes/          ──► Ingest Pipeline ──► Neo4j (graph)
-(plain text)                         └──► ChromaDB (vectors)
-                                              │
-                                    FastAPI REST API
-                                              │
-                                    ┌─────────┴──────────┐
-                                  Nuxt UI           Felix CLI
-                                (web/port 3000)  (terminal chat)
-```
-
-| Layer | Technology |
-|---|---|
-| Graph DB | Neo4j 5 (async, Bolt) |
-| Vector store | ChromaDB + sentence-transformers |
-| LLM agents | pydantic-ai (Mistral API / Together AI / LM Studio) |
-| API | FastAPI + uvicorn |
-| Frontend | Nuxt 3 + Nuxt UI |
-| Runtime | Python 3.12, uv |
-
----
-
-## Graph Schema
-
-```
-(Character)-[:PRESENT_IN {role}]────────►(Scene)
-(Character)-[:RELATED_TO {relation_type}]►(Character)
-(Character)-[:PARTICIPATES_IN {role}]───►(TimelineEvent)
-(Scene)────[:AT_LOCATION]───────────────►(Location)
-(Scene)────[:HAS_ISSUE]─────────────────►(Issue)
-(TimelineEvent)─[:AT_LOCATION]──────────►(Location)
-(TimelineEvent)─[:FROM_SCENE]───────────►(Scene)
-```
-
-**Key node properties:**
-- `Character` — `id` (slug), `name`, `aliases[]`, `era`, `background`, `arc`, `traits`, `physical`, `status`
-- `Scene` — `id` (derived from filename stem), `title`, `date`, `era`, `summary`, `raw_text`, `filename`
-- `Issue` — `id` (deterministic for bilocalization: `biloc-{char}-{s1}-{s2}`), `type`, `severity`, `description`, `suggestion`, `resolved`
+- **Gate**: one short, stateless call per turn. No tools, no history. Decides
+  whether a message asserts a fact worth extracting.
+- **Master**: leads the conversation, read-only tools only (`find_entity`,
+  `list_entities`). It cannot write to the graph, so a greeting or a question
+  never creates anything.
+- **Extractors**: three passes run after the gate opens: entity extraction,
+  relation binding, and (if the mode tracks events) chronicling. Chat and
+  document import share the same extraction pipeline
+  (`src/felix/atelier/pipeline.py`).
+- **Checker + source verifier**: a consistency check scans the graph for
+  contradictions; a second, source-grounded check reads the original document
+  pages to tell a real inconsistency in the document from a bad reading by
+  Felix.
+- **Graph**: Neo4j, every node and relation scoped to a project (`project`
+  property on every node, enforced by an AST guard and a runtime probe). One
+  Neo4j instance holds every project.
+- **Emergent profile loop** (`emergent` mode only): a deterministic detector
+  scans recurring verbs and near-duplicate types and proposes schema changes;
+  a human accepts or rejects each one in the Propositions panel; an accepted
+  change migrates past data (`src/felix/core/schema_changes.py`), so validated
+  vocabulary applies retroactively, not just going forward.
 
 ---
 
-## Setup
+## Quick start
 
-### Prerequisites
+1. Start Neo4j:
 
-- [uv](https://docs.astral.sh/uv/) — Python package manager
-- [Docker](https://www.docker.com/) — for Neo4j
-- [pnpm](https://pnpm.io/) — for the frontend (optional)
+   ```bash
+   docker compose up -d
+   ```
 
-### 1. Start Neo4j
+   Neo4j Browser is at `http://localhost:7474`. Bolt is at
+   `bolt://localhost:7687`.
 
-```bash
-docker compose up -d
-```
+2. Create a `.env` file at the project root. All settings use the `FLX_`
+   prefix (see `src/felix/config.py` for the full list). At minimum, pick one
+   LLM provider:
 
-Neo4j runs on `bolt://localhost:7687` (user: `neo4j`, password: `felixpassword`).
-Neo4j Browser: `http://localhost:7474`
+   | Variable | What it does |
+   |---|---|
+   | `FLX_LLM_API_KEY` | Mistral API key |
+   | `TOGETHER_API_KEY` | Together AI key (alternative provider) |
+   | `FLX_LLM_MODEL` | Model name |
+   | `FLX_LLM_BASE_URL` | OpenAI-compatible base URL (Together AI, LM Studio) |
+   | `FLX_NEO4J_URI` / `FLX_NEO4J_USER` / `FLX_NEO4J_PASSWORD` | Neo4j connection, matches `docker-compose.yml` defaults |
 
-### 2. Configure environment
+   `.env.example` has a working template for Mistral, Together AI, and a
+   local LM Studio server.
 
-Create a `.env` file at the project root:
+3. Install and run:
+
+   ```bash
+   uv sync
+   just dev-up
+   ```
+
+   This starts the API (port 8000, hot reload) and the Nuxt frontend (port
+   3007) together.
+
+4. Open `http://localhost:3007/chat`. Pick a project and a mode (`emergent`
+   is the default).
+
+5. Import the sample fixture: use the "Importer une fiche" button and select
+   `evals/maintenance/fixtures/sx40_fiche.txt`, or run it from the CLI:
+
+   ```bash
+   just ingest-doc evals/maintenance/fixtures/sx40_fiche.txt --profile maintenance
+   ```
+
+6. Ask a question about the imported document in the chat.
+
+7. Open the Propositions panel (top bar) to see and validate the schema
+   changes the emergent detector proposed.
+
+---
+
+## Cost display and pricing
+
+Every chat turn and every document import shows token count and USD cost,
+broken down by model. A model with no known price shows as unknown rather
+than a false `$0`: the pricing table (`src/felix/cost.py`,
+`DEFAULT_PRICING`) never invents a number.
+
+To override or add a price, set `FLX_PRICING_JSON`:
 
 ```dotenv
-# Mistral API
-FLX_LLM_API_KEY=your_mistral_api_key
-
-# or Together AI
-TOGETHER_API_KEY=your_together_key
-FLX_LLM_BASE_URL=https://api.together.xyz/v1
-FLX_LLM_MODEL=Qwen/Qwen2.5-7B-Instruct-Turbo
-
-# or LM Studio (auto-detected at localhost:1234)
-# FLX_LLM_BASE_URL=http://localhost:1234/v1
-# FLX_LLM_MODEL=qwen2.5-7b-instruct
+FLX_PRICING_JSON={"my-model": {"input": 0.20, "output": 1.00}}
 ```
 
-All settings use the `FLX_` prefix. See `src/felix/config.py` for the full list.
+Prices are USD per million tokens. An entry replaces the default for that
+model name entirely; it does not merge input/output partially.
 
-| Variable | Description | Default |
+---
+
+## Per-role model overrides
+
+Each role can use a different model. Every override falls back to
+`FLX_LLM_MODEL` / `FLX_LLM_BASE_URL` if unset.
+
+| Role | Model variable | Base URL variable |
 |---|---|---|
-| `FLX_LLM_MODEL` | Model name | `Qwen/Qwen2.5-7B-Instruct-Turbo` |
-| `FLX_LLM_BASE_URL` | OpenAI-compatible base URL | `https://api.together.xyz/v1` |
-| `FLX_LLM_API_KEY` | Mistral API key | _(empty)_ |
-| `TOGETHER_API_KEY` | Together AI key | _(empty)_ |
-| `FLX_NEO4J_URI` | Neo4j Bolt URI | `bolt://localhost:7687` |
-| `FLX_NEO4J_USER` | Neo4j username | `neo4j` |
-| `FLX_NEO4J_PASSWORD` | Neo4j password | `felixpassword` |
-| `FLX_CHROMA_PATH` | ChromaDB data directory | `chroma_data` |
-| `LOGFIRE_TOKEN` | Logfire observability token | _(empty)_ |
+| Chat (master) | `FLX_LLM_CHAT_MODEL` | `FLX_LLM_CHAT_BASE_URL` |
+| Checker (consistency) | `FLX_LLM_CHECKER_MODEL` | `FLX_LLM_CHECKER_BASE_URL` |
+| Gate (routing) | `FLX_LLM_GATE_MODEL` | `FLX_LLM_GATE_BASE_URL` |
+| Source verifier | `FLX_LLM_VERIFIER_MODEL` | `FLX_LLM_VERIFIER_BASE_URL` |
 
-### 3. Install and run
-
-```bash
-uv sync
-just dev-up     # API (port 8000) + Nuxt frontend (port 3000)
-```
-
----
-
-## Ingest Pipeline
-
-Each scene file is processed through four async stages:
-
-```
-1. analyze   LLM extracts characters, location, date, era, summary from raw text
-2. load      Fuzzy-match entities against the existing graph (rapidfuzz + MERGE),
-             write Character / Scene / Location nodes to Neo4j,
-             embed scene text into ChromaDB
-3. check     timeline_checker + narrative_checker agents scan for inconsistencies
-             → Issue nodes (timeline, narrative, contradiction)
-             + Cypher bilocalization check (same date, different location)
-4. profile   Profiler agent writes / patches character background for this scene;
-             patch agent merges cross-scene info into a coherent profile
-```
-
-Re-importing a scene is **idempotent**: existing Scene nodes are deleted and rewritten; issues for those scenes are pruned before recreation.
-
-To import scenes via the API:
-
-```bash
-curl -X POST http://localhost:8000/api/ingest \
-     -F "files=@scenes/01_signal.txt" \
-     -F "files=@scenes/02_rapport.txt"
-```
-
----
-
-## Chat Agent
-
-Felix answers continuity questions in French. It uses four tools:
-
-| Tool | What it does |
-|---|---|
-| `find_character(name)` | Character profile, aliases, arc, physical description |
-| `find_location(name)` | Location description and associated events |
-| `get_timeline(location?, date_from?, date_to?)` | Timeline events with optional filters |
-| `search_scenes(query)` | Semantic similarity search over scene text (ChromaDB) |
-
-The agent **only reports what tools return** — it refuses to invent facts.
-
-```bash
-felix                                    # interactive chat (uses .env settings)
-felix --model mistral-small-latest
-felix --base-url http://localhost:1234/v1 --model qwen2.5-7b-instruct
-```
-
----
-
-## API Routes
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/health` | Model + provider status |
-| `GET` | `/api/characters` | List all characters |
-| `GET` | `/api/characters/{id}` | Character detail + scene fragments |
-| `PATCH` | `/api/characters/{id}` | Update character profile |
-| `GET` | `/api/locations` | List all locations |
-| `GET` | `/api/timeline` | Timeline events (filterable by date / era / location) |
-| `POST` | `/api/chat` | Chat with the agent |
-| `POST` | `/api/ingest` | Import scene files (multipart) |
-| `GET` | `/api/export` | Export full graph as JSON |
-
----
-
-## Task Runner
-
-```bash
-just dev-up        # API (hot reload) + frontend in parallel
-just api           # API only
-just web           # Nuxt frontend only
-just export        # Export graph to exports/<timestamp>.json
-just db-clean      # Wipe all data (Neo4j + ChromaDB)
-just db-archive    # Archive ChromaDB snapshot then wipe
-just evals         # Run all eval suites (auto-detects provider)
-just evals --suite pipeline --mistral
-just evals --suite pipeline --list
-just evals --suite pipeline --case character_extraction --together
-```
-
----
-
-## Evals
-
-Felix uses [pydantic-evals](https://ai.pydantic.dev/evals/) for LLM evaluation — not pytest.
-All suites run in a **single asyncio event loop** to avoid httpx connection pool bleeding between pipeline runs.
-
-### Suites
-
-| Suite | Cases | Story | What it tests |
-|---|---|---|---|
-| `pipeline` | 34 | Helios (7 scenes) | Full ingest pipeline: extraction, profiling, relations, consistency, timeline |
-| `pipeline-convoi` | 12 | Convoi (3 scenes) | Full ingest pipeline + bilocalization dedup regression |
-| `ingest` | 17 | Mixed | Scene analyzer LLM in isolation (roles, era, location, negatives) |
-| `chatbot` | 26 | WWII thriller | Chat agent: lookup, coherence, causal chains, alias resolution, negatives |
-
-### Running evals
-
-```bash
-just evals                                        # all suites, auto-detect provider
-just evals --suite pipeline --mistral             # Mistral API
-just evals --suite pipeline-convoi --together     # Together AI
-just evals --suite ingest --local                 # LM Studio
-
-just evals --suite pipeline --list                # list all cases
-just evals --suite pipeline --case character_extraction --mistral   # single case
-
-just evals --suite pipeline --history             # show run history
-just evals --suite pipeline --diff                # compare last two runs
-```
-
-Results are written to `evals/results/<suite>_<timestamp>/` (one `.md` per case) and appended to `evals/results/history.jsonl`.
-
-### Fixture isolation
-
-```
-evals/fixtures/
-  helios/     ← 7 scenes (Helios story)
-  convoi/     ← 3 scenes (Convoi story, copied from data/scenes/)
-```
-
-Each pipeline suite targets its own subdirectory. The Neo4j DB is wiped at pipeline init (`MATCH (n) DETACH DELETE n`) so suites never interfere.
+The verifier falls back to the checker model if unset, the same way the gate
+falls back to chat.
 
 ---
 
 ## Development
 
-### Tests
-
 ```bash
-uv run pytest               # all tests
-uv run pytest tests/test_pipeline.py -v
+just test                # unit tests (protest, not pytest)
+just web-check            # front: typecheck, lint, build, stops at first failure
+just e2e-atelier          # SSE route e2e, plays a scenario story, ~40 LLM calls
+just e2e-conductor        # master e2e: greetings, content, questions mixed
+just e2e-edits            # human-in-the-loop e2e: delete/patch during a conversation
+just ingest-doc <path>    # ingest a document from the CLI, calls the LLM
+just schema <cmd>         # emergent schema CLI: profile/proposals/apply, no LLM call
 ```
 
-Tests connect to a real Neo4j instance at `bolt://localhost:7687` (the same Docker instance used for development) — no mocking.
+`just test` runs against a real Neo4j instance, no mocking. E2E recipes wipe
+the graph: do not run them against the API you are using for a demo.
 
-### Linting
+---
 
-```bash
-uv run ruff check src/ evals/ tests/
-uv run ruff format src/ evals/ tests/
-```
+## Known limits
 
-### Graph exploration
+- **Text only.** PDF import extracts text; images (photos of buttons,
+  indicator lights, diagrams) are dropped. A fiche that is half images loses
+  that half.
+- **Extraction quality is measured on few documents.** The maintenance and
+  emergent pipelines were validated on one synthetic fixture (SX-40, a
+  crimping machine sheet written for this repo, no real document). Results on
+  other document shapes are unmeasured.
+- **Cost per document is an order of magnitude, not a guarantee.** A chat
+  turn with extraction runs around 27k tokens (~$0.01-0.02). A document
+  import costs much more: measured runs on a short fixture (4 pages, then a
+  denser 1.5-page rewrite of the same content) ranged from 270k to 546k
+  tokens depending on chunking strategy, dominated by tool round-trips and
+  consistency-checker judge calls, not the raw text volume.
 
-Open `http://localhost:7474`. Useful queries:
-
-```cypher
-// Graph overview (hide Issue nodes)
-MATCH p=()-[r]->() WHERE none(n IN nodes(p) WHERE n:Issue) RETURN p LIMIT 100
-
-// Characters and their scenes
-MATCH (c:Character)-[r:PRESENT_IN]->(s:Scene) RETURN c, r, s
-
-// Open issues by type
-MATCH (s:Scene)-[:HAS_ISSUE]->(i:Issue)
-WHERE i.resolved = false
-RETURN i.type, count(i) AS n ORDER BY n DESC
-
-// Bilocalization issues
-MATCH (i:Issue {type: "bilocalization"}) RETURN i.description, i.entity_id
-```
+No client data and no real document ever went into this repo, its prompts,
+or its tests. The only fixture used is the synthetic SX-40 sheet in
+`evals/maintenance/fixtures/`.

@@ -5,16 +5,29 @@ const props = defineProps<{
   entity: EntitySummary
 }>()
 
-// Aperçu : la première propriété libre, si elle existe. Aucune hypothèse sur
-// la structure — l'entité peut n'avoir aucune prop.
-const preview = computed(() => {
-  const entries = Object.entries(props.entity.props ?? {})
-  if (!entries.length) return null
-  const [key, value] = entries[0]!
-  return { key, value: String(value) }
+const initial = computed(() => (props.entity.name?.[0] ?? '?').toUpperCase())
+
+// « N propriétés · M liens » — toujours au pluriel/singulier correct, quel
+// que soit le schéma de l'entité (#73, remplace l'ancien aperçu de la
+// première prop libre, arbitraire selon l'ordre de retour de Neo4j).
+const meta = computed(() => {
+  const p = props.entity.prop_count
+  const r = props.entity.relation_count
+  return `${p} propriété${p > 1 ? 's' : ''} · ${r} lien${r > 1 ? 's' : ''}`
 })
 
-const initial = computed(() => (props.entity.name?.[0] ?? '?').toUpperCase())
+// « p. 1 » ou « p. 1-2 » (première et dernière page — pas un détail de chaque
+// page touchée, la carte reste un aperçu).
+const sourceLabel = computed(() => {
+  const source = props.entity.source
+  if (!source) return null
+  const pages = source.pages
+  if (!pages.length) return source.title
+  const range = pages.length === 1 || pages[0] === pages[pages.length - 1]
+    ? `${pages[0]}`
+    : `${pages[0]}-${pages[pages.length - 1]}`
+  return `${source.title}, p. ${range}`
+})
 </script>
 
 <template>
@@ -25,9 +38,8 @@ const initial = computed(() => (props.entity.name?.[0] ?? '?').toUpperCase())
     <div class="ent-card-body">
       <div class="ent-card-name">{{ entity.name }}</div>
       <span v-if="entity.entity_type" class="badge badge-rel cap">{{ entity.entity_type }}</span>
-      <p v-if="preview" class="ent-card-preview">
-        <b>{{ preview.key }}</b> · {{ preview.value }}
-      </p>
+      <p class="ent-card-meta">{{ meta }}</p>
+      <p v-if="sourceLabel" class="ent-card-source">{{ sourceLabel }}</p>
     </div>
   </NuxtLink>
 </template>

@@ -67,8 +67,10 @@ async def ensure_project_scoping(driver: AsyncDriver) -> None:
     async with driver.session() as session:
         await session.run(
             "MERGE (p:Project {id: $id}) "
-            "ON CREATE SET p.name = $name, p.created_at = timestamp()",
-            id=DEFAULT_PROJECT, name="Histoire par défaut",
+            "ON CREATE SET p.name = $name, p.created_at = timestamp() "
+            # Répare un registre abîmé (projet créé sans nom par un ancien writer).
+            "ON MATCH SET p.name = coalesce(p.name, $name)",
+            id=DEFAULT_PROJECT, name="Projet par défaut",
         )
         await session.run(
             "MATCH (e:GenEntity) WHERE e.project IS NULL SET e.project = $p",

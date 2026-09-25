@@ -1,6 +1,10 @@
-import type { AtelierMsg } from '~/types/atelier'
+import type { AlertSourceKind, AtelierMsg, IngestReportPayload, PropChange } from '~/types/atelier'
+import type { CostSummaryPayload } from '~/types/costs'
+import type { TraceSummaryPayload } from '~/types/trace'
 import { parseSSEStream } from '~/utils/parseSSE'
-import { currentProject, DEFAULT_PROJECT } from './useProject'
+import { currentProfile, profiles as atelierProfiles, useAtelierProfile } from './useAtelierProfile'
+import { currentProject } from './useProject'
+import { useProjectCost } from './useProjectCost'
 
 // Carte tool émise par le backend (event SSE `tool`) — cf. felix/core/models.py
 interface ToolCardPayload {
@@ -10,41 +14,54 @@ interface ToolCardPayload {
   subject: string
   field: string
   added: string
+  // champs MODIFIÉS ce tour (#72), null si aucun — cf. felix.core.models.PropChange
+  changes: PropChange[] | null
   // cible de la carte (#61) : id de fiche/événement, ou référence de relation
   entity_id: string | null
   relation: { from_id: string, to_id: string, rel_type: string, verbe_slug?: string | null } | null
 }
 
 // Alerte d'incohérence émise par le backend (event SSE `alert`) — cf. la route
-// atelier (consistency_check sur les entités touchées).
+// atelier (consistency_check sur les entités touchées). `source_kind`/`correction`
+// (#vérif-source) : verify_against_source a relu la source pour dire si c'est le
+// document qui se contredit ou Felix qui l'a mal lu.
 interface AlertPayload {
   kind: 'alert'
   title: string
   body: string
   status: 'open' | 'resolving' | 'resolved' | 'dismissed'
+  source_kind: AlertSourceKind
+  correction: string
 }
 
-const WELCOME: Omit<AtelierMsg, 'id'> = {
-  role: 'felix',
-  kind: 'text',
-  body: 'Bonjour. Raconte-moi ton histoire : décris tes personnages au fil de l\'eau, et je tiendrai leurs fiches à jour dans la bible.',
+// Message persisté côté serveur (GET /api/atelier/conversation, #63).
+// kind='report' (#import) : résumé d'un import de fiche persisté comme un
+// tour normal — visible après reload, même flux de persistance que tool/alert.
+interface ConversationMessageOut {
+  id: string
+  role: 'user' | 'felix'
+  kind: 'text' | 'tool' | 'alert' | 'report'
+  body: string
+  ord: number
+  payload: Record<string, unknown> | null
 }
 
-// Conversation PAR PROJET (#60) : changer d'histoire change de fil — le fil
-// threadé du maître référence les entités de SON histoire, le partager
-// contaminerait l'autre. Le projet par défaut garde la clé historique (la
-// conversation d'avant le scoping survit au passage à #60).
-const STORAGE_BASE = 'felix.atelier.conversation.v1'
-const storageKey = (project: string) =>
-  project === DEFAULT_PROJECT ? STORAGE_BASE : `${STORAGE_BASE}:${project}`
+// Repli si le backend n'a pas encore répondu à /api/atelier/profiles (offline,
+// tout premier chargement) — neutre, aucun mot de fiction : le VRAI welcome
+// vient du mode courant (cf. welcomeFor), pas de cette constante.
+const FALLBACK_WELCOME = 'Bonjour. Décris ton sujet, et je tiendrai les fiches à jour au fil de la conversation.'
 
-// État SINGLETON (hors de useAtelier) : il survit au démontage/remontage de la
-// page. Avant, useAtelier() recréait des refs neuves à chaque appel → quitter
-// /chat et revenir repartait de zéro. Ici on le persiste aussi en localStorage
-// pour survivre au reload (F5). La bible (Neo4j) gardait déjà l'univers ; ce
-// qu'on garde ici, c'est le FIL de conversation + l'historique threadé au LLM
-// (messageHistory) sans quoi Felix perdrait le contexte en reprenant.
-// Hypothèse assumée : app local-first MONO-utilisateur (pas de fuite inter-requêtes).
+// Le message d'accueil vient du MODE courant (Étape 8, GET /api/atelier/profiles)
+// — plus un seul texte scénario codé en dur pour tous les modes.
+function welcomeFor(profileKey: string): string {
+  return atelierProfiles.value.find(p => p.key === profileKey)?.welcome ?? FALLBACK_WELCOME
+}
+
+// État SINGLETON (hors de useAtelier) : survit au démontage/remontage de la page.
+// Depuis #63 (brique 2), la conversation EST EN BASE Neo4j — source de vérité.
+// Plus de localStorage pour le fil (felix.atelier.conversation.v1*) : les vieilles
+// clés restent mortes dans les navigateurs, on ne migre pas (décision assumée).
+// NE PAS TOUCHER à felix.project.v1 (useProject).
 let _seq = 0
 const uid = () => ++_seq
 
@@ -54,99 +71,198 @@ const typing = ref(false)
 // cohérence) — affichée près de l'indicateur de frappe pour ne pas laisser
 // l'auteur devant un long silence pendant ces passes non streamées.
 const phase = ref<string | null>(null)
-const messageHistory = ref<object[]>([])
 // Garde-fou « session muette » (issue #43) : si la bible est toujours vide après
 // 3 tours d'auteur, on l'affiche au lieu de laisser la session se perdre en
 // silence. Toute carte `tool` est une écriture (les lectures n'émettent pas de
 // carte) — le compteur repart à zéro dès que la bible bouge.
+// Ces deux flags sont désormais DÉRIVÉS du fil hydraté (pas stockés/lus de localStorage).
 const silentTurns = ref(0)
 const everWrote = ref(false)
 const silentSession = computed(() => !everWrote.value && silentTurns.value >= 3)
 
 let initialized = false
-let persistTimer: ReturnType<typeof setTimeout> | null = null
 
-function persist(project: string = currentProject.value) {
-  if (!import.meta.client) return
-  try {
-    localStorage.setItem(storageKey(project), JSON.stringify({
-      seq: _seq,
-      messages: messages.value,
-      messageHistory: messageHistory.value,
-      silentTurns: silentTurns.value,
-      everWrote: everWrote.value,
-    }))
-  }
-  catch { /* quota / mode privé : on dégrade silencieusement vers le non-persisté */ }
-}
-
-function schedulePersist() {
-  if (!import.meta.client) return
-  if (persistTimer) clearTimeout(persistTimer)
-  // Débounce : le stream pousse beaucoup de deltas texte, inutile d'écrire à chaque.
-  persistTimer = setTimeout(persist, 300)
-}
+// Compteur de génération pour détecter les résultats périmés après un switch
+// d'histoire pendant le fetch d'hydratation (évite d'afficher le fil de l'ancien
+// projet si le nouveau projet répond en premier).
+let _hydrationGen = 0
 
 function freshWelcome() {
   _seq = 0
-  messages.value = [{ id: uid(), ...WELCOME }]
-  messageHistory.value = []
+  messages.value = [{ id: uid(), role: 'felix', kind: 'text', body: welcomeFor(currentProfile.value) }]
   silentTurns.value = 0
   everWrote.value = false
 }
 
-function hydrate(): boolean {
-  if (!import.meta.client) return false
-  const raw = localStorage.getItem(storageKey(currentProject.value))
-  if (!raw) return false
-  try {
-    const s = JSON.parse(raw) as {
-      seq?: number
-      messages?: AtelierMsg[]
-      messageHistory?: object[]
-      silentTurns?: number
-      everWrote?: boolean
+// Dérive les compteurs de session muette depuis le fil hydraté.
+// À appeler juste après avoir rempli messages.value depuis le serveur.
+// everWrote = au moins une carte tool dans le fil (une écriture en base).
+// silentTurns = si déjà écrit : 0 ; sinon le nombre de messages de l'auteur.
+function deriveCounters() {
+  const hasWrite = messages.value.some(m => m.kind === 'tool')
+  everWrote.value = hasWrite
+  silentTurns.value = hasWrite ? 0 : messages.value.filter(m => m.role === 'user').length
+}
+
+// Coût du tour, s'il a été persisté dans le payload (#coût) — posé côté back
+// UNIQUEMENT sur le dernier message felix du tour (cf. felix.api.routes.atelier).
+function extractCost(payload: Record<string, unknown> | null | undefined): CostSummaryPayload | undefined {
+  return (payload?.cost as CostSummaryPayload | undefined) ?? undefined
+}
+
+// Trace du tour (#78), MÊME convention que extractCost ci-dessus — posée par
+// le back dans le même payload que cost, sur le même dernier message.
+function extractTrace(payload: Record<string, unknown> | null | undefined): TraceSummaryPayload | undefined {
+  return (payload?.trace as TraceSummaryPayload | undefined) ?? undefined
+}
+
+// Mapping ConversationMessageOut → AtelierMsg.
+// Renvoie null pour les messages tool/alert dont le payload est absent (défensif :
+// un bug de persistance ne doit pas faire planter l'hydratation entière).
+function mapServerMsg(m: ConversationMessageOut): AtelierMsg | null {
+  if (m.kind === 'text') {
+    return {
+      id: uid(),
+      role: m.role === 'user' ? 'user' : 'felix',
+      kind: 'text',
+      body: m.body,
+      cost: extractCost(m.payload),
+      trace: extractTrace(m.payload),
     }
-    if (!Array.isArray(s.messages) || s.messages.length === 0) return false
-    messages.value = s.messages
-    messageHistory.value = Array.isArray(s.messageHistory) ? s.messageHistory : []
-    silentTurns.value = s.silentTurns ?? 0
-    everWrote.value = s.everWrote ?? false
-    _seq = s.seq ?? messages.value.reduce((m, x) => Math.max(m, x.id), 0)
-    return true
   }
-  catch {
-    return false
+  if (m.kind === 'tool') {
+    if (!m.payload) return null
+    const p = m.payload as unknown as ToolCardPayload
+    return {
+      id: uid(),
+      role: 'felix',
+      kind: 'tool',
+      tool: p.tool,
+      title: p.title,
+      subject: p.subject,
+      field: p.field,
+      added: p.added,
+      changes: p.changes ?? undefined,
+      entityId: p.entity_id ?? undefined,
+      relation: p.relation ?? undefined,
+      cost: extractCost(m.payload),
+      trace: extractTrace(m.payload),
+    }
   }
+  if (m.kind === 'alert') {
+    if (!m.payload) return null
+    const p = m.payload as unknown as AlertPayload
+    return {
+      id: uid(),
+      role: 'felix',
+      kind: 'alert',
+      title: p.title,
+      body: p.body,
+      status: p.status,
+      source_kind: p.source_kind,
+      correction: p.correction,
+      cost: extractCost(m.payload),
+      trace: extractTrace(m.payload),
+    }
+  }
+  if (m.kind === 'report') {
+    if (!m.payload) return null
+    // Le rapport porte déjà son propre coût (total_tokens/cost_usd/by_model) —
+    // pas de champ `cost` séparé à poser, cf. AtelierMessage (kind='report').
+    return {
+      id: uid(),
+      role: 'felix',
+      kind: 'report',
+      report: m.payload as unknown as IngestReportPayload,
+    }
+  }
+  return null
+}
+
+// Hydratation depuis GET /api/atelier/conversation.
+// Retourne :
+//   'ok'    : fil chargé et appliqué dans messages.value
+//   'empty' : fil vide ou fetch en erreur (l'appelant doit afficher freshWelcome)
+//   'stale' : un switch d'histoire a eu lieu PENDANT le fetch — ne rien appliquer
+//             (la nouvelle hydratation gèrera elle-même le résultat)
+async function hydrateFromServer(project: string): Promise<'ok' | 'empty' | 'stale'> {
+  const myGen = ++_hydrationGen
+  try {
+    const serverMsgs = await $fetch<ConversationMessageOut[]>(
+      '/api/atelier/conversation',
+      { query: { project } },
+    )
+    if (myGen !== _hydrationGen) return 'stale'
+    if (!Array.isArray(serverMsgs) || serverMsgs.length === 0) return 'empty'
+    _seq = 0
+    const mapped = serverMsgs.map(mapServerMsg).filter((m): m is AtelierMsg => m !== null)
+    if (mapped.length === 0) return 'empty'
+    messages.value = mapped
+    deriveCounters()
+    return 'ok'
+  }
+  catch (err) {
+    if (myGen !== _hydrationGen) return 'stale'
+    console.error('[useAtelier] hydrateFromServer — échec du fetch :', err)
+    return 'empty'
+  }
+}
+
+// Charge la liste des modes (une fois) — nécessaire à welcomeFor AVANT le
+// premier freshWelcome, sinon le tout premier accueil affiche le repli neutre
+// au lieu du texte du mode courant (course avec le fetch d'hydratation).
+let profilesLoaded: Promise<void> | null = null
+function ensureProfilesLoaded(): Promise<void> {
+  if (!profilesLoaded) {
+    profilesLoaded = useAtelierProfile().refreshProfiles()
+  }
+  return profilesLoaded
 }
 
 function ensureInit() {
   if (initialized) return
   initialized = true
-  if (!hydrate()) freshWelcome()
-  // Persiste à chaque évolution du fil : texte streamé, cartes, édits (#61),
-  // nouvel historique threadé. Scope DÉTACHÉ (effectScope(true)) sinon le watch,
-  // créé pendant le setup de la 1ʳᵉ page, serait tué à son démontage → la
-  // persistance des édits s'arrêterait après la 1ʳᵉ navigation.
-  if (import.meta.client) {
-    effectScope(true).run(() => {
-      watch([messages, messageHistory], schedulePersist, { deep: true })
-      // Changement d'histoire : on fige le fil de l'ANCIEN projet sous sa clé
-      // (flush du débounce), puis on charge celui du nouveau (ou un fil vierge).
-      watch(currentProject, (_nv, ov) => {
-        if (persistTimer) clearTimeout(persistTimer)
-        persist(ov)
-        if (!hydrate()) freshWelcome()
-        persist()
-      })
+  if (!import.meta.client) return
+
+  // Hydratation asynchrone : fire-and-forget.
+  // Le fil reste VIDE pendant le chargement (pas de flash welcome → remplacement).
+  // Si le serveur retourne un fil vide OU si le fetch échoue, on affiche le welcome.
+  // 'stale' : un switch d'histoire a pris le relais avant la fin — on ne fait rien.
+  void Promise.all([ensureProfilesLoaded(), hydrateFromServer(currentProject.value)]).then(
+    ([, result]) => {
+      if (result === 'empty') freshWelcome()
+    },
+  )
+
+  // Scope DÉTACHÉ (effectScope(true)) : le watch survit au démontage de la 1ʳᵉ page.
+  effectScope(true).run(() => {
+    // Changement d'histoire : fil vide pendant le chargement, puis hydratation
+    // depuis le serveur (fil du nouveau projet, ou welcome si vide).
+    // Plus de flush/lecture localStorage — le serveur est la source de vérité.
+    watch(currentProject, async (nv) => {
+      messages.value = []
+      const result = await hydrateFromServer(nv)
+      if (result === 'empty') freshWelcome()
+      // 'stale' : encore un switch entre-temps — la nouvelle instance gère
     })
-  }
+  })
 }
 
-// Repartir d'une conversation vierge (et oublier la persistée).
-function newConversation() {
-  freshWelcome()
-  persist()
+// Repartir d'une conversation vierge.
+// Archive côté serveur (≠ suppression : les nœuds :Message restent en base pour
+// le futur repêchage — brique 3), puis welcome local. En cas d'échec réseau,
+// on conserve le fil courant (l'erreur est loggée, pas affichée dans l'UI).
+async function newConversation() {
+  try {
+    await $fetch('/api/atelier/conversation/clear', {
+      method: 'POST',
+      query: { project: currentProject.value },
+    })
+    freshWelcome()
+  }
+  catch (err) {
+    console.error('[useAtelier] newConversation — échec de l\'archivage serveur :', err)
+  }
 }
 
 export function useAtelier() {
@@ -160,6 +276,36 @@ export function useAtelier() {
     return messages.value[messages.value.length - 1]!
   }
 
+  // Cartes tool/alert : MÊME rendu qu'on les reçoive d'un tour de chat ou d'un
+  // import de fiche (#import) — un seul endroit qui sait lire ces deux cartes
+  // du backend, partagé par sendMessage ET importDocument ci-dessous.
+  function appendToolCard(card: ToolCardPayload): AtelierMsg {
+    return append({
+      role: 'felix',
+      kind: 'tool',
+      tool: card.tool,
+      title: card.title,
+      subject: card.subject,
+      field: card.field,
+      added: card.added,
+      changes: card.changes ?? undefined,
+      entityId: card.entity_id ?? undefined,
+      relation: card.relation ?? undefined,
+    })
+  }
+
+  function appendAlertCard(a: AlertPayload): AtelierMsg {
+    return append({
+      role: 'felix',
+      kind: 'alert',
+      title: a.title,
+      body: a.body,
+      status: a.status,
+      source_kind: a.source_kind,
+      correction: a.correction,
+    })
+  }
+
   async function sendMessage(text: string) {
     const t = text.trim()
     if (!t) return
@@ -170,6 +316,10 @@ export function useAtelier() {
     // le delta suivant ouvre alors un nouveau message.
     let current: AtelierMsg | null = null
     let wroteThisTurn = false
+    // Dernier message felix ajouté ce tour (texte OU carte) — c'est LUI qui
+    // reçoit le coût à l'event `usage` (#coût) : « sous chaque réponse » = une
+    // ligne par tour, pas une par carte, cf. le même choix côté back.
+    let lastAppended: AtelierMsg | null = null
 
     try {
       const response = await fetch(`${apiStreamBase}/api/atelier/chat`, {
@@ -177,9 +327,14 @@ export function useAtelier() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: t,
-          message_history: messageHistory.value,
-          // Histoire courante (#60) : le serveur est stateless, chaque tour la porte.
+          // message_history supprimé (#63, brique 2) : le serveur tient le fil
+          // LLM dans :Thread (nœud Neo4j). Le front n'a plus à gérer l'historique.
+          // Les evals/e2e qui fournissent message_history dans le body continuent
+          // à fonctionner côté backend sans aucune modification.
           project: currentProject.value,
+          // Mode courant (Étape 3, plans/maintenance_profile.md) — sélecteur de
+          // la topbar, persisté par useAtelierProfile. Défaut backend = scenario.
+          profile: currentProfile.value,
         }),
       })
 
@@ -200,33 +355,43 @@ export function useAtelier() {
             phase.value = null
             if (!current) current = append({ role: 'felix', kind: 'text', body: '' })
             current.body += sse.data
+            lastAppended = current
             messages.value = [...messages.value]
             break
           case 'tool': {
-            const card = JSON.parse(sse.data) as ToolCardPayload
             current = null
             wroteThisTurn = true
-            append({
-              role: 'felix',
-              kind: 'tool',
-              tool: card.tool,
-              title: card.title,
-              subject: card.subject,
-              field: card.field,
-              added: card.added,
-              entityId: card.entity_id ?? undefined,
-              relation: card.relation ?? undefined,
-            })
+            lastAppended = appendToolCard(JSON.parse(sse.data) as ToolCardPayload)
             break
           }
           case 'alert': {
-            const a = JSON.parse(sse.data) as AlertPayload
             current = null
-            append({ role: 'felix', kind: 'alert', title: a.title, body: a.body, status: a.status })
+            lastAppended = appendAlertCard(JSON.parse(sse.data) as AlertPayload)
+            break
+          }
+          case 'usage': {
+            const summary = JSON.parse(sse.data) as CostSummaryPayload
+            if (lastAppended) {
+              lastAppended.cost = summary
+              messages.value = [...messages.value]
+            }
+            break
+          }
+          case 'trace': {
+            // Trace du tour (#78) — MÊME convention que usage ci-dessus : posée
+            // sur le dernier message felix du tour (carte s'il y en a, sinon le
+            // texte), cf. felix.api.routes.atelier.
+            const summary = JSON.parse(sse.data) as TraceSummaryPayload
+            if (lastAppended) {
+              lastAppended.trace = summary
+              messages.value = [...messages.value]
+            }
             break
           }
           case 'history':
-            messageHistory.value = JSON.parse(sse.data) as object[]
+            // Le serveur émet toujours `history` pour la compat e2e/evals (qui
+            // fournissent message_history côté back) — le front n'en a plus besoin
+            // depuis #63 (fil threadé géré côté serveur en :Thread).
             break
           case 'error':
             append({ role: 'felix', kind: 'text', body: `Erreur : ${sse.data}` })
@@ -250,9 +415,78 @@ export function useAtelier() {
       else {
         silentTurns.value += 1
       }
-      persist()
+      // Total persistant du projet (#coût) : rafraîchi après CHAQUE tour, même
+      // en erreur réseau (le tour peut avoir coûté avant de planter) — best-effort,
+      // cf. useProjectCost.
+      void useProjectCost().refreshProjectCost()
     }
   }
 
-  return { messages, typing, phase, sendMessage, silentSession, newConversation }
+  // Import de fiche (Étape 3, #import) — UN SEUL système de streaming avec
+  // sendMessage ci-dessus : même parseSSEStream, mêmes cartes tool/alert
+  // (appendToolCard/appendAlertCard), même ref `phase`/`typing` pour le retour
+  // visuel pendant les 1 à 3 min d'ingestion (avant #import, zéro feedback tant
+  // que le JSON one-shot n'était pas revenu). Multipart POST, réponse SSE —
+  // fetch + parseSSEStream comme le chat (pas $fetch, qui attendrait le JSON final).
+  async function importDocument(
+    file: File,
+    opts: { profile: string, project: string },
+  ): Promise<{ ok: true, report: IngestReportPayload } | { ok: false }> {
+    typing.value = true
+    let report: IngestReportPayload | null = null
+
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('profile', opts.profile)
+      form.append('project', opts.project)
+      const response = await fetch(`${apiStreamBase}/api/ingest/document`, {
+        method: 'POST',
+        body: form,
+      })
+
+      if (!response.ok) {
+        const err = await response.text()
+        throw new Error(err || `HTTP ${response.status}`)
+      }
+
+      for await (const sse of parseSSEStream(response)) {
+        switch (sse.event) {
+          case 'phase':
+            phase.value = sse.data
+            break
+          case 'tool':
+            appendToolCard(JSON.parse(sse.data) as ToolCardPayload)
+            break
+          case 'alert':
+            appendAlertCard(JSON.parse(sse.data) as AlertPayload)
+            break
+          case 'report':
+            report = JSON.parse(sse.data) as IngestReportPayload
+            append({ role: 'felix', kind: 'report', report })
+            break
+          case 'error':
+            throw new Error(sse.data)
+          case 'done':
+            break
+        }
+      }
+      if (!report) throw new Error('Import terminé sans rapport (bug interne)')
+      return { ok: true, report }
+    }
+    catch (error) {
+      const msg = error instanceof Error ? error.message : 'Erreur inconnue'
+      append({ role: 'felix', kind: 'text', body: `Erreur à l'import de la fiche : ${msg}` })
+      return { ok: false }
+    }
+    finally {
+      typing.value = false
+      phase.value = null
+      // Total persistant du projet (#coût) : même loi que sendMessage — rafraîchi
+      // après CHAQUE import, même en erreur (l'import peut avoir coûté avant de planter).
+      void useProjectCost().refreshProjectCost()
+    }
+  }
+
+  return { messages, typing, phase, sendMessage, silentSession, newConversation, importDocument }
 }

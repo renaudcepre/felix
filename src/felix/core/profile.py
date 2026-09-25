@@ -21,6 +21,16 @@ from dataclasses import dataclass
 from felix.core.graph import NARRATIVE_REL
 
 
+def runs_chronicle(profile: Profile | None) -> bool:
+    """Vrai si le domaine du profil tient une CHRONOLOGIE d'événements — la passe
+    chroniqueur (add_event/move_event) n'a de sens que là. Faux pour le noyau nu
+    (``profile=None``) ou un domaine sans notion d'événement (ex. maintenance :
+    une fiche technique décrit un état stable, pas un déroulé dans le temps).
+    Règle SYSTÉMIQUE unique, importée à la fois par la route et par l'ingestion
+    de document (#Étape 2) — pas de copie du même test à deux endroits."""
+    return profile is not None and profile.manages_events
+
+
 def _or_types(types: tuple[str, ...]) -> str:
     """« personnage », « personnage ou groupe », « a, b ou c » — pour les messages guidants."""
     if not types:
@@ -93,6 +103,13 @@ class Profile:
     # add_entity refuse alors d'en créer un comme entité plate (sinon node hors
     # chaîne, hors chronologie). False = domaine sans chronologie dédiée.
     manages_events: bool = False
+    # Types de relations posés PAR LE CODE seulement (ex. DESCRIBED_IN, posée par
+    # l'ingestion de document, #Étape 2) : le LLM n'a pas le droit de les créer
+    # via add_relation, même si `validate_relation` les accepte structurellement
+    # (elles restent dans relation_vocabulary pour le typage domaine/portée).
+    # add_relation (felix.core.tools) refuse ces types avec un message guidant —
+    # AVANT même de consulter validate_relation. Vide = aucune relation réservée.
+    code_only_relations: tuple[str, ...] = ()
 
     def render_prompt_block(self) -> str:
         """Bloc concaténé au system prompt — volontairement compact (petit modèle)."""
@@ -119,6 +136,23 @@ class Profile:
                 f"et verbe=« les mots EXACTS de l'auteur » (ex. verbe='était la "
                 f"maîtresse de'). Ne traduis pas, ne résume pas : le verbe de "
                 f"l'auteur EST la donnée."
+            )
+        return "\n".join(lines)
+
+    def render_gate_block(self) -> str:
+        """Bloc COURT pour le gate de routage (#82) : juste les NOMS de types et
+        de relations, aucune règle de modélisation ni exemple — le gate reste un
+        appel court/pas cher (cf. build_gate_agent). Vide si le profil n'a encore
+        AUCUN vocabulaire appris (ex. le seed émergent tout neuf) : rien à coller
+        au prompt nu dans ce cas."""
+        if not self.entity_types and not self.relation_vocabulary:
+            return ""
+        lines = [f"Vocabulaire appris du domaine « {self.name} » :"]
+        if self.entity_types:
+            lines.append("Types : " + ", ".join(et.name for et in self.entity_types))
+        if self.relation_vocabulary:
+            lines.append(
+                "Relations : " + ", ".join(spec.name for spec in self.relation_vocabulary)
             )
         return "\n".join(lines)
 
@@ -192,7 +226,7 @@ class Profile:
                 return "Une relation ne peut pas relier une entité à elle-même."
             return None
 
-        if not self.relation_vocabulary:
+        if not self.relation_vocabulary and not self.narrative_rel:
             return None  # profil ne gouverne pas les relations → tout permis
 
         spec = next((s for s in self.relation_vocabulary if s.name == rel_type), None)
@@ -201,6 +235,17 @@ class Profile:
             if self.narrative_rel:
                 # Plus de trou de vocab : le canal narratif est la sortie (#68).
                 # On garde le droit de se taire si le texte ne pose pas le lien.
+                # Vocabulaire ENCORE vide (profil émergent tout neuf) : pas de
+                # liste de types structurels à afficher, mais le canal narratif
+                # reste la sortie légale — c'est LUI le vocabulaire fermé ici.
+                if not self.relation_vocabulary:
+                    return (
+                        f"« {rel_type} » n'est pas (encore) un type structurel du "
+                        f"domaine « {self.name} » (aucun type appris pour l'instant). "
+                        f"Pour tout lien réel du texte, utilise rel_type="
+                        f"{self.narrative_rel} avec verbe=« les mots exacts de "
+                        f"l'auteur ». Si le texte ne pose pas ce lien, n'écris rien."
+                    )
                 return (
                     f"« {rel_type} » n'est pas un type du domaine « {self.name} ». "
                     f"Types STRUCTURELS exacts : {allowed}. Pour tout AUTRE lien "
@@ -355,4 +400,158 @@ CHANTIER_PROFILE = Profile(
         "Les dates (achat, coulage, livraison) doivent être cohérentes entre elles.",
         "Une quantité ou un prix ne peut pas être négatif.",
     ),
+)
+
+
+# Troisième domaine concret (documentation technique de maintenance) — chat
+# multi-domaine (Étape 1) puis ingestion de fiches procédure (Étape 2, à venir).
+# manages_events=False : une fiche technique décrit un état STABLE (organes,
+# réglages, consignes), pas un déroulé dans le temps — cf. runs_chronicle.
+MAINTENANCE_PROFILE = Profile(
+    name="maintenance",
+    description="Tu tiens la documentation technique d'une machine : ses organes, "
+    "commandes, réglages, modes de fonctionnement et consignes de sécurité.",
+    entity_types=(
+        EntityType(
+            "machine", ("modele", "reperes", "fabricant", "site"),
+            "La machine documentée (ex. une presse plieuse). `reperes` est UNE "
+            "propriété qui liste tous les repères machine, jamais une entité "
+            "par repère.",
+        ),
+        EntityType(
+            "organe", ("fonction", "emplacement"),
+            "Un sous-ensemble physique de la machine (tablier, butée arrière, "
+            "pédale) ; sa fonction et son emplacement sont des propriétés.",
+        ),
+        EntityType(
+            "commande", ("nature", "role", "emplacement"),
+            "Un bouton, un voyant ou un sélecteur ; `nature` précise lequel des "
+            "trois, `role` ce qu'il déclenche ou signale.",
+        ),
+        EntityType(
+            "parametre", ("unite", "plage", "valeur_usuelle", "contrainte"),
+            "Un réglage numérique (force de pliage, vitesse d'approche). Unité, "
+            "plage et valeur sont VERBATIM (copiées de la fiche), jamais calculées.",
+        ),
+        EntityType(
+            "mode", ("description", "usage"),
+            "Un mode de fonctionnement de la machine (manuel, automatique, réglage).",
+        ),
+        EntityType(
+            "consigne", ("texte", "gravite", "motif"),
+            "Une mise en garde ou une interdiction. `texte` est le VERBATIM de la "
+            "fiche, jamais paraphrasé.",
+        ),
+        EntityType(
+            "document", ("titre", "version", "date_maj", "auteur", "valideur"),
+            "La fiche technique source. Créée EN CODE à l'ingestion, jamais par toi.",
+        ),
+    ),
+    modeling_rules=(
+        "Une valeur, une unité ou une plage est une PROPRIÉTÉ VERBATIM (copiée "
+        "telle quelle de la fiche) : ne calcule et n'arrondis jamais rien.",
+        "La liste des repères d'une machine est UNE propriété `reperes` (ex. "
+        "'A12, B04, C7'), jamais une entité par repère.",
+        "Une mise en garde ou une interdiction est une entité `consigne` reliée "
+        "par APPLIES_TO à ce qu'elle concerne — pas une propriété noyée ailleurs.",
+        "Le boilerplate (numéro de page, pied de page répété, légende d'image "
+        "vide) n'est ni une entité ni une propriété : ignore-le.",
+        "Un paramètre ou un organe déjà connu qui réapparaît plus loin dans la "
+        "fiche est la MÊME entité : cherche-le (find_entity) avant d'en recréer un.",
+        "DESCRIBED_IN est posée PAR LE CODE à l'ingestion, jamais par toi : ne "
+        "crée pas cette relation toi-même.",
+    ),
+    consistency_rules=(
+        "Deux sources donnent une unité, une plage ou une valeur différente pour "
+        "le même paramètre.",
+        "Une consigne interdit ce qu'une autre recommande.",
+        "Une valeur déclarée viole une contrainte déclarée par ailleurs (ex. une "
+        "borne haute inférieure à une borne basse).",
+    ),
+    # Noyau STRUCTUREL (#68) : les seuls types dont le sens est typé sujet/objet.
+    # DESCRIBED_IN est POSÉE PAR LE CODE (ingestion, Étape 2) — listée ici pour que
+    # validate_relation l'accepte, mais le modeling_rule ci-dessus dit au modèle de
+    # ne jamais la créer lui-même.
+    relation_vocabulary=(
+        RelationSpec(
+            "PART_OF", "fait partie d'un ensemble physique plus grand",
+            subjects=("organe", "commande"), objects=("machine", "organe"),
+            examples="le tablier fait partie de la PL-7, la pédale fait partie "
+                     "du pupitre de commande",
+        ),
+        RelationSpec(
+            "CONTROLS", "commande / pilote un réglage, un mode ou un organe",
+            subjects=("commande",), objects=("parametre", "mode", "organe"),
+            examples="la pédale commande la vitesse d'approche, le sélecteur "
+                     "pilote le mode automatique",
+        ),
+        RelationSpec(
+            "INDICATES", "signale l'état d'un organe, d'un réglage ou d'un mode",
+            subjects=("commande",), objects=("organe", "parametre", "mode"),
+            examples="le voyant rouge indique le dépassement de la force de "
+                     "pliage, le voyant vert indique le mode automatique actif",
+        ),
+        RelationSpec(
+            "APPLIES_TO",
+            "concerne / s'applique à une machine, un organe, une commande ou "
+            "un réglage",
+            subjects=("consigne", "mode", "parametre", "document"),
+            objects=("machine", "organe", "commande", "parametre"),
+            examples="la consigne de sécurité s'applique à la butée arrière, "
+                     "le mode réglage s'applique à la PL-7",
+        ),
+        RelationSpec(
+            "DEPENDS_ON", "dépend de la valeur d'un autre réglage",
+            subjects=("parametre",), objects=("parametre",),
+            examples="la vitesse d'approche dépend de la force de pliage réglée",
+        ),
+        RelationSpec(
+            "DESCRIBED_IN", "décrit dans un document source (posée par le code)",
+            subjects=("machine", "organe", "commande", "parametre", "mode",
+                      "consigne", "document"),
+            objects=("document",),
+        ),
+    ),
+    narrative_rel=NARRATIVE_REL,
+    manages_events=False,
+    code_only_relations=("DESCRIBED_IN",),
+)
+
+
+# Quatrième domaine (schéma ÉMERGENT, `plans/maintenance_profile.md`) — noyau NU
+# volontairement : aucun type d'entité, aucun vocabulaire de relation. Seul le
+# canal narratif (LIE_A + verbe verbatim) est ouvert dès le départ — c'est le
+# CAPTEUR : un verbe qui revient devient un type structurel proposé par le
+# détecteur (`core/schema_detector.py`), validé par un humain, et migré dans le
+# passé (`core/schema_changes.py`). Le profil RÉEL d'un projet évolue ensuite
+# (`core/profile_evolution.py`) et vit en base (`core/profile_store.py`) — ce
+# `EMERGENT_SEED_PROFILE` n'est que le POINT DE DÉPART, jamais modifié lui-même.
+EMERGENT_SEED_PROFILE = Profile(
+    name="documentation technique",
+    description="Tu tiens la documentation d'un objet ou d'un système, SANS "
+    "schéma présupposé : aucun type ni relation n'est encore défini — ils "
+    "émergent des documents au fil de l'ingestion.",
+    entity_types=(),
+    modeling_rules=(
+        "Une valeur, une unité ou une plage est une PROPRIÉTÉ VERBATIM (copiée "
+        "telle quelle de la source) : ne calcule et n'arrondis jamais rien.",
+        "Une mise en garde ou une interdiction est SA PROPRE entité, reliée par "
+        "LIE_A (verbe verbatim) à ce qu'elle concerne — pas une propriété noyée "
+        "ailleurs.",
+        "Le boilerplate (numéro de page, pied de page répété, légende d'image "
+        "vide) n'est ni une entité ni une propriété : ignore-le.",
+        "Une chose déjà connue qui réapparaît plus loin dans le document est la "
+        "MÊME entité : cherche-la (find_entity) avant d'en recréer une.",
+        "DESCRIBED_IN est posée PAR LE CODE à l'ingestion, jamais par toi : ne "
+        "crée pas cette relation toi-même.",
+    ),
+    consistency_rules=(
+        "Deux sources donnent une valeur, une unité ou une plage différente "
+        "pour la même chose.",
+        "Une règle ou une consigne en contredit une autre déjà posée.",
+    ),
+    relation_vocabulary=(),
+    narrative_rel=NARRATIVE_REL,
+    manages_events=False,
+    code_only_relations=("DESCRIBED_IN",),
 )

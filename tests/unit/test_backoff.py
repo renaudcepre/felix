@@ -59,6 +59,19 @@ def test_timeout_exception_is_transient() -> None:
     assert is_transient_error(exc)
 
 
+@backoff_suite.test()
+def test_invalid_function_call_400_is_transient() -> None:
+    """400 invalid_function_call → tool call MALFORMÉ par le modèle (le JSON des
+    arguments dans le champ nom, vécu 2026-06-11) : pure variance de Small,
+    re-émettre redonne presque toujours un appel valide → transient."""
+    exc = Exception(
+        'status_code: 400, model_name: mistral-small-2506, body: {"object":"error",'
+        '"message":"Function name was {\\"resume\\": \\"Sontave scelle la porte\\"}'
+        ' but must be a-z, A-Z, 0-9...","type":"invalid_function_call","code":"3280"}'
+    )
+    assert is_transient_error(exc)
+
+
 # ─────────────────────── Cas FRANCS (False attendu) ───────────────────────────
 
 

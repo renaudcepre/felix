@@ -7,11 +7,22 @@ export interface EntityRef {
   entity_type: string | null
 }
 
+// Premier document DESCRIBED_IN d'une entité — titre + pages où elle apparaît
+// (#73, carte de la liste).
+export interface EntitySource {
+  title: string
+  pages: number[]
+}
+
+// Résumé pour la liste (#73) : compteurs, pas de props libres (la fiche
+// complète les affiche, cf. EntityDetail).
 export interface EntitySummary {
   id: string
   name: string
   entity_type: string | null
-  props: Record<string, unknown>
+  prop_count: number
+  relation_count: number
+  source: EntitySource | null
 }
 
 export interface EntityRelation {

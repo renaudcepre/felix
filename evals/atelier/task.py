@@ -11,6 +11,7 @@ pas lancer cette session en même temps que la session legacy.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -27,6 +28,7 @@ from felix.atelier.agent import (
 from felix.atelier.deps import AtelierDeps
 from felix.config import settings
 from felix.core import (
+    DEFAULT_PROJECT,
     SCENARIO_PROFILE,
     all_entities,
     all_relations,
@@ -81,7 +83,11 @@ async def _seed_entities(driver: AsyncDriver, seed: list[dict[str, Any]]) -> Non
     """Seed d'entités :GenEntity — même monde que le bot B promu (plus de :Character).
 
     Compat : {'name', 'background'?} = personnage. Forme étendue {'name',
-    'entity_type', 'props'} pour seeder un lieu/objet (cas du check)."""
+    'entity_type', 'props'} pour seeder un lieu/objet (cas du check).
+
+    ⚠ `project` obligatoire depuis #60 : les lecteurs (all_entities,
+    recent_entities) sont scopés strictement — un seed sans project est
+    INVISIBLE (doublons, char_count=0 ; cassé silencieusement du 2026-06-11)."""
     async with driver.session() as session:
         for e in seed:
             etype = e.get("entity_type", "personnage")
@@ -89,9 +95,10 @@ async def _seed_entities(driver: AsyncDriver, seed: list[dict[str, Any]]) -> Non
             if e.get("background"):
                 props.setdefault("background", e["background"])
             await session.run(
-                "MERGE (x:GenEntity {id: $id})"
+                "MERGE (x:GenEntity {id: $id, project: $project})"
                 " SET x.name = $name, x.entity_type = $type, x += $props",
                 id=slugify(e["name"]), name=e["name"], type=etype, props=props,
+                project=DEFAULT_PROJECT,
             )
 
 
@@ -196,6 +203,199 @@ def _check_act_then_death(result: AtelierRunResult) -> bool:
     return not result.alert.get("contradiction")
 
 
+# Clés réservées du nœud Neo4j — exclues du contrôle des props biographiques.
+_ENTITY_META_KEYS = {"id", "name", "entity_type", "project"}
+# Fragments de clés qui trahissent une prop biographique inventée (#56).
+_BIO_KEY_FRAGMENTS = {"age", "background", "traits", "backstory", "personnalite", "historique"}
+
+
+def _gabarit_ambiance_check(result: AtelierRunResult) -> bool:
+    """#56 : ambiance pure sans personnage → 0 personnage inventé, 0 prop biographique.
+
+    Vert si :
+    - aucune entité de type personnage (result.characters vide) ;
+    - aucune entité quelconque ne porte une clé biographique (age/background/traits/…)
+      qui révèle un personnage fantôme même sans entity_type=personnage.
+    Une fiche de lieu/cadre avec une 'description' est tolérée."""
+    if result.characters:
+        return False
+    for e in result.entities:
+        custom = {k.lower() for k in e if k not in _ENTITY_META_KEYS}
+        if any(frag in key for key in custom for frag in _BIO_KEY_FRAGMENTS):
+            return False
+    return True
+
+
+def _subordonnee_fiche_check(result: AtelierRunResult) -> bool:
+    """#57 : personnage mentionné en subordonnée → fiche présente.
+
+    Deux personnages attendus : Lera (sujet) et Fenn (mort, mentionné en subordonnée).
+    Vert si les DEUX fiches existent dans result.characters."""
+    keys: set[str] = set()
+    for c in result.characters:
+        keys.add(normalize(str(c.get("name", ""))))
+        keys.add(normalize(str(c.get("id", ""))))
+    keys.discard("")
+    return (
+        any("lera" in k for k in keys)
+        and any("fenn" in k for k in keys)
+    )
+
+
+def _sujet_apposition_check(result: AtelierRunResult) -> bool:
+    """#57 (variance) : sujet avec apposition → fiche Haldren présente.
+
+    Vert si Haldren, le sujet explicite de la phrase, a sa fiche dans le graphe."""
+    keys: set[str] = set()
+    for c in result.characters:
+        keys.add(normalize(str(c.get("name", ""))))
+        keys.add(normalize(str(c.get("id", ""))))
+    keys.discard("")
+    return any("haldren" in k for k in keys)
+
+
+def _sujet_apposition_contexte_check(result: AtelierRunResult) -> bool:
+    """#57 contextualisé : Ylden (sujet + apposition au tour 2) doit avoir sa fiche.
+
+    Le tour 1 a peuplé le working set (Karev + Torvast) ; c'est la condition du
+    bug Araïko : le working set injecté au tour 2 noyait le nouveau personnage."""
+    keys: set[str] = set()
+    for c in result.characters:
+        keys.add(normalize(str(c.get("name", ""))))
+        keys.add(normalize(str(c.get("id", ""))))
+    keys.discard("")
+    return any("ylden" in k for k in keys)
+
+
+def _subordonnee_contexte_check(result: AtelierRunResult) -> bool:
+    """#57 contextualisé : Paya (sujet) ET Gorn (subordonnée, mort) au tour 2.
+
+    Le tour 1 a peuplé le working set avec Nara + Erkon (base Erkon).
+    Vert si les deux personnages ont leur fiche dans le graphe."""
+    keys: set[str] = set()
+    for c in result.characters:
+        keys.add(normalize(str(c.get("name", ""))))
+        keys.add(normalize(str(c.get("id", ""))))
+    keys.discard("")
+    return (
+        any("paya" in k for k in keys)
+        and any("gorn" in k for k in keys)
+    )
+
+
+def _flashback_correction_check(result: AtelierRunResult) -> bool:
+    """#44 cas cirque : l'event postérieur (annonce Kezra) doit être AVANT la mort.
+
+    Après le beat 3 (« je raconte dans le désordre »), l'événement « annonce / acclame »
+    doit avoir un ordre INFÉRIEUR à l'événement mort de Jovan.
+    Vert si ordre(annonce) < ordre(mort). normalize() pour l'insensibilité aux accents."""
+    events = [e for e in result.entities if e.get("entity_type") == "evenement"]
+    acclame = next(
+        (e for e in events
+         if "acclame" in normalize(str(e.get("resume", "")))
+         or "annonce" in normalize(str(e.get("resume", "")))),
+        None,
+    )
+    mort = next(
+        (e for e in events
+         if "jovan" in normalize(str(e.get("resume", "")))
+         and (
+             "meurt" in normalize(str(e.get("resume", "")))
+             or "mort" in normalize(str(e.get("resume", "")))
+             or "ecrase" in normalize(str(e.get("resume", "")))
+         )),
+        None,
+    )
+    if acclame is None or mort is None:
+        return False
+    return int(acclame.get("ordre", 999)) < int(mort.get("ordre", 0))
+
+
+def _flashback_creation_check(result: AtelierRunResult) -> bool:
+    """#44 cas pétrolier : l'event flashback (tempête) doit être AVANT l'arrivée.
+
+    Le beat 2 est un flashback explicite : la tempête s'est passée avant l'arrivée
+    d'Imra. Le chroniqueur doit créer cet event INSÉRÉ avec avant='arrivée d'Imra'.
+    Vert si ordre(tempête) < ordre(arrivée Imra)."""
+    events = [e for e in result.entities if e.get("entity_type") == "evenement"]
+    arrive = next(
+        (e for e in events
+         if "imra" in str(e.get("resume", "")).lower()
+         and "arriv" in str(e.get("resume", "")).lower()),
+        None,
+    )
+    tempete = next(
+        (e for e in events
+         if "tempete" in normalize(str(e.get("resume", "")))
+         or "antenne" in normalize(str(e.get("resume", "")))),
+        None,
+    )
+    if arrive is None or tempete is None:
+        return False
+    return int(tempete.get("ordre", 999)) < int(arrive.get("ordre", 0))
+
+
+_AGE_EN_ANNEES_RE = re.compile(r"\b\d{1,3}\s*ans\b")
+# Props techniques exclues des blobs de valeurs (last_touched = epoch ms : ses
+# chiffres déclencheraient les recherches de substrings numériques).
+_TECH_KEYS = _ENTITY_META_KEYS | {"last_touched"}
+
+
+def _props_blob(result: AtelierRunResult) -> str:
+    """Concatène toutes les valeurs de props utiles du graphe (hors clés techniques)."""
+    return " ".join(
+        str(v)
+        for e in result.entities
+        for k, v in e.items()
+        if k.lower() not in _TECH_KEYS
+    )
+
+
+def _naissance_verbatim_check(result: AtelierRunResult) -> bool:
+    """#69 : « né en 1989 » → l'année verbatim en fiche, AUCUN âge dérivé.
+
+    L'auteur n'a donné aucun âge : tout « NN ans » dans le graphe est forcément
+    un calcul du modèle (probe 2/2 : age='34 ans en 2023', l'année verbatim
+    perdue). La clé choisie (`age`, `naissance`…) est libre — c'est la VALEUR
+    qui doit être verbatim. Vert si :
+    - la fiche Romeck existe et porte '1989' dans une de SES props ;
+    - aucun motif « NN ans » nulle part dans le graphe."""
+    romeck = next(
+        (c for c in result.characters
+         if "romeck" in normalize(str(c.get("name", "")))),
+        None,
+    )
+    if romeck is None:
+        return False
+    own_blob = " ".join(
+        str(v) for k, v in romeck.items() if k.lower() not in _TECH_KEYS
+    )
+    if "1989" not in own_blob:
+        return False
+    return not _AGE_EN_ANNEES_RE.search(_props_blob(result))
+
+
+def _correction_seche_check(result: AtelierRunResult) -> bool:
+    """#69 : « non, Lioba a 67 ans » → la correction atterrit, sur la MÊME clé.
+
+    Dogfood : « non j'ai 34 ans » n'avait déclenché aucune écriture. Vert si la
+    FICHE de Lioba porte 67 et plus aucune trace de 71 (update remplace la
+    valeur, pas de clé doublon ni de valeur fantôme). Volontairement borné à la
+    fiche : le chroniqueur crée parfois un event parasite « Lioba a 71 ans »
+    (état chroniqué = famille #46, hors du périmètre de CE cas)."""
+    lioba = next(
+        (c for c in result.characters
+         if "lioba" in normalize(str(c.get("name", "")))),
+        None,
+    )
+    if lioba is None:
+        return False
+    own_blob = " ".join(
+        str(v) for k, v in lioba.items() if k.lower() not in _TECH_KEYS
+    )
+    return bool(re.search(r"\b67\b", own_blob)) and not re.search(r"\b71\b", own_blob)
+
+
 def _bapteme_differe_check(result: AtelierRunResult) -> bool:
     """Critères inline du cas bapteme_differe : 1 personnage, Alikazeth unique.
 
@@ -232,7 +432,18 @@ async def run_atelier_multirun_case(
     last_tr: TaskResult[AtelierRunResult] | None = None
 
     for i in range(1, n + 1):
-        tr = await run_atelier_case(driver, inputs)
+        try:
+            tr = await run_atelier_case(driver, inputs)
+        except AssertionError:
+            # Un assert est un VERDICT ou un bug de harnais — jamais de la variance
+            # modèle : il remonte (le masquer en FAIL cacherait un bug, loi du repo).
+            raise
+        except Exception as exc:
+            # Erreur modèle (ex. UnexpectedModelBehavior « desc_schema extra args »,
+            # UsageLimitExceeded...) : variance du LLM, pas un bug protest.
+            # Compté comme FAIL pour ne pas crasher le verdict multirun.
+            print(f"  [multirun] pass {i}/{n} → MODEL_ERROR ({type(exc).__name__}: {str(exc)[:60]})")
+            continue
         total_in += tr.input_tokens or 0
         total_out += tr.output_tokens or 0
         ok = check(tr.output)
@@ -243,7 +454,14 @@ async def run_atelier_multirun_case(
         print(f"  [multirun] pass {i}/{n} → {status}  ({len(tr.output.characters)} perso(s) : {chars or '—'})")
         last_tr = tr
 
-    assert last_tr is not None  # n >= 1 garanti par l'appelant
+    if last_tr is None:
+        # Tous les passes ont levé une erreur modèle — résultat vide.
+        empty = AtelierRunResult(answer="", characters=[], entities=[], relations=[], cards=[])
+        empty.multirun_passes = 0
+        empty.multirun_total = n
+        print(f"  [multirun] verdict : 0/{n} passes (tous en erreur modèle)")
+        return TaskResult(output=empty, input_tokens=0, output_tokens=0, cost=0.0)
+
     last_tr.output.multirun_passes = passes
     last_tr.output.multirun_total = n
     print(f"  [multirun] verdict : {passes}/{n} passes")

@@ -53,7 +53,7 @@ function selectType(type: string | undefined) {
     <main class="fwrap">
       <div class="list-head">
         <h1 class="list-title">Entités</h1>
-        <p class="list-sub">Ce que Felix a noté dans la bible.</p>
+        <p class="list-sub">Ce que Felix a noté.</p>
       </div>
 
       <!-- Filtres par type -->
@@ -79,7 +79,7 @@ function selectType(type: string | undefined) {
       </div>
       <p v-else class="empty">
         Aucune entité{{ selectedType ? ` de type « ${selectedType} »` : '' }}.
-        Raconte ton histoire dans <NuxtLink to="/chat">le chat</NuxtLink> pour en créer.
+        Utilise <NuxtLink to="/chat">le chat</NuxtLink> pour en créer.
       </p>
     </main>
   </div>

@@ -64,11 +64,13 @@ async def _seed(driver: AsyncDriver, seed: dict[str, Any]) -> None:
     async with driver.session() as session:
         for e in seed.get("entities", []):
             props = dict(e.get("props", {}))
+            # project obligatoire depuis #60 : un seed sans project est invisible
+            # des lecteurs scopés (all_entities/recent_entities).
             await session.run(
-                "MERGE (x:GenEntity {id: $id})"
+                "MERGE (x:GenEntity {id: $id, project: $project})"
                 " SET x.name = $name, x.entity_type = $type, x += $props",
                 id=slugify(e["name"]), name=e["name"],
-                type=e["entity_type"], props=props,
+                type=e["entity_type"], props=props, project=DEFAULT_PROJECT,
             )
         for r in seed.get("relations", []):
             await session.run(

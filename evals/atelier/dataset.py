@@ -21,6 +21,7 @@ from evals.atelier.evaluators import (
     events_distinct,
     events_involve,
     events_ordered,
+    graph_blob,
     graph_char_count,
     graph_has_characters,
     graph_has_entities,
@@ -161,6 +162,63 @@ CHECK_ACT_THEN_DEATH_INPUTS = {
 }
 # Action (#1) AVANT la mort (#2) → ordre normal, aucune alerte attendue.
 
+# ─── #56 : gabarit pur (ambiance) — AUCUN personnage ne doit être inventé ──────────
+# Reproduction exacte du cas dogfood : aucun nom, aucun personnage, pur décor/ton.
+# Vert si 0 personnage + 0 prop biographique inventée. Multi-run dans session.py.
+GABARIT_AMBIANCE_INPUTS = {
+    "message": (
+        "un huis clos sur une plateforme pétrolière, du polar, avec un truc surnaturel"
+    ),
+    "seed": [],
+}
+
+# ─── #57 : personnage en subordonnée — doit recevoir sa fiche ───────────────────────
+# Noms Lera / Fenn : frais, absents de tous les prompts et evals existants.
+# Vert si les deux fiches personnage existent (Lera = sujet, Fenn = mentionné).
+SUBORDONNEE_FICHE_INPUTS = {
+    "message": (
+        "Lera, une mécanicienne, vient remplacer Fenn, mort la semaine d'avant."
+    ),
+    "seed": [],
+}
+
+# ─── #57 (variance) : sujet en apposition — doit recevoir sa fiche ──────────────────
+# Nom Haldren : frais, absent de tous les prompts et evals existants.
+# Vert si la fiche de Haldren est présente (sujet de la phrase + apposition).
+SUJET_APPOSITION_INPUTS = {
+    "message": (
+        "Haldren, le prévôt des marches, impose un couvre-feu sur tout le district."
+    ),
+    "seed": [],
+}
+
+# ─── #57 contextualisé : sujet en apposition APRÈS un tour de working-set ───────────
+# Reproduction de la structure exacte du dogfood Araïko : le tour 1 charge le
+# working set (Karev + Torvast), le tour 2 introduit Ylden en sujet + apposition.
+# C'est la condition du bug : le working set injecté au tour 2 « noie » le nouveau
+# personnage et l'agent l'omet.
+# Noms Karev/Torvast/Ylden : frais, absents de tous les prompts et evals existants.
+SUJET_APPOSITION_CONTEXTE_INPUTS = {
+    "beats": [
+        "Karev, un chef rebelle de la station Torvast, prépare un soulèvement contre la compagnie.",
+        "Ylden, le mage des carènes, impose un couvre-feu à la population.",
+    ],
+    "seed": [],
+}
+
+# ─── #57 contextualisé : subordonnée APRÈS un tour de working-set ────────────────────
+# Tour 1 crée Nara (personnage) + Erkon (lieu) → charge le working set.
+# Tour 2 : Paya (sujet) remplace Gorn (mort, mentionné en subordonnée).
+# Vert si les deux fiches personnage existent : Paya ET Gorn.
+# Noms Nara/Erkon/Paya/Gorn : frais, absents de tous les prompts et evals existants.
+SUBORDONNEE_CONTEXTE_INPUTS = {
+    "beats": [
+        "La doctoresse Nara dirige l'infirmerie de la base Erkon avec une poigne de fer.",
+        "Paya, une ingénieure en armement, vient remplacer Gorn, mort la semaine d'avant.",
+    ],
+    "seed": [],
+}
+
 atelier_cases = ForEach(
     [
         # --- création ---
@@ -268,9 +326,14 @@ atelier_cases = ForEach(
                      "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
                 ],
             },
-            # Fait divergent (autre lieu, même soir) → s'AJOUTE sans écraser l'alibi :
-            # les DEUX doivent finir dans les props de Marco (ancien + nouveau).
-            evaluators=[char_props(name="Marco Santi", has="marseille, lyon")],
+            # Fait divergent (autre lieu, même soir) → s'AJOUTE sans écraser l'alibi.
+            # Deux formes CONFORMES (règle 4 : « nouvelle clé OU une relation ») :
+            # prop alibi_bis sur Marco, ou entité lieu + LOCATED_AT datée. Le check :
+            # marseille jamais écrasé (props de Marco), lyon enregistré (graphe entier).
+            evaluators=[
+                char_props(name="Marco Santi", has="marseille"),
+                graph_blob(has="lyon"),
+            ],
         ),
         EvalCase(
             name="explicit_correction_overwrites",
@@ -433,3 +496,61 @@ atelier_cases = ForEach(
         ),
     ]
 )
+
+# ─── #44 : raconter dans le désordre — correction a posteriori (cas cirque) ─────────
+# Beat 1 : Jovan meurt. Beat 2 : un event postérieur impliquant Jovan (juge alertera).
+# Beat 3 : l'auteur corrige l'ordre → l'event du beat 2 doit se retrouver AVANT
+# la mort (ordre(annonce) < ordre(mort)).
+# Noms Jovan/Kezra : frais, absents de tous les prompts et evals existants.
+FLASHBACK_CORRECTION_INPUTS = {
+    "beats": [
+        "Jovan, l'acrobate vedette du cirque, rate son saut périlleux et s'écrase sur la piste. Il meurt sur le coup.",
+        "Kezra annonce le nom de Jovan sous les projecteurs et le public l'acclame longuement.",
+        "En fait, l'annonce de Kezra c'était la veille de la mort de Jovan — je raconte dans le désordre.",
+    ],
+    "seed": [
+        {"name": "Jovan", "entity_type": "personnage", "props": {"role": "acrobate vedette"}},
+        {"name": "Kezra", "entity_type": "personnage", "props": {"role": "présentatrice"}},
+    ],
+}
+
+# ─── #44 : raconter dans le désordre — insertion à la création (cas pétrolier) ──────
+# Beat 1 : Imra arrive (event A). Beat 2 : un flashback explicite « trois jours
+# avant l'arrivée d'Imra » → event B doit être créé AVANT event A
+# (ordre(tempête) < ordre(arrivée Imra)).
+# Nom Imra : frais, absent de tous les prompts et evals existants.
+FLASHBACK_CREATION_INPUTS = {
+    "beats": [
+        "Imra, la cheffe de plateforme, arrive sur le site en hélicoptère.",
+        "La tempête avait soufflé les antennes trois jours avant l'arrivée d'Imra — je raconte dans le désordre, c'est un flashback.",
+    ],
+    "seed": [
+        {"name": "Imra", "entity_type": "personnage", "props": {"role": "cheffe de plateforme"}},
+    ],
+}
+
+# ─── #69 : jamais dériver — une année de naissance reste VERBATIM ────────────────────
+# Dogfood 2026-06-11 : « je suis né en 1991 » → la passe 1 a écrit age='32 ans'
+# (arithmétique d'année d'entraînement, fausse). Reproduit en probe 2/2 avec
+# « né en 1989 » → age='34 ans en 2023' (l'année VERBATIM disparaît !) — alors
+# que « né en 1962 » ne déclenche PAS : la dérivation dépend de la saillance de
+# l'année dans le prior du modèle, d'où le choix de 1989 ici.
+# Noms Romeck/Carstier : frais, absents de tous les prompts (partagés avec la
+# sonde gate tools/check_gate_meta.py — même chantier #69).
+NAISSANCE_VERBATIM_INPUTS = {
+    "message": "Mon héros s'appelle Romeck, le veilleur du port de Carstier. Il est né en 1989.",
+    "seed": [],
+}
+
+# ─── #69 : correction sèche d'une valeur → appliquée sur la MÊME clé ─────────────────
+# Dogfood 2026-06-11 : « non j'ai 34 ans » n'a déclenché aucune écriture, l'auteur
+# a dû insister. Tour 1 pose l'âge, tour 2 le corrige sec : la fiche finale doit
+# porter 67 et plus aucune trace de 71 (update sur la même clé, pas une 2e clé).
+# Nom Lioba : frais, absent de tous les prompts.
+CORRECTION_SECHE_INPUTS = {
+    "beats": [
+        "Lioba, la doyenne de la halle aux grains, a 71 ans.",
+        "non, Lioba a 67 ans.",
+    ],
+    "seed": [],
+}

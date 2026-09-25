@@ -1,18 +1,53 @@
 <script setup lang="ts">
 import type { AtelierMsg, ChoiceOption, ResolveOption } from '~/types/atelier'
+import { formatCostLine } from '~/utils/formatCost'
 
 // Page autonome (pas le layout cyan de l'app de référence).
 definePageMeta({ layout: false })
-useHead({ title: 'Felix — Atelier · Rivière basse' })
 
 // ───────── Chat câblé au backend (SSE /api/atelier/chat) ─────────
-const { messages, typing, phase, sendMessage, silentSession, newConversation } = useAtelier()
+const { messages, typing, phase, sendMessage, silentSession, newConversation, importDocument } = useAtelier()
 
-// Histoire courante (#60) : sélecteur d'histoire + « Nouvelle histoire » — le
+// Histoire courante (#60) : sélecteur d'histoire + « Nouveau projet » — le
 // fil de conversation ET la bible suivent (useAtelier persiste par projet, les
 // fetchs d'entités portent le projet).
-const { currentProject, projects, refreshProjects, switchProject, createProject } = useProject()
+const { currentProject, currentProjectName, projects, refreshProjects, switchProject, createProject } = useProject()
 onMounted(() => { void refreshProjects() })
+
+// Total persistant du projet (#coût) — indépendant de l'historique de
+// conversation, rafraîchi au montage, au changement d'histoire, et après
+// chaque tour/import (cf. useAtelier.sendMessage et onFileSelected ci-dessous).
+const { cost: projectCost, refreshProjectCost } = useProjectCost()
+onMounted(() => { void refreshProjectCost() })
+watch(currentProject, () => { void refreshProjectCost() })
+const projectCostLine = computed(() => {
+  const c = projectCost.value
+  if (!c || c.total_tokens === 0) return null
+  return `Projet : ${formatCostLine(c.total_tokens, c.cost_usd)}`
+})
+
+useHead({ title: () => `Felix — ${currentProjectName.value}` })
+
+// Mode du bot (Étape 3, plans/maintenance_profile.md) : sélecteur de la
+// topbar, envoyé comme `profile` à chaque tour par useAtelier.
+const { currentProfile, profiles, refreshProfiles, switchProfile } = useAtelierProfile()
+onMounted(() => { void refreshProfiles() })
+
+// Vocabulaire UI + panneau de propositions (Étape 8) : viennent du MODE choisi,
+// plus un seul texte codé en dur pour tous les modes (cf. profile_summary côté back).
+const currentProfileInfo = computed(() => profiles.value.find(p => p.key === currentProfile.value))
+const composerPlaceholder = computed(() => currentProfileInfo.value?.input_placeholder || 'Écris à Felix…')
+const isEvolvingMode = computed(() => currentProfileInfo.value?.evolving ?? false)
+
+const showSchemaPanel = ref(false)
+// Après un import de fiche réussi (plus bas) : on rafraîchit les propositions
+// SANS ouvrir le panneau — la même instance singleton (useSchemaProposals) sert
+// le bouton (badge) et le panneau, donc un simple appel suffit, ref ou pas.
+const { proposals: schemaProposals, refreshProposals: refreshSchemaProposals } = useSchemaProposals()
+
+function onProfileChange(e: Event) {
+  switchProfile((e.target as HTMLSelectElement).value)
+}
 
 async function onProjectChange(e: Event) {
   const v = (e.target as HTMLSelectElement).value
@@ -20,14 +55,68 @@ async function onProjectChange(e: Event) {
     switchProject(v)
     return
   }
-  // v1 volontairement frustre : un prompt natif suffit pour nommer l'histoire.
-  const name = window.prompt('Nom de la nouvelle histoire ?')?.trim()
+  // v1 volontairement frustre : un prompt natif suffit pour nommer le projet.
+  const name = window.prompt('Nom du nouveau projet ?')?.trim()
   if (name) {
     await createProject(name)
   }
   else {
     // Annulé : le select doit revenir sur l'histoire courante.
     (e.target as HTMLSelectElement).value = currentProject.value
+  }
+}
+
+// ───────── Import de fiche (Étape 3, plans/maintenance_profile.md ; #import) ─────────
+// Upload PDF/txt/md → POST /api/ingest/document (même profil + histoire que le
+// chat), streamé en SSE (phases + cartes live) : l'ingestion prend 1 à 3 min
+// (lecture + extraction bloc par bloc), mais le fil n'est plus muet pendant
+// tout ce temps — cf. useAtelier.importDocument. Visible dans tous les modes —
+// un document EST du contenu, quel que soit le mode.
+const importing = ref(false)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+
+// Libellé statique tant qu'aucune phase n'est encore arrivée du flux SSE
+// (#83) — le bouton bascule ensuite sur `phase` en direct (« Bloc 2/3 :
+// liens… »), le MÊME ref que la ligne de frappe sous le fil (useAtelier.phase).
+const IMPORT_FALLBACK_LABEL = 'Lecture de la fiche… (1 à 3 min)'
+const importButtonLabel = computed(() => phase.value ?? IMPORT_FALLBACK_LABEL)
+
+function triggerImport() {
+  if (importing.value) return
+  fileInputRef.value?.click()
+}
+
+async function onFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // permet de réimporter le même fichier juste après une erreur
+  if (!file) return
+
+  importing.value = true
+  // Repli garanti (#83) : `phase` est un ref PARTAGÉ avec le chat (useAtelier) —
+  // sans ce reset, une valeur laissée par un tour précédent pourrait fuiter
+  // dans le bouton avant le premier event `phase` de CET import.
+  phase.value = null
+  try {
+    // Même flux SSE que le chat (#import) : phases + cartes live pendant les
+    // 1 à 3 min d'ingestion, plus un JSON one-shot après un long silence —
+    // importDocument gère le stream ET l'affichage (phase/typing/cartes/erreur).
+    const result = await importDocument(file, {
+      profile: currentProfile.value,
+      project: currentProject.value,
+    })
+    if (result.ok) {
+      // La liste d'entités (page /entities) cache sa réponse par appel : sans
+      // ça, revenir dessus après un import montrerait encore l'ancien état.
+      clearNuxtData()
+      // Un document EST du contenu : le détecteur (mode évolutif) peut avoir de
+      // nouvelles propositions dès la fin de l'import — la file de validation
+      // se rafraîchit toute seule, sans repasser par le bouton.
+      if (isEvolvingMode.value) void refreshSchemaProposals()
+    }
+  }
+  finally {
+    importing.value = false
   }
 }
 
@@ -45,7 +134,7 @@ function clickNewConversation() {
   }
   if (confirmNewTimer) clearTimeout(confirmNewTimer)
   confirmNew.value = false
-  newConversation()
+  void newConversation()
 }
 const scrollRef = ref<HTMLElement | null>(null)
 const taRef = ref<HTMLTextAreaElement | null>(null)
@@ -126,17 +215,49 @@ function onKeydown(e: KeyboardEvent) {
         <span class="tb-sep" />
         <select class="tb-project tb-project-select" :value="currentProject" @change="onProjectChange">
           <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-          <option value="__new__">＋ Nouvelle histoire…</option>
+          <option value="__new__">＋ Nouveau projet…</option>
+        </select>
+        <span class="tb-sep" />
+        <select class="tb-project tb-project-select" title="Mode de Felix" :value="currentProfile" @change="onProfileChange">
+          <option v-for="p in profiles" :key="p.key" :value="p.key">{{ p.label }}</option>
         </select>
       </div>
       <div class="tb-right">
+        <span v-if="projectCostLine" class="tb-cost" title="Total cumulé du projet, tous tours et imports confondus">{{ projectCostLine }}</span>
         <span class="tb-save"><span class="save-dot" />Enregistré</span>
+        <button class="btn btn-outline" :disabled="importing" @click="triggerImport">
+          <template v-if="importing">
+            <span class="btn-typing"><span /><span /><span /></span>
+            {{ importButtonLabel }}
+          </template>
+          <template v-else>
+            <AtelierIcon name="fiche" :size="16" />Importer une fiche
+          </template>
+        </button>
+        <input
+          ref="fileInputRef"
+          type="file"
+          accept=".pdf,.txt,.md"
+          style="display: none"
+          @change="onFileSelected"
+        >
         <button class="btn btn-ghost" :class="{ confirming: confirmNew }" @click="clickNewConversation">
           <AtelierIcon name="plus" :size="16" />{{ confirmNew ? 'Confirmer ?' : 'Nouvelle conversation' }}
         </button>
-        <NuxtLink class="btn btn-outline" to="/entities?type=personnage"><AtelierIcon name="people" :size="16" />Personnages</NuxtLink>
+        <button
+          v-if="isEvolvingMode"
+          class="btn btn-outline"
+          :class="{ active: showSchemaPanel }"
+          @click="showSchemaPanel = !showSchemaPanel"
+        >
+          <AtelierIcon name="verify" :size="16" />Propositions
+          <span v-if="schemaProposals.length" class="tb-badge">{{ schemaProposals.length }}</span>
+        </button>
+        <NuxtLink class="btn btn-outline" to="/entities"><AtelierIcon name="people" :size="16" />Fiches</NuxtLink>
       </div>
     </header>
+
+    <SchemaProposalsPanel :open="showSchemaPanel" @close="showSchemaPanel = false" />
 
     <div ref="scrollRef" class="thread-wrap">
       <div class="thread">
@@ -171,9 +292,8 @@ function onKeydown(e: KeyboardEvent) {
       <div class="composer-col">
         <div v-if="silentSession" class="silent-banner">
           <AtelierIcon name="felix" :size="15" />
-          <span>Felix n'a encore rien noté dans la bible. Si tu racontes déjà ton
-            histoire, pose les faits simplement (« Une botaniste arrive au
-            hameau… ») et les fiches apparaîtront à mesure.</span>
+          <span>Felix n'a encore rien noté. Pose les faits simplement et les
+            fiches apparaîtront à mesure.</span>
         </div>
         <div class="composer">
           <textarea
@@ -181,7 +301,7 @@ function onKeydown(e: KeyboardEvent) {
             class="composer-ta"
             rows="1"
             :value="draft"
-            placeholder="Écris à Felix… (idée, scène, question)"
+            :placeholder="composerPlaceholder"
             @input="onInput"
             @keydown="onKeydown"
           />
@@ -189,7 +309,7 @@ function onKeydown(e: KeyboardEvent) {
             <AtelierIcon name="send" :size="18" />
           </button>
         </div>
-        <div class="composer-hint">Felix peut modifier les fiches et signaler les incohérences du scénario.</div>
+        <div class="composer-hint">Felix peut modifier les fiches et signaler les incohérences détectées.</div>
       </div>
     </div>
   </div>
@@ -287,6 +407,15 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .btn-ghost { color: var(--ink-2); }
 .felix-atelier .btn-ghost:hover { background: var(--card-2); color: var(--ink); }
 .felix-atelier .btn.confirming { color: var(--terra); border-color: var(--terra-line); background: var(--terra-soft); }
+.felix-atelier .btn.active { border-color: var(--gold); background: var(--gold-soft); color: var(--gold-deep); }
+/* Pastille de compte (bouton « Propositions », Étape 8) — même habit qu'un badge. */
+.felix-atelier .tb-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 100px; background: var(--gold); color: #fdfaf2; font-family: var(--mono); font-size: 11px; font-weight: 700; }
+/* État occupé du bouton d'import (Étape 3) — mêmes puces que l'indicateur de
+   frappe (.typing), en miniature, dans le bouton lui-même. */
+.felix-atelier .btn-typing { display: inline-flex; gap: 3px; }
+.felix-atelier .btn-typing span { width: 5px; height: 5px; border-radius: 50%; background: currentColor; animation: felix-bob 1.2s infinite ease-in-out; }
+.felix-atelier .btn-typing span:nth-child(2) { animation-delay: .15s; }
+.felix-atelier .btn-typing span:nth-child(3) { animation-delay: .3s; }
 
 /* Monogramme */
 .felix-atelier .mono-avatar {
@@ -337,6 +466,7 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .tb-project-select:focus-visible {
   border-color: var(--line-2); background: rgba(0, 0, 0, .025); outline: none;
 }
+.felix-atelier .tb-cost { font-family: var(--mono); font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 .felix-atelier .tb-save { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-3); }
 .felix-atelier .save-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); box-shadow: 0 0 0 3px var(--sage-soft); }
 
@@ -403,8 +533,46 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .tool-fdot { width: 3px; height: 3px; border-radius: 50%; background: var(--line-2); }
 .felix-atelier .tool-field { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
 .felix-atelier .tool-added { display: flex; gap: 10px; padding: 9px 11px; background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 6px; }
+.felix-atelier .tool-added + .tool-added { margin-top: 8px; }
 .felix-atelier .tool-plus { font-family: var(--mono); font-size: 11px; color: var(--sage); flex: none; margin-top: 2px; }
 .felix-atelier .tool-text { font-family: var(--serif); font-size: 15px; line-height: 1.5; color: var(--ink); }
+/* Champs modifiés (#72) : une ligne par champ, valeur avant en sourdine/barrée
+   (mêmes tokens que .tool-card.is-removed), aucune couleur neuve. */
+.felix-atelier .tool-change-row + .tool-change-row { margin-top: 3px; }
+.felix-atelier .tool-change-field { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.felix-atelier .tool-old { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--ink-3); }
+
+/* Résumé d'import de fiche (Étape 3, plans/maintenance_profile.md) — même
+   habit que .tool-card (carte outil), pas une nouvelle famille de couleurs. */
+.felix-atelier .report-title { font-family: var(--sans); font-weight: 700; font-size: 14.5px; color: var(--ink); margin-bottom: 9px; }
+.felix-atelier .report-stats { display: flex; flex-wrap: wrap; gap: 14px; }
+.felix-atelier .report-stat { font-family: var(--sans); font-size: 13px; color: var(--ink-2); }
+.felix-atelier .report-stat strong { color: var(--gold-deep); font-weight: 700; }
+.felix-atelier .report-list { margin: 11px 0 0; padding-left: 19px; font-family: var(--serif); font-size: 14.5px; line-height: 1.5; }
+.felix-atelier .report-alerts { color: var(--terra); }
+.felix-atelier .report-errors { color: var(--ink-2); }
+
+/* Ligne de coût discrète (#coût) — sous une réponse texte, une carte tool,
+   une alerte, ou le résumé d'import. Même habit que .tool-field (mono, ton
+   estompé) : une donnée de contexte, pas une donnée de récit. */
+.felix-atelier .msg-cost { margin-top: 6px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
+
+/* Trace des appels d'outil + Cypher (#78) — même registre discret que
+   .msg-cost, juste en dessous. Le détail (appels/requêtes) ne s'ouvre qu'au
+   clic : aucune couleur neuve, mono partout pour la matière technique. */
+.felix-atelier .msg-trace { margin-top: 4px; }
+.felix-atelier .trace-toggle { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: none; background: none; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); cursor: pointer; }
+.felix-atelier .trace-toggle:hover { color: var(--gold-deep); }
+.felix-atelier .trace-toggle svg { transition: transform .14s ease; }
+.felix-atelier .trace-toggle.open svg { transform: rotate(180deg); }
+.felix-atelier .trace-labels { text-align: left; }
+.felix-atelier .trace-details { margin-top: 6px; padding: 9px 11px; background: #fff; border: 1px solid var(--line); border-left: 3px solid var(--line-2); border-radius: 6px; display: flex; flex-direction: column; gap: 10px; }
+.felix-atelier .trace-section-title { font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px; }
+.felix-atelier .trace-line + .trace-line { margin-top: 5px; }
+.felix-atelier .trace-name { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--ink-2); margin-right: 8px; }
+.felix-atelier .trace-json { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); word-break: break-word; }
+.felix-atelier .trace-query { font-family: var(--mono); font-size: 11.5px; color: var(--ink-2); white-space: pre-wrap; word-break: break-word; margin: 0 0 3px; }
+.felix-atelier .trace-more { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-top: 4px; }
 
 /* Actions ✎/🗑 des cartes (#61) — l'auteur corrige Felix sans quitter le fil */
 .felix-atelier .tool-act { display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 6px; border: 1px solid transparent; color: var(--ink-3); font-family: var(--sans); font-size: 12px; font-weight: 600; transition: color .14s ease, background .14s ease, border-color .14s ease; }
@@ -470,6 +638,15 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .alert-card.resolved { border-color: var(--sage-line); background: var(--sage-soft); }
 .felix-atelier .alert-card.resolved .alert-title { color: var(--sage); }
 .felix-atelier .alert-dismissed { display: flex; align-items: center; gap: 7px; font-family: var(--sans); font-size: 13px; color: var(--ink-3); }
+/* Incohérence « à vérifier » (#vérif-source) : la source semble cohérente, Felix
+   l'a peut-être mal lue — ton plus calme (gold, déjà utilisé ailleurs pour du
+   contexte de lecture) que la vraie anomalie document (terra). */
+.felix-atelier .alert-card.is-extraction { border-color: var(--gold-line); background: var(--gold-soft); }
+.felix-atelier .alert-card.is-extraction .alert-title { color: var(--gold-deep); }
+.felix-atelier .alert-card.is-extraction .alert-ic.verify { background: var(--gold); }
+.felix-atelier .alert-card.is-extraction .alert-btn { border-color: var(--gold-line) !important; color: var(--gold-deep) !important; }
+.felix-atelier .alert-card.is-extraction .alert-btn:hover { border-color: var(--gold) !important; background: var(--gold-soft) !important; }
+.felix-atelier .alert-correction { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: var(--ink-2); margin: 8px 0 0; }
 .felix-atelier .redo { background: none; border: none; color: var(--gold-deep); font-weight: 600; font-size: 13px; text-decoration: underline; padding: 0; cursor: pointer; }
 
 /* Composer */
@@ -487,6 +664,42 @@ function onKeydown(e: KeyboardEvent) {
 .felix-atelier .composer-hint { font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-align: center; margin-top: 9px; }
 .felix-atelier .silent-banner { display: flex; align-items: flex-start; gap: 9px; padding: 10px 13px; margin-bottom: 9px; border: 1px solid var(--gold-line); background: var(--gold-soft); border-radius: var(--r-md); font-family: var(--sans); font-size: 13px; line-height: 1.5; color: var(--gold-deep); }
 .felix-atelier .silent-banner svg { flex: none; margin-top: 2px; }
+
+/* Panneau de propositions (Étape 8, file de validation du schéma émergent) —
+   même habit papier que le reste (cartes, badges), pas de nouvelle couleur. */
+.felix-atelier .schema-panel {
+  position: fixed; top: 60px; right: 0; bottom: 0; width: 380px; max-width: 92vw;
+  background: var(--paper); border-left: 1px solid var(--line); box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; z-index: 8; overflow: hidden;
+}
+.felix-atelier .schema-panel-head { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); background: rgba(243, 237, 225, .9); }
+.felix-atelier .schema-panel-title { font-family: var(--serif); font-weight: 600; font-size: 17px; color: var(--ink); }
+.felix-atelier .schema-panel-body { flex: 1; overflow-y: auto; padding: 16px 18px 26px; }
+.felix-atelier .schema-panel-intro { font-family: var(--serif); font-size: 13.5px; line-height: 1.5; color: var(--ink-2); margin: 0 0 20px; }
+.felix-atelier .schema-section { margin-bottom: 22px; }
+.felix-atelier .schema-section-title { display: flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 700; font-size: 13px; letter-spacing: .02em; color: var(--ink-2); text-transform: uppercase; margin: 0 0 10px; }
+.felix-atelier .schema-version { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+.felix-atelier .schema-empty { font-family: var(--serif); font-size: 14px; color: var(--ink-2); }
+.felix-atelier .schema-vocab-list { display: flex; flex-direction: column; gap: 9px; }
+.felix-atelier .schema-vocab-item { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 9px 11px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.felix-atelier .schema-badge { display: inline-flex; align-items: center; font-family: var(--sans); font-weight: 600; font-size: 11.5px; letter-spacing: .02em; padding: 3px 9px; border-radius: 100px; border: 1px solid var(--line-2); background: var(--card-2); color: var(--ink-2); white-space: nowrap; }
+.felix-atelier .schema-edit-row label { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .03em; color: var(--ink-3); margin-bottom: 4px; }
+.felix-atelier .schema-vocab-gloss { font-family: var(--serif); font-size: 13.5px; color: var(--ink); }
+.felix-atelier .schema-vocab-pairs { flex-basis: 100%; font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+.felix-atelier .schema-proposal-list { display: flex; flex-direction: column; gap: 12px; }
+.felix-atelier .schema-proposal { padding: 12px 13px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-sm); }
+.felix-atelier .schema-proposal-sentence { margin: 0 0 10px; font-family: var(--serif); font-size: 14.5px; line-height: 1.45; color: var(--ink); }
+.felix-atelier .schema-examples { margin: 0 0 8px; }
+.felix-atelier .schema-examples-title { margin: 0 0 3px; font-family: var(--sans); font-weight: 600; font-size: 11.5px; letter-spacing: .02em; color: var(--ink-3); text-transform: uppercase; }
+.felix-atelier .schema-example-line { margin: 2px 0; font-family: var(--serif); font-size: 13.5px; line-height: 1.4; color: var(--ink); }
+.felix-atelier .schema-relie { margin: 0 0 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.felix-atelier .schema-relie-hint { color: var(--ink-3); }
+.felix-atelier .schema-edit-row { margin-bottom: 8px; }
+.felix-atelier .schema-edit-input { width: 100%; font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--ink); padding: 7px 10px; border: 1px solid var(--gold-line); border-radius: 6px; background: #fff; outline: none; }
+.felix-atelier .schema-edit-input:focus { border-color: var(--gold); }
+.felix-atelier .schema-edit-hint { margin: 4px 0 0; font-family: var(--sans); font-size: 11.5px; line-height: 1.4; color: var(--ink-3); }
+.felix-atelier .schema-actions { display: flex; gap: 8px; }
+.felix-atelier .schema-actions .btn { padding: 7px 12px; font-size: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
   .felix-atelier .msg { animation: none; }

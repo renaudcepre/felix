@@ -19,6 +19,15 @@ from evals.atelier.dataset import (
     BAPTEME_DIFFERE_INPUTS,
     CHECK_ACT_THEN_DEATH_INPUTS,
     CHECK_DEATH_THEN_ACT_INPUTS,
+    CORRECTION_SECHE_INPUTS,
+    FLASHBACK_CORRECTION_INPUTS,
+    FLASHBACK_CREATION_INPUTS,
+    GABARIT_AMBIANCE_INPUTS,
+    NAISSANCE_VERBATIM_INPUTS,
+    SUBORDONNEE_CONTEXTE_INPUTS,
+    SUBORDONNEE_FICHE_INPUTS,
+    SUJET_APPOSITION_CONTEXTE_INPUTS,
+    SUJET_APPOSITION_INPUTS,
     atelier_cases,
 )
 from evals.atelier.evaluators import multirun_majority
@@ -30,6 +39,15 @@ from evals.atelier.task import (
     _bapteme_differe_check,
     _check_act_then_death,
     _check_death_then_act,
+    _correction_seche_check,
+    _flashback_correction_check,
+    _flashback_creation_check,
+    _gabarit_ambiance_check,
+    _naissance_verbatim_check,
+    _subordonnee_contexte_check,
+    _subordonnee_fiche_check,
+    _sujet_apposition_check,
+    _sujet_apposition_contexte_check,
     atelier_driver,
     run_atelier_case,
     run_atelier_multirun_case,
@@ -104,4 +122,164 @@ async def check_act_then_death(
         CHECK_ACT_THEN_DEATH_INPUTS,
         n=3,
         check=_check_act_then_death,
+    )
+
+
+# ─────────── #56 / #57 : sur-extraction et sous-extraction ───────────────────────────
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def gabarit_ambiance(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#56 : ambiance pure sans personnage nommé → 0 personnage inventé.
+
+    Multi-run N=3 (seuil ≥2/3) : la variance Small sur ce type de cas est connue.
+    Reproduction exacte du cas dogfood (« huis clos pétrolière, polar, surnaturel »).
+    Vert si 0 entité personnage ET 0 prop biographique inventée."""
+    return await run_atelier_multirun_case(
+        driver,
+        GABARIT_AMBIANCE_INPUTS,
+        n=3,
+        check=_gabarit_ambiance_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def subordonnee_fiche(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#57 : personnage mentionné en subordonnée → sa fiche est créée.
+
+    Multi-run N=3 (seuil ≥2/3) : la variance sur ce cas est le cœur du bug.
+    Vert si les deux personnages existent : Lera (sujet) ET Fenn (mort mentionné)."""
+    return await run_atelier_multirun_case(
+        driver,
+        SUBORDONNEE_FICHE_INPUTS,
+        n=3,
+        check=_subordonnee_fiche_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def sujet_apposition(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#57 (variance) : sujet avec apposition → sa fiche est créée.
+
+    Multi-run N=3 (seuil ≥2/3) : même structure que le cas Erick non reproductible
+    à l'identique (variance inter-runs). Vert si la fiche de Haldren est présente."""
+    return await run_atelier_multirun_case(
+        driver,
+        SUJET_APPOSITION_INPUTS,
+        n=3,
+        check=_sujet_apposition_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def sujet_apposition_contexte(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#57 contextualisé : sujet + apposition au tour 2, working set chargé au tour 1.
+
+    Reproduction de la structure exacte du dogfood Araïko : Karev (tour 1) charge
+    le working set ; Ylden (tour 2) doit quand même recevoir sa fiche.
+    Multi-run N=3 (seuil ≥2/3). Vert si la fiche d'Ylden est présente."""
+    return await run_atelier_multirun_case(
+        driver,
+        SUJET_APPOSITION_CONTEXTE_INPUTS,
+        n=3,
+        check=_sujet_apposition_contexte_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def subordonnee_contexte(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#57 contextualisé : subordonnée au tour 2, working set chargé au tour 1.
+
+    Tour 1 crée Nara + Erkon (working set chargé). Tour 2 : Paya remplace Gorn
+    (mort, mentionné en subordonnée). Vert si les deux fiches existent.
+    Multi-run N=3 (seuil ≥2/3)."""
+    return await run_atelier_multirun_case(
+        driver,
+        SUBORDONNEE_CONTEXTE_INPUTS,
+        n=3,
+        check=_subordonnee_contexte_check,
+    )
+
+
+# ─────────────────── #44 : raconter dans le désordre ────────────────────────────────
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def flashback_correction(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#44 cas cirque : correction de l'ordre d'un événement existant (move_event).
+
+    Beat 1 : Jovan meurt. Beat 2 : event postérieur impliquant Jovan (juge alertera).
+    Beat 3 : « l'annonce de Kezra c'était la veille de la mort de Jovan, je raconte
+    dans le désordre » → move_event doit replacer l'annonce AVANT la mort.
+    Vert si ordre(annonce) < ordre(mort), seuil ≥2/3."""
+    return await run_atelier_multirun_case(
+        driver,
+        FLASHBACK_CORRECTION_INPUTS,
+        n=3,
+        check=_flashback_correction_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def flashback_creation(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#44 cas pétrolier : flashback explicite à la création (add_event avec avant=).
+
+    Beat 1 : Imra arrive. Beat 2 : « la tempête trois jours avant l'arrivée d'Imra,
+    je raconte dans le désordre » → add_event avec avant='arrivée d'Imra'.
+    Vert si ordre(tempête) < ordre(arrivée Imra), seuil ≥2/3."""
+    return await run_atelier_multirun_case(
+        driver,
+        FLASHBACK_CREATION_INPUTS,
+        n=3,
+        check=_flashback_creation_check,
+    )
+
+
+# ─────────────────── #69 : jamais dériver, toujours citer ────────────────────────────
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def naissance_verbatim(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#69 : « Romeck est né en 1962 » → l'année VERBATIM en fiche, aucun âge dérivé.
+
+    Dogfood 2026-06-11 : « né en 1991 » → age='32 ans' calculé (faux). Vert si
+    '1962' est dans une prop, aucun « NN ans » nulle part, aucune clé `age`,
+    seuil ≥2/3."""
+    return await run_atelier_multirun_case(
+        driver,
+        NAISSANCE_VERBATIM_INPUTS,
+        n=3,
+        check=_naissance_verbatim_check,
+    )
+
+
+@atelier_suite.eval(evaluators=[multirun_majority(threshold=2, total=3)])
+async def correction_seche(
+    driver: Annotated[AsyncDriver, Use(atelier_driver)],
+) -> TaskResult[AtelierRunResult]:
+    """#69 : « non, Lioba a 67 ans » → la correction atterrit sur la même clé.
+
+    Dogfood 2026-06-11 : « non j'ai 34 ans » → aucune écriture, l'auteur a dû
+    insister. Vert si la fiche finale porte 67 et plus aucun 71, seuil ≥2/3."""
+    return await run_atelier_multirun_case(
+        driver,
+        CORRECTION_SECHE_INPUTS,
+        n=3,
+        check=_correction_seche_check,
     )

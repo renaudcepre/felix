@@ -23,6 +23,15 @@ if TYPE_CHECKING:
 
 RESERVED_KEYS = {"id", "name", "entity_type", "project"}
 
+# Propriétés posées EN CODE, jamais par l'auteur ni le LLM, et sans valeur pour
+# lui (#73) : pure comptabilité interne. `last_touched` (touch_entities) sert
+# le working set des extracteurs, pas la fiche. Seule entrée à ce jour — les
+# autres props code-only rencontrées (`titre`/`pages`/`source` posées par
+# l'ingestion sur les nœuds `document`, `ordre`/`resume` sur les événements)
+# décrivent le NŒUD lui-même et restent utiles à l'auteur, donc pas filtrées
+# ici. À COMPLÉTER si un futur writer pose une autre prop de pure machinerie.
+INTERNAL_PROPS = frozenset({"last_touched"})
+
 # Type GÉNÉRIQUE des relations narratives (#68) : le lien porte le verbe VERBATIM
 # de l'auteur en propriété `verbe` (+ `verbe_slug`, sa forme normalisée qui sert
 # de clé de MERGE — deux verbes différents entre la même paire = deux arêtes,
@@ -366,6 +375,53 @@ async def rename_or_merge(
                          new_name=new_name, final_id=new_id)
 
 
+async def create_entity(  # noqa: PLR0913 — chemin de création partagé, un champ par colonne du nœud
+    driver: AsyncDriver, entity_id: str, name: str, entity_type: str,
+    props: dict[str, str], *, project: str,
+) -> None:
+    """MERGE d'une entité :GenEntity — le chemin de création PARTAGÉ entre le
+    tool `add_entity` (LLM) et l'ingestion de document EN CODE (#Étape 2) : même
+    forme de nœud, une seule requête (`props` déjà filtré des clés réservées par
+    l'appelant). Idempotent sur `{id, project}` (#60) : ré-ingérer un document ne
+    duplique pas l'entité `document` elle-même."""
+    async with driver.session() as session:
+        await session.run(
+            "MERGE (e:GenEntity {id: $id, project: $project})"
+            " ON CREATE SET e.name = $name, e.entity_type = $type"
+            " SET e += $props",
+            id=entity_id, name=name, type=entity_type, props=props, project=project,
+        )
+
+
+async def link_described_in(
+    driver: AsyncDriver, entity_ids: Iterable[str], document_id: str, page: int,
+    *, project: str,
+) -> None:
+    """Pose EN CODE la relation DESCRIBED_IN {entité → document} à l'ingestion
+    (#Étape 2, ``felix.ingest.document.ingest_document``) : chaque entité
+    touchée par un bloc du document est reliée à sa source, avec la PAGE où elle
+    apparaît. `pages` est une liste CUMULATIVE — MERGE + append idempotent : la
+    même page rejouée (un bloc réingéré, une entité réapparue sur deux blocs de
+    la même page) n'ajoute pas de doublon. Le document lui-même est exclu par
+    l'appelant (il ne se décrit pas dans lui-même)."""
+    ids = [i for i in entity_ids if i and i != document_id]
+    if not ids:
+        return
+    async with driver.session() as session:
+        await session.run(
+            """
+            MATCH (e:GenEntity {project: $project}) WHERE e.id IN $ids
+            MATCH (d:GenEntity {id: $doc, project: $project})
+            MERGE (e)-[r:REL {rel_type: 'DESCRIBED_IN'}]->(d)
+            SET r.pages = CASE
+                WHEN $page IN coalesce(r.pages, []) THEN coalesce(r.pages, [])
+                ELSE coalesce(r.pages, []) + $page
+            END
+            """,
+            ids=ids, doc=document_id, page=page, project=project,
+        )
+
+
 async def all_entities(driver: AsyncDriver, *, project: str) -> list[dict]:
     async with driver.session() as session:
         result = await session.run(
@@ -387,6 +443,49 @@ async def all_relations(driver: AsyncDriver, *, project: str) -> list[dict]:
             project=project,
         )
         return [dict(r) for r in await result.data()]
+
+
+async def entity_relation_counts(
+    driver: AsyncDriver, *, project: str, excluded_rel_types: Iterable[str],
+) -> dict[str, int]:
+    """Nombre de relations par entité, hors types exclus (#73 : la carte compte
+    les LIENS utiles pour choisir une fiche, pas la machinerie chronologie/
+    provenance — le choix de ce qui est « machinerie » vit côté appelant, cf.
+    `_EVENT_RELS`/DESCRIBED_IN dans `routes.entities`).
+
+    UNE requête pour tout le projet (pas un aller-retour par carte) : la liste
+    peut compter des centaines d'entités, jamais une requête par ligne."""
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:GenEntity {project: $project})
+            OPTIONAL MATCH (e)-[r:REL]-(:GenEntity {project: $project})
+              WHERE NOT r.rel_type IN $excluded
+            RETURN e.id AS id, count(r) AS n
+            """,
+            project=project, excluded=list(excluded_rel_types),
+        )
+        return {row["id"]: row["n"] for row in await result.data()}
+
+
+async def entity_primary_sources(driver: AsyncDriver, *, project: str) -> dict[str, dict]:
+    """Premier document DESCRIBED_IN de chaque entité (titre + pages), une seule
+    requête pour tout le projet. Une entité peut décrire plusieurs documents —
+    on ne garde QUE le premier (id document trié, déterministe) : la carte
+    montre une provenance, pas toutes (#73)."""
+    async with driver.session() as session:
+        result = await session.run(
+            """
+            MATCH (e:GenEntity {project: $project})
+                  -[dr:REL {rel_type: 'DESCRIBED_IN'}]->(d:GenEntity {project: $project})
+            WITH e, d, dr
+            ORDER BY e.id, d.id
+            WITH e.id AS id, collect({title: d.name, pages: dr.pages})[0] AS source
+            RETURN id, source
+            """,
+            project=project,
+        )
+        return {row["id"]: row["source"] for row in await result.data()}
 
 
 def fmt_props(props: dict, *, skip_reserved: bool = True) -> str:

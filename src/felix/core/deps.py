@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from felix.core.projects import DEFAULT_PROJECT
+from felix.cost import CostLedger
+from felix.trace import QueryTrace, RecordingDriver
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
@@ -52,9 +54,34 @@ class GenericDeps:
     # QUE si ce flag est vrai — un bavardage/une question ne déclenche AUCUNE
     # écriture (hallu impossible par construction, et tour conversationnel moins cher).
     extraction_requested: bool = False
+    # Noms refusés par une garde SÉMANTIQUE ce tour (slugs normalisés).
+    # Toute re-création du même nom sous un autre type est bloquée en code :
+    # garde symbolique > consigne (leçon #48/#64 : la consigne seule ne tient
+    # pas sur Small). Un refus mémorisé vaut pour les trois passes du tour
+    # (entités + relieur + chroniqueur partagent la même instance de deps).
+    refused_names: set[str] = field(default_factory=set)
     # Sérialise l'allocation d'`ordre` d'add_event : un même run peut émettre
     # plusieurs add_event dans une seule réponse → pydantic-ai les exécute en
     # parallèle, et un max(ordre)+1 concurrent collisionnerait sur le même id.
     event_seq_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock, repr=False, compare=False
     )
+    # Comptabilité UNIQUE des coûts LLM de ce tour/import (cf. felix.cost) :
+    # gate, maître, extracteurs et juge de cohérence y déposent chacun leur
+    # (modèle, tokens) — jamais une liste `usages` ad hoc par appelant.
+    cost_ledger: CostLedger = field(default_factory=CostLedger)
+    # Trace UNIQUE des appels d'outils + de la Cypher exécutée ce tour/import
+    # (#78, cf. felix.trace) — même design que cost_ledger. `__post_init__`
+    # (ci-dessous) enveloppe `driver` dans un proxy qui alimente CE trace à
+    # chaque session().run(), sans table tool→requête écrite à la main.
+    query_trace: QueryTrace = field(default_factory=QueryTrace)
+
+    def __post_init__(self) -> None:
+        # Le proxy est créé PAR OPÉRATION (une instance de GenericDeps = un
+        # tour de chat ou un bloc d'ingestion, cf. felix.atelier.pipeline /
+        # felix.ingest.document) — jamais partagé entre deux opérations, donc
+        # jamais de fuite d'une trace dans une autre. RecordingDriver n'est
+        # PAS nominalement un AsyncDriver (il ne proxifie QUE .session(), la
+        # seule méthode utilisée sur `deps.driver` dans tout le code — cf.
+        # felix.trace) : compatible en usage, pas en type déclaré.
+        self.driver = RecordingDriver(self.driver, self.query_trace)  # type: ignore[assignment]

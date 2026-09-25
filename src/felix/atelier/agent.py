@@ -15,8 +15,15 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
 
-from felix.core import CHANTIER_PROFILE, SCENARIO_PROFILE, create_core_agent
+from felix.core import (
+    CHANTIER_PROFILE,
+    EMERGENT_SEED_PROFILE,
+    MAINTENANCE_PROFILE,
+    SCENARIO_PROFILE,
+    create_core_agent,
+)
 from felix.core.agent import CHRONICLE_SYSTEM_PROMPT, RELATION_SYSTEM_PROMPT
+from felix.core.profile_store import load_project_profile
 from felix.core.tools import (
     add_entity,
     add_event,
@@ -24,8 +31,9 @@ from felix.core.tools import (
     describe_schema,
     find_entity,
     list_entities,
+    move_event,
 )
-from felix.llm import build_chat_model
+from felix.llm import build_gate_model
 
 # Outils du relieur (passe 2) : le noyau SANS update_entity. Sa tâche est de RELIER
 # (add_relation), pas de toucher aux propriétés — le churn de props (ex. `arc`
@@ -42,6 +50,7 @@ RELATION_TOOLS = (describe_schema, find_entity, add_entity, add_relation)
 MASTER_TOOLS = (find_entity, list_entities)
 
 if TYPE_CHECKING:
+    from neo4j import AsyncDriver
     from pydantic_ai.models import Model
 
     from felix.core import GenericDeps, Profile
@@ -72,6 +81,15 @@ NEUTRAL_PERSONA = """\
 Tu tiens une base de connaissances structurée au fil de la conversation. Confirme
 brièvement chaque écriture. Pour répondre à une question sur le contenu de la
 base, consulte-le d'abord (list_entities, find_entity) — ne devine jamais.
+"""
+
+MAINTENANCE_PERSONA = """\
+Tu es Felix, assistant de documentation technique de maintenance. Tu tiens à
+jour la base de connaissance d'une machine (organes, commandes, réglages,
+modes, consignes) au fil de la discussion avec l'opérateur ou le technicien.
+Ton factuel et concret. Pour répondre à une question sur la machine, consulte
+d'abord la base (list_entities, find_entity) — ne devine et n'invente jamais
+une valeur ou une unité.
 """
 
 # ─────────── MAÎTRE (passe 0) : BLOC-NOTES, pas interviewer ───────────
@@ -114,6 +132,30 @@ Réponds en français, une phrase, très bref.
 """
 
 
+# ─────────── Maître MAINTENANCE : Q/R en lecture seule sur la doc ───────────
+# Domaine différent, posture différente : pas de « bloc-notes » qui accompagne
+# un récit, mais un assistant documentaire qui RÉPOND depuis la base et refuse
+# de combler un trou par une valeur plausible (cf. modeling_rules de
+# MAINTENANCE_PROFILE : valeur/unité/plage VERBATIM, jamais calculées).
+MAINTENANCE_MASTER_SYSTEM_PROMPT = """\
+Tu es un assistant de documentation technique de maintenance. Un opérateur ou un
+technicien te pose des questions sur une machine ; tu réponds UNIQUEMENT depuis
+la base de connaissance (find_entity, list_entities) — jamais de mémoire, jamais
+de supposition.
+
+- Consulte la base AVANT de répondre. Si l'information n'y est pas, dis
+  clairement « ce n'est pas dans la documentation » — ne comble jamais le trou
+  par une valeur plausible.
+- N'INVENTE jamais une valeur, une unité, une plage ou une procédure : si la
+  fiche ne la donne pas, tu ne la donnes pas non plus.
+- Réponds COURT et factuel, en citant la valeur ou l'unité VERBATIM telle
+  qu'elle est enregistrée.
+- Tu ne modifies rien : tu n'as pas d'outil d'écriture.
+
+Réponds en français, aussi bref que possible.
+"""
+
+
 # ─────────── GATE de routage (stateless) : décide s'il faut extraire ───────────
 class RouteDecision(BaseModel):
     """Sortie structurée du gate — `fait` AVANT `noter` (reason-first : le modèle
@@ -153,12 +195,35 @@ Une fois le doute retiré, s'il reste un fait ou une ébauche d'histoire → not
 NE PAS NOTER (noter=false) si le message ne pose AUCUN fait : salutation,
 remerciement, réaction (« ouais », « pas mal »), pur « je sais pas par où
 commencer », ou une QUESTION sur ce qui existe déjà (« qui est X ? »,
-« résume-moi ce qu'on a ») — lire n'est pas écrire.
+« résume-moi ce qu'on a ») — lire n'est pas écrire. De même pour le registre
+MÉTA, qui parle de l'OUTIL et non de l'histoire :
+- une remarque ou question sur la FICHE, la base ou toi (« tu as écrit X dans
+  la fiche », « mets à jour la fiche », « pourquoi t'as noté ça ») SANS donner
+  la valeur corrigée — si l'auteur donne la bonne valeur, c'est une correction
+  et on la note ;
+- un PLAN DE NARRATION (« il faudrait parler de X », « ce serait bien d'aborder
+  Y ») : une intention d'écriture, pas un fait du monde.
+
+Le `fait` reprend les MOTS de l'auteur, VERBATIM. Ne calcule JAMAIS rien (un
+âge depuis une année de naissance, une durée, une date) : aucun chiffre qui
+n'est pas dans le message.
 
 Exemples (un univers d'illustration — la règle vaut pour toute histoire) :
 - « salut » / « merci, c'est top » / « ouais, pas mal » → noter=false, fait="".
 - « je sais pas trop par où commencer » → noter=false, fait="" (aucun fait).
 - « qui est Mirko, déjà ? » → noter=false, fait="" (question : lire n'est pas écrire).
+- « tu as écrit "boiteux" dans la fiche de Mirko ? c'est pas ça » → noter=false,
+  fait="" (remarque sur la fiche : l'auteur n'a PAS donné la correction —
+  "boiteux" est la valeur contestée, pas un fait).
+- « tu mets pas à jour la fiche de Mirko ? tu as écrit 61 » → noter=false,
+  fait="" (61 est la valeur que l'auteur CONTESTE : il dit qu'elle est fausse
+  sans donner la bonne — noter « Mirko a 61 ans » enregistrerait l'erreur).
+- « la fiche dit 61 ? non, Mirko a 49 ans » → noter=true, fait="Mirko a 49 ans"
+  (là, la valeur corrigée est donnée : c'est une correction, on la note).
+- « ce serait bien de parler du passé de Drass à un moment » → noter=false,
+  fait="" (plan de narration : rien ne s'est passé dans l'histoire).
+- « Sel est née en 1974 » → noter=true, fait="Sel est née en 1974" (VERBATIM :
+  pas d'âge calculé depuis l'année).
 - « Sel, une cartographe, arrive à Vellone pour lever les plans des galeries
   interdites » → noter=true, fait="Sel, cartographe, arrive à Vellone relever les
   galeries interdites".
@@ -172,15 +237,81 @@ Exemples (un univers d'illustration — la règle vaut pour toute histoire) :
 """
 
 
-def build_gate_agent() -> Agent[None, RouteDecision]:
+# Gate MAINTENANCE : même posture stateless/reason-first, mais le CONTENU à
+# repérer change de nature — un fait TECHNIQUE (organe, commande, réglage,
+# procédure, consigne), pas un fait de récit. Univers d'exemples PL-7 (presse
+# plieuse), distinct des fixtures de test SX-40 (anti-leakage).
+MAINTENANCE_GATE_SYSTEM_PROMPT = """\
+Tu es le filtre d'enregistrement d'un assistant de documentation technique de
+maintenance. On te donne UN message, seul, hors contexte. Décide s'il AFFIRME un
+fait technique sur une machine (organe, commande, réglage, mode, procédure,
+consigne de sécurité) à enregistrer dans la base.
+
+NOTER (noter=true) si le message AFFIRME ou PRÉCISE un fait technique :
+- une caractéristique d'un organe, d'une commande ou d'un réglage (emplacement,
+  fonction, rôle, unité, plage, valeur) ;
+- une consigne de sécurité ou une interdiction ;
+- une procédure ou un mode de fonctionnement ;
+- une CORRECTION d'un fait déjà enregistré.
+
+NE PAS NOTER (noter=false) :
+- une salutation, un remerciement, une réaction (« ok », « merci ») ;
+- une QUESTION sur la machine, même technique (« à combien est réglée la force
+  de pliage ? », « c'est quoi la butée arrière ? ») — lire n'est pas écrire ;
+- une remarque MÉTA sur l'outil ou la fiche (« tu as bien noté la pédale ? »)
+  SANS valeur corrigée.
+
+Le `fait` reprend les MOTS du message, VERBATIM. Ne calcule JAMAIS rien (une
+conversion d'unité, une moyenne, une plage déduite) : aucune valeur qui n'est
+pas dans le message.
+
+Exemples (univers d'illustration — presse plieuse PL-7) :
+- « bonjour » / « merci » / « ok, compris » → noter=false, fait="".
+- « à combien est réglée la force de pliage sur la PL-7 ? » → noter=false,
+  fait="" (question : lire n'est pas écrire).
+- « c'est quoi le rôle de la butée arrière ? » → noter=false, fait="".
+- « la pédale commande la vitesse d'approche du tablier » → noter=true,
+  fait="la pédale commande la vitesse d'approche du tablier".
+- « la force de pliage max sur la PL-7 est de 40 tonnes » → noter=true,
+  fait="la force de pliage max sur la PL-7 est de 40 tonnes" (VERBATIM : pas de
+  conversion, pas d'arrondi).
+- « attention, ne jamais dépasser 40 tonnes sinon la butée se déforme » →
+  noter=true, fait="ne jamais dépasser 40 tonnes de force de pliage, sinon la "
+  "butée se déforme".
+- « tu as bien noté que la pédale commande la vitesse ? » → noter=false, fait=""
+  (remarque méta sans valeur corrigée).
+- « non, en fait la vitesse d'approche est pilotée par le sélecteur, pas la
+  pédale » → noter=true, fait="correction : la vitesse d'approche est pilotée "
+  "par le sélecteur, pas la pédale".
+"""
+
+
+def build_gate_agent(
+    choice: AgentChoice, profile: Profile | None = None
+) -> Agent[None, RouteDecision]:
     """Gate de routage : un appel court, SANS outils ni deps, sortie structurée.
 
-    Appelé par la route avec le message du tour SEUL (jamais d'historique) : la
-    fraîcheur de la décision est la propriété qui tue l'ornière — ne pas lui
-    passer de message_history."""
+    Construit PAR PROFIL (cf. app.state.gate_agents) : la QUESTION posée à
+    chaque tour — « est-ce un fait de récit ? », « est-ce un fait technique ? »
+    — dépend du domaine, comme le maître et les extracteurs. Appelé par la
+    route avec le message du tour SEUL (jamais d'historique) : la fraîcheur de
+    la décision est la propriété qui tue l'ornière — ne pas lui passer de
+    message_history.
+
+    ``profile`` (#82) : pour un choix ÉVOLUTIF, le gate doit apprendre le
+    VOCABULAIRE du domaine (types + relations promus) pour ne pas rater un fait
+    qui utilise un nom appris — cf. ``Profile.render_gate_block`` (COURT :
+    juste des noms, pas le dump de règles du system prompt complet). None ou
+    profil sans vocabulaire encore appris → prompt inchangé (choix non
+    évolutifs, ou seed émergent tout neuf)."""
+    instructions = choice.gate_prompt
+    if profile is not None:
+        block = profile.render_gate_block()
+        if block:
+            instructions = instructions.rstrip() + "\n\n" + block
     return Agent(
-        build_chat_model(),
-        instructions=GATE_SYSTEM_PROMPT,
+        build_gate_model(),
+        instructions=instructions,
         output_type=RouteDecision,
         model_settings=ModelSettings(temperature=0.0),
         retries=3,
@@ -218,20 +349,126 @@ class AgentChoice:
     label: str
     profile: Profile | None
     persona: str
+    # Prompts du maître (passe 0) et du gate (routage) — un couple par choix,
+    # au lieu des deux constantes MASTER_SYSTEM_PROMPT/GATE_SYSTEM_PROMPT
+    # codées en dur pour tous les domaines : chaque profil pose une QUESTION
+    # différente à son gate et attend une posture différente de son maître.
+    master_prompt: str
+    gate_prompt: str
+    # Persona du maître : le « bloc-notes de l'auteur » par défaut ; un domaine
+    # non narratif (maintenance) porte la sienne, sinon il hériterait d'une voix
+    # qui parle d'« histoire » à un technicien.
+    master_persona: str = MASTER_PERSONA
+    # Vocabulaire UI DU MODE — exposé par GET /api/atelier/profiles (cf.
+    # `profile_summary`), pour que le front n'ait plus AUCUN texte scénario codé
+    # en dur : le welcome initial du chat et le placeholder du composer viennent
+    # du mode choisi, pas d'une constante unique qui suppose de la fiction.
+    welcome: str = ""
+    input_placeholder: str = ""
+    # Vrai pour un domaine dont le PROFIL RÉEL n'est pas figé dans le code : il
+    # part du profil ci-dessus (le SEED) mais évolue par projet au fil des
+    # changements de schéma validés (#Étape 4-7), stocké en base
+    # (`core/profile_store.py`). Les dicts d'agents pré-construits au démarrage
+    # (`app.state.*_agents`) ne connaissent que le SEED — un choix évolutif exige
+    # de reconstruire ses 3 agents extracteurs pour le profil RÉSOLU du projet à
+    # chaque requête (cf. `resolve_profile` ci-dessous).
+    evolving: bool = False
 
+
+# Vocabulaire UI partagé émergent/maintenance : même posture d'assistant
+# documentaire (cf. MAINTENANCE_PERSONA), même invite — un domaine encore
+# inconnu (émergent) ou déjà figé (maintenance) s'aborde pareil depuis le chat.
+_DOC_WELCOME = (
+    "Importez une fiche technique ou décrivez une machine ; posez vos "
+    "questions sur la documentation."
+)
+_DOC_PLACEHOLDER = "Décris la machine ou pose ta question…"
 
 # Registre des modes proposés par le sélecteur de l'UI.
 ATELIER_CHOICES: dict[str, AgentChoice] = {
-    "scenario": AgentChoice("scenario", "Scénario", SCENARIO_PROFILE, ATELIER_PERSONA),
-    "chantier": AgentChoice("chantier", "Chantier", CHANTIER_PROFILE, CHANTIER_PERSONA),
-    "none": AgentChoice("none", "Aucun (noyau nu)", None, NEUTRAL_PERSONA),
+    "scenario": AgentChoice(
+        "scenario", "Scénario", SCENARIO_PROFILE, ATELIER_PERSONA,
+        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        welcome="Bonjour. Raconte-moi ton histoire : décris tes personnages au "
+        "fil de l'eau, et je tiendrai leurs fiches à jour dans la bible.",
+        input_placeholder="Écris à Felix… (idée, scène, question)",
+    ),
+    "chantier": AgentChoice(
+        "chantier", "Chantier", CHANTIER_PROFILE, CHANTIER_PERSONA,
+        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        welcome="Bonjour. Décris l'avancement du chantier — outils, matériaux, "
+        "ouvrages, intervenants — et je tiendrai les fiches à jour.",
+        input_placeholder="Décris le chantier… (outil, matériau, avancement)",
+    ),
+    "none": AgentChoice(
+        "none", "Aucun (noyau nu)", None, NEUTRAL_PERSONA,
+        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        welcome="Bonjour. Décris ce que tu veux suivre, et je tiendrai les "
+        "fiches à jour au fil de la conversation.",
+        input_placeholder="Écris à Felix…",
+    ),
+    "maintenance": AgentChoice(
+        "maintenance", "Maintenance", MAINTENANCE_PROFILE, MAINTENANCE_PERSONA,
+        MAINTENANCE_MASTER_SYSTEM_PROMPT, MAINTENANCE_GATE_SYSTEM_PROMPT,
+        master_persona=MAINTENANCE_PERSONA,
+        welcome=_DOC_WELCOME, input_placeholder=_DOC_PLACEHOLDER,
+    ),
+    # Schéma ÉMERGENT (plan `maintenance_profile.md`) : part du noyau nu
+    # (EMERGENT_SEED_PROFILE) et apprend son vocabulaire au fil des documents —
+    # posture d'assistant documentaire (personas/prompts maintenance : factuel,
+    # ne comble jamais un trou par une valeur plausible), la seule qui convient
+    # à un domaine encore inconnu.
+    "emergent": AgentChoice(
+        "emergent", "Émergent (profil appris)", EMERGENT_SEED_PROFILE,
+        MAINTENANCE_PERSONA, MAINTENANCE_MASTER_SYSTEM_PROMPT,
+        MAINTENANCE_GATE_SYSTEM_PROMPT, master_persona=MAINTENANCE_PERSONA,
+        welcome=_DOC_WELCOME, input_placeholder=_DOC_PLACEHOLDER,
+        evolving=True,
+    ),
 }
-DEFAULT_PROFILE = "scenario"
+# Défaut = émergent (2026-09-24) : le profil qui n'assume rien du domaine est le
+# seul point d'entrée honnête pour un outil générique — scénario reste
+# sélectionnable, mais n'est plus le premier mode qu'un nouvel arrivant voit.
+DEFAULT_PROFILE = "emergent"
 
 
-def build_atelier_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
-    """Noyau (5 tools) + list_entities (énumération de la bible), pour un profil donné."""
-    agent = create_core_agent(profile=choice.profile, persona=choice.persona)
+def profile_summary(choice: AgentChoice) -> dict[str, object]:
+    """Le dict envoyé par GET /api/atelier/profiles pour un mode — vocabulaire UI
+    (accueil, placeholder) et `evolving` (affiche le panneau de propositions côté
+    front), en plus de key/label. Fonction PURE, testable sans FastAPI."""
+    return {
+        "key": choice.key,
+        "label": choice.label,
+        "welcome": choice.welcome,
+        "input_placeholder": choice.input_placeholder,
+        "evolving": choice.evolving,
+    }
+
+
+async def resolve_profile(
+    driver: AsyncDriver, choice: AgentChoice, *, project: str
+) -> Profile | None:
+    """Le profil RÉELLEMENT utilisé pour ce projet : pour un choix évolutif, le
+    profil STOCKÉ (évolué par les changements validés) s'il en existe déjà un,
+    sinon le profil de départ du choix (le seed). Pour un choix NON évolutif
+    (scénario, chantier, maintenance figée, noyau nu), toujours le même profil
+    qu'aujourd'hui — la base n'est même pas consultée."""
+    if not choice.evolving:
+        return choice.profile
+    stored = await load_project_profile(driver, project=project)
+    return stored if stored is not None else choice.profile
+
+
+def build_atelier_agent(
+    choice: AgentChoice, profile: Profile | None = None
+) -> Agent[GenericDeps, str]:
+    """Noyau (5 tools) + list_entities (énumération de la bible), pour un profil
+    donné. ``profile`` override ``choice.profile`` — nécessaire pour un choix
+    ÉVOLUTIF : le profil réel d'un projet vit en base, jamais dans ``choice``
+    (cf. ``resolve_profile``)."""
+    agent = create_core_agent(
+        profile=profile if profile is not None else choice.profile, persona=choice.persona
+    )
     agent.tool(list_entities)
     return agent
 
@@ -241,7 +478,7 @@ def create_atelier_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDep
 
 
 def build_master_agent(
-    choice: AgentChoice, model: Model | None = None
+    choice: AgentChoice, model: Model | None = None, *, profile: Profile | None = None
 ) -> Agent[GenericDeps, str]:
     """Passe 0 « maître » : MÈNE la conversation (texte streamé), threadée.
 
@@ -252,11 +489,17 @@ def build_master_agent(
 
     model=None → modèle de chat par défaut. L'override sert l'A/B tiering (#49) :
     le maître est la VOIX du produit (1 appel/tour) et le seul à faire du jugement
-    sémantique conversationnel — premier candidat à monter en tier (cf. bug #62)."""
+    sémantique conversationnel — premier candidat à monter en tier (cf. bug #62).
+
+    ``profile`` (mot-clé, #82) override ``choice.profile`` — nécessaire pour un
+    choix ÉVOLUTIF : le profil réel d'un projet vit en base, jamais dans
+    ``choice`` (cf. ``resolve_profile``, ``build_atelier_agent``). Gardé
+    keyword-only pour ne pas casser les appelants existants qui passent
+    ``model`` en position (cf. evals/atelier/master_ab.py)."""
     return create_core_agent(
-        profile=choice.profile,
-        persona=MASTER_PERSONA,
-        system_prompt=MASTER_SYSTEM_PROMPT,
+        profile=profile if profile is not None else choice.profile,
+        persona=choice.master_persona,
+        system_prompt=choice.master_prompt,
         tools=MASTER_TOOLS,
         model=model,
     )
@@ -266,13 +509,16 @@ def create_master_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps
     return build_master_agent(ATELIER_CHOICES[profile_key])
 
 
-def build_relation_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
+def build_relation_agent(
+    choice: AgentChoice, profile: Profile | None = None
+) -> Agent[GenericDeps, str]:
     """2e passe « relieur » : outils RESTREINTS (RELATION_TOOLS = noyau sans
     update_entity) + discipline/persona qui priorisent add_relation. Sans
     update_entity, il ne PEUT plus re-toucher les props (fin du churn) ; il garde
-    add_entity en filet (backfill d'une entité ratée par la 1re passe)."""
+    add_entity en filet (backfill d'une entité ratée par la 1re passe).
+    ``profile`` override ``choice.profile`` (cf. build_atelier_agent)."""
     agent = create_core_agent(
-        profile=choice.profile,
+        profile=profile if profile is not None else choice.profile,
         persona=RELATION_PERSONA,
         system_prompt=RELATION_SYSTEM_PROMPT,
         tools=RELATION_TOOLS,
@@ -285,16 +531,20 @@ def create_relation_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDe
     return build_relation_agent(ATELIER_CHOICES[profile_key])
 
 
-def build_chronicle_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
+def build_chronicle_agent(
+    choice: AgentChoice, profile: Profile | None = None
+) -> Agent[GenericDeps, str]:
     """3e passe « chroniqueur » : transforme le beat en événements ordonnés. Outils
-    RESTREINTS (lecture + add_event) — add_event absorbe les participants manquants,
-    donc pas de boucle sur outil absent (contrairement au piège du relieur restreint
-    qui réclamait add_entity)."""
+    RESTREINTS (lecture + add_event + move_event) — add_event absorbe les participants
+    manquants, donc pas de boucle sur outil absent (contrairement au piège du relieur
+    restreint qui réclamait add_entity). move_event corrige l'ordre des events déjà
+    notés (#44 : raconter dans le désordre). ``profile`` override ``choice.profile``
+    (cf. build_atelier_agent)."""
     agent = create_core_agent(
-        profile=choice.profile,
+        profile=profile if profile is not None else choice.profile,
         persona=CHRONICLE_PERSONA,
         system_prompt=CHRONICLE_SYSTEM_PROMPT,
-        tools=(describe_schema, find_entity, add_event),
+        tools=(describe_schema, find_entity, add_event, move_event),
     )
     agent.tool(list_entities)
     return agent
@@ -302,3 +552,35 @@ def build_chronicle_agent(choice: AgentChoice) -> Agent[GenericDeps, str]:
 
 def create_chronicle_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
     return build_chronicle_agent(ATELIER_CHOICES[profile_key])
+
+
+@dataclass(frozen=True)
+class TurnAgents:
+    """Les 5 agents d'un tour, tous bâtis sur le MÊME profil résolu (#82). Avant
+    ce type, le maître et le gate restaient construits sur le SEED (dicts
+    pré-construits d'app.state) pendant qu'un choix évolutif reconstruisait
+    SEULEMENT ses 3 extracteurs pour le profil du projet — le chat ne
+    connaissait donc jamais le vocabulaire appris. Un seul point de fabrique
+    pour les 5 : impossible d'en oublier un la prochaine fois."""
+
+    master: Agent[GenericDeps, str]
+    gate: Agent[None, RouteDecision]
+    atelier: Agent[GenericDeps, str]
+    relation: Agent[GenericDeps, str]
+    chronicle: Agent[GenericDeps, str]
+
+
+def build_turn_agents(choice: AgentChoice, profile: Profile | None) -> TurnAgents:
+    """Fabrique unique des 5 agents d'un tour pour un choix ÉVOLUTIF (#82) : le
+    ``profile`` est déjà résolu par l'appelant (cf. ``resolve_profile``, appelé
+    UNE SEULE FOIS par requête côté route) — cette fonction ne touche PAS la
+    base elle-même, elle ne fait que construire. Un choix NON évolutif n'a pas
+    besoin de cette fabrique : la route garde ses dicts pré-construits
+    (app.state.*_agents), inchangés."""
+    return TurnAgents(
+        master=build_master_agent(choice, profile=profile),
+        gate=build_gate_agent(choice, profile),
+        atelier=build_atelier_agent(choice, profile),
+        relation=build_relation_agent(choice, profile),
+        chronicle=build_chronicle_agent(choice, profile),
+    )

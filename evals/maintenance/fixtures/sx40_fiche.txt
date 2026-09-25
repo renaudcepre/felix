@@ -1,0 +1,53 @@
+Fiche réglage sertisseuse SX-40 — Version 3
+Mis à jour le 03/02/2026
+Créateur : J. Vasseur
+Valideur : M. Ortiz
+
+Machines concernées : S01, S02, S03, S04, S05, S06, S07, S08, S09, S10, S11, S12
+
+Cette fiche décrit le réglage courant de la sertisseuse SX-40 pour l'atelier
+câblage. Elle couvre les boutons du pupitre, les voyants de signalisation, les
+paramètres à vérifier avant série et les deux modes de fonctionnement.
+
+Page 1 sur 4
+Édité avec DocuFabBoutons
+
+Bouton START (vert, à gauche du pupitre) : lance le cycle de sertissage,
+pédale relâchée.
+Bouton STOP (rouge, au centre) : arrêt immédiat du cycle en cours.
+Bouton RESET (jaune, à droite) : réarme la machine après un arrêt d'urgence.
+Sélecteur de mode (trois positions) : bascule entre AUTO, REGLAGE et MANUEL.
+
+Page 2 sur 4
+Édité avec DocuFabVoyants
+
+Voyant vert : cycle terminé, pièce conforme.
+Voyant orange : pression d'approche hors plage, à vérifier avant relance.
+Voyant rouge : dépassement de la force de sertissage, arrêt automatique.
+
+Paramètres généralement à modifier
+
+Force de sertissage : 8 à 15 kN, valeur usuelle 11 kN.
+Pression d'approche : 2 à 6 bars.
+Contrainte : la pression d'approche doit être au minimum égale à la moitié de
+la force de sertissage exprimée en bars équivalents, sinon le voyant orange
+s'allume en boucle.
+
+Page 3 sur 4
+Édité avec DocuFabMode de travail
+
+Mode AUTO : la machine enchaîne les cycles sur détection de pièce, sans
+intervention opérateur.
+Mode REGLAGE : cycle unique déclenché à la pédale, pour ajuster la course pas
+à pas (voir Unité).
+Mode MANUEL : chaque étape du cycle est déclenchée à la main, réservé à la
+maintenance.
+
+Unité
+
+La course de sertissage se règle par crans : 1 cran = 0,5 mm.
+Ne pas dépasser 20 crans de course de réglage — sinon la mâchoire touche le
+bâti.
+
+Page 4 sur 4
+Édité avec DocuFab

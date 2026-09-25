@@ -1,8 +1,9 @@
 # Felix — task runner
 # Usage: just <recipe>
-# just dev-up   → API (hot reload) + frontend Nuxt en parallèle
-# just api      → API seule
-# just web      → frontend seul
+# just dev-up    → API (hot reload) + frontend Nuxt en parallèle
+# just api       → API seule
+# just web       → frontend seul
+# just web-check → typecheck + lint + build front (fail fast)
 
 chroma_path := "chroma_data"
 archive_dir := "data/archives"
@@ -22,6 +23,15 @@ api:
 # Lance uniquement le frontend Nuxt avec hot reload (port 3007)
 web:
     cd web && pnpm dev
+
+# Vérifie le front : typecheck, lint, build — dans cet ordre, s'arrête au premier échec
+web-check:
+    #!/usr/bin/env bash
+    set -e
+    cd web
+    pnpm typecheck
+    pnpm lint
+    pnpm build
 
 # Lance les tests via protest
 test *args:
@@ -91,3 +101,20 @@ db-archive:
 # View a .jsonl history file
 view-history *args:
     python3 tools/view_history.py {{ args }}
+
+# Ingestion d'un document (Étape 2, fiche technique → graphe) — APPELLE LE LLM
+# (3 passes par bloc). Usage : just ingest-doc chemin/fiche.pdf --profile maintenance
+ingest-doc *args:
+    uv run python tools/ingest_doc.py {{ args }}
+
+# CLI du schéma ÉMERGENT (Étape 7) — profil/proposals/apply/accept-all, DÉTERMINISTE
+# (aucun appel LLM). Usage : just schema proposals --project e2e-emergent
+schema *args:
+    uv run python tools/schema.py {{ args }}
+
+# E2E de la boucle profil ÉMERGENT (Étape 9) — ingestion fiche 1 → détection →
+# accept-all → ingestion fiche 2, mesure la réutilisation des types promus. Scopé
+# à SON projet (e2e-emergent), ne wipe pas les autres histoires. APPELLE LE LLM
+# (2 fiches × ~3 blocs) ; ne pas lancer avec l'API.
+e2e-emergent *args:
+    uv run python evals/maintenance/emergent_e2e.py {{ args }}

@@ -1,6 +1,9 @@
 // Modèle de message du chat « atelier » (porté depuis le proto Claude Design).
 // Reflète la spec produit B : text / tool / choice / cite / alert.
 
+import type { CostSummaryPayload, ModelCostPayload } from './costs'
+import type { TraceSummaryPayload } from './trace'
+
 export interface ChoiceOption {
   k: string
   label: string
@@ -13,19 +16,73 @@ export interface ResolveOption {
   desc: string
 }
 
+// Champ MODIFIÉ (pas ajouté) par update_entity — avant/après (#72). Miroir de
+// felix.core.models.PropChange. La carte l'affiche « champ : avant → après »
+// au lieu de « + ajouté ».
+export interface PropChange {
+  field: string
+  before: string
+  after: string
+}
+
 export type AlertStatus = 'open' | 'resolving' | 'resolved' | 'dismissed'
+
+// Origine de l'incohérence, tranchée par le vérificateur source
+// (felix.core.check.verify_against_source) : 'document' = le document source
+// se contredit vraiment (anomalie métier) ; 'extraction' = le document est
+// cohérent, Felix l'a mal lu (la carte porte alors une correction) ;
+// 'unverifiable' = pas de texte source disponible (fait de chat).
+export type AlertSourceKind = 'document' | 'extraction' | 'unverifiable'
+
+// Mode du bot (Étape 3, plans/maintenance_profile.md) — cf. GET /api/atelier/profiles.
+// welcome/input_placeholder (Étape 8) : vocabulaire UI DU MODE — plus aucun
+// texte scénario codé en dur côté front, cf. felix.atelier.agent.profile_summary.
+export interface AtelierProfile {
+  key: string
+  label: string
+  welcome: string
+  input_placeholder: string
+  // Vrai pour un mode dont le schéma s'apprend au fil des documents (émergent) —
+  // affiche le panneau de propositions (cf. SchemaProposalsPanel).
+  evolving: boolean
+}
+
+// Résumé d'un import de fiche (Étape 3) — miroir d'IngestReport (API), cf.
+// felix.ingest.document.IngestReport.
+export interface IngestReportPayload {
+  document_id: string
+  title: string
+  chunks: number
+  entities_touched: number
+  relations: number
+  alerts: string[]
+  errors: string[]
+  // Coût de l'import ENTIER (#coût) — cf. felix.cost.CostSummary.
+  request_tokens: number
+  response_tokens: number
+  total_tokens: number
+  cost_usd: number | null
+  by_model: ModelCostPayload[]
+  // Trace de l'import ENTIER (#78) — cf. felix.trace.TraceSummary.
+  trace: TraceSummaryPayload
+}
 
 export interface AtelierMsg {
   id: number
   role: 'user' | 'felix'
-  kind?: 'text' | 'tool' | 'choice' | 'cite' | 'alert'
+  kind?: 'text' | 'tool' | 'choice' | 'cite' | 'alert' | 'report'
   body?: string
+  // report (import de fiche)
+  report?: IngestReportPayload
   // tool
   tool?: 'fiche' | 'people'
   title?: string
   subject?: string
   field?: string
   added?: string
+  // champs MODIFIÉS ce tour (#72) — distincts de `added` (qui ne porte plus
+  // que les ajouts) ; absent/vide : rien n'a été modifié, que des ajouts.
+  changes?: PropChange[]
   // cible de la carte pour les actions ✎/🗑 (#61) — absente : pas d'action
   entityId?: string
   relation?: { from_id: string, to_id: string, rel_type: string, verbe_slug?: string | null }
@@ -44,4 +101,17 @@ export interface AtelierMsg {
   status?: AlertStatus
   resolves?: ResolveOption[]
   resolution?: string
+  // Origine tranchée par le vérificateur source (#vérif-source) + correction
+  // énoncée si source_kind === 'extraction' (valeur telle qu'elle apparaît
+  // dans le document, avec sa référence).
+  source_kind?: AlertSourceKind
+  correction?: string
+  // Coût du TOUR qui a produit ce message (#coût) — posé sur le DERNIER message
+  // felix du tour (carte s'il y en a, sinon le texte) ; survit au reload car
+  // persisté dans le payload du message stocké, cf. useAtelier.mapServerMsg.
+  cost?: CostSummaryPayload
+  // Trace du TOUR (#78) — appels d'outil + Cypher exécutée, MÊME convention
+  // que cost (posée sur le dernier message felix du tour, persistée dans le
+  // même payload).
+  trace?: TraceSummaryPayload
 }

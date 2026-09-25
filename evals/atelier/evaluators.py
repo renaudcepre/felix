@@ -610,3 +610,37 @@ def answer_mentions(ctx: EvalContext, facts: str = "", min_score: float = 1.0) -
         answer_ok=score >= min_score,
         answer_missing=", ".join(missing),
     )
+
+
+@dataclass
+class GraphBlobResult:
+    graph_ok: Annotated[bool, Verdict]
+    graph_detail: Annotated[str, Reason] = ""
+
+
+@evaluator
+def graph_blob(ctx: EvalContext, has: str = "", hasnt: str = "") -> GraphBlobResult:
+    """Comme char_props mais sur TOUT le graphe : noms + props de toutes les
+    entités, et types/verbes/props de toutes les relations. Sert aux lois qui
+    admettent PLUSIEURS formes d'enregistrement — ex. règle 4 : un fait
+    divergent peut atterrir en NOUVELLE prop ou en RELATION (un moteur crée
+    `lieu + LOCATED_AT {date}` là où un autre pose `alibi_temoin=...` : les
+    deux sont conformes)."""
+    parts: list[str] = []
+    for e in ctx.output.entities:
+        parts.extend(str(v) for k, v in e.items() if k not in ("id", "project"))
+    for r in ctx.output.relations:
+        parts.append(str(r.get("rel_type", "")))
+        props = r.get("props") or {}
+        parts.extend(str(v) for v in props.values())
+    blob = normalize(" ".join(parts))
+    want = [normalize(s.strip()) for s in has.split(",") if s.strip()]
+    deny = [normalize(s.strip()) for s in hasnt.split(",") if s.strip()]
+    missing = [w for w in want if w not in blob]
+    present = [d for d in deny if d in blob]
+    detail = ""
+    if missing:
+        detail += f"attendu absent du graphe : {', '.join(missing)}. "
+    if present:
+        detail += f"interdit présent : {', '.join(present)}."
+    return GraphBlobResult(graph_ok=not missing and not present, graph_detail=detail.strip())

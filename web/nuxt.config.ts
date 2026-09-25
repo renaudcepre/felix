@@ -29,7 +29,9 @@ export default defineNuxtConfig({
   app: {
     head: {
       htmlAttrs: { lang: 'fr' },
-      title: 'Felix — Screenplay Assistant',
+      // Titre neutre : Felix n'est plus spécifique au scénario (chaque page
+      // pose ensuite son propre titre via useHead — cf. chat.vue, entities/*).
+      title: 'Felix',
     },
   },
 
