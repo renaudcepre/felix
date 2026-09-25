@@ -26,6 +26,13 @@
 
 **Pointeurs** : noyau `src/felix/core/` (graph.py `entity_timeline` + tie-break `find_node`, check.py `consistency_check` concatène la timeline + `CHECK_PROMPT` temporel, agent.py `CHRONICLE_SYSTEM_PROMPT` « mort = événement », profile.py `consistency_rules` rule 1 + `manages_events`, tools.py `add_event`/`find_non_event`, deps.py `event_seq_lock`) ; route **3 passes** `src/felix/api/routes/atelier.py` ; evals `evals/atelier/` (cas `check_death_then_act`/`check_act_then_death` A/B + `event_chrono` + `roue_de_sang`). Harness checker isolé `/tmp/check_temporal.py` (juge sur graphe fixe, 1 appel/cas — robuste aux transients) et `/tmp/compare_checker.py` (6 scénarios, non-régression faux positifs). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## 2026-09-25 — chore(tooling): hook Claude Code format+lint par fichier édité
+
+- **Constat** : l'outillage était déclaré (`ruff`, `mypy --strict`, `eslint`) mais rien ne le faisait tourner. État mesuré : 79/100 fichiers non formatés, 31 erreurs `ruff check`, 94 erreurs mypy dans 20 fichiers, 1 warning eslint.
+- **Ordre choisi** : d'abord un commit de format pur (`7453bf4`, `ruff format` sur 92 fichiers, 418/418 tests verts), ensuite le hook. Dans l'ordre inverse, chaque edit aurait reformaté le fichier entier et noyé les vrais diffs. Le commit de format est listé dans `.git-blame-ignore-revs`.
+- **Hook** : `.claude/settings.json` → `PostToolUse` `Edit|Write|MultiEdit` → `.claude/hooks/lint-edited.sh`. `.py` : `ruff format` + `ruff check --fix` ; `web/**/*.vue|ts` : `eslint --fix`. S'il reste des erreurs, exit 2 et Claude les reçoit (d'après la doc, un PostToolUse ne peut pas annuler l'edit). Testé sur de faux payloads : fichier propre, F821, `.vue`, fichier hors projet, `.md`.
+- **Pas de hook `Stop` mypy pour l'instant** : avec 94 erreurs existantes, il bloquerait chaque tour. À ajouter une fois la dette purgée.
+
 ## 2026-09-24 — chore: qualification de la branche maintenance/émergent + PR (#85)
 
 **Contexte** : la route chat avait été refactorée (pipeline d'extraction partagé chat+ingestion, gate/maître par profil, garde anti-paraphrase sur `add_relation`, coût/trace, `RecordingDriver`) sans rejouer les e2e. Qualification avant ouverture de la PR vers `main` (85 fichiers, +10891/-518 sur 21 commits depuis `f99a936`).
