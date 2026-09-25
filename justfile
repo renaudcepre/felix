@@ -107,6 +107,12 @@ view-history *args:
 ingest-doc *args:
     uv run python tools/ingest_doc.py {{ args }}
 
+# Parc industriel SYNTHÉTIQUE (oracle d'ingestion) — DÉTERMINISTE, aucun appel LLM
+# ni Neo4j. Écrit data/parc/<nom>/ground_truth.json + fiches/*.txt.
+# Usage : just gen-parc --name demo --seed 7 --machines 20
+gen-parc *args:
+    uv run python tools/gen_parc.py {{ args }}
+
 # CLI du schéma ÉMERGENT (Étape 7) — profil/proposals/apply/accept-all, DÉTERMINISTE
 # (aucun appel LLM). Usage : just schema proposals --project e2e-emergent
 schema *args:
