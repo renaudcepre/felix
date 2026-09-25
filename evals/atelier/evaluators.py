@@ -4,6 +4,7 @@ ctx.output est un AtelierRunResult (answer + characters + cards).
 Matching d'IDs volontairement souple (substring sur id/nom normalisés) —
 leçon des evals pipeline : le match exact de sets génère des faux négatifs.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -124,7 +125,9 @@ class EntitiesResult:
 
 
 @evaluator
-def graph_has_entities(ctx: EvalContext, ids: str = "", min_recall: float = 1.0) -> EntitiesResult:
+def graph_has_entities(
+    ctx: EvalContext, ids: str = "", min_recall: float = 1.0
+) -> EntitiesResult:
     """Recall sur TOUTES les entités (tous types) — pour les cas scénario multi-beats."""
     expected = [normalize(e.strip()) for e in ids.split(",") if e.strip()]
     keys = _entity_keys(ctx)
@@ -155,8 +158,10 @@ def entity_unique(ctx: EvalContext, names: str = "") -> UniqueResult:
         # « Supérieur de Silas » compterait comme un 2e « Silas ». Donner le nom
         # canonique tel que l'agent le nomme (« Baron Arkham », pas « Arkham »).
         n = sum(
-            1 for e in ctx.output.entities
-            if normalize(str(e.get("name", ""))) == t or normalize(str(e.get("id", ""))) == t
+            1
+            for e in ctx.output.entities
+            if normalize(str(e.get("name", ""))) == t
+            or normalize(str(e.get("id", ""))) == t
         )
         if n != 1:
             problems.append(f"{t}x{n}")
@@ -171,7 +176,9 @@ class RelResult:
 
 
 @evaluator
-def relations_present(ctx: EvalContext, pairs: str = "", min_recall: float = 1.0) -> RelResult:
+def relations_present(
+    ctx: EvalContext, pairs: str = "", min_recall: float = 1.0
+) -> RelResult:
     """Chaque paire 'from->to' (ids souples, sens ignoré) doit avoir une relation."""
     want = []
     for p in pairs.split(","):
@@ -187,13 +194,16 @@ def relations_present(ctx: EvalContext, pairs: str = "", min_recall: float = 1.0
         pairwise = [(a, b), (b, a)]
         return any(
             (x in f or f in x) and (y in t or t in y)
-            for f, t in rels for x, y in pairwise
+            for f, t in rels
+            for x, y in pairwise
         )
 
     matched = [(a, b) for a, b in want if hit(a, b)]
     score = len(matched) / len(want) if want else 1.0
     missing = [f"{a}->{b}" for a, b in want if (a, b) not in matched]
-    return RelResult(rel_recall=score, rel_ok=score >= min_recall, missing_rels=", ".join(missing))
+    return RelResult(
+        rel_recall=score, rel_ok=score >= min_recall, missing_rels=", ".join(missing)
+    )
 
 
 # Formes normalisées (minuscules) du noyau STRUCTUREL (#68 : le narratif passe
@@ -202,9 +212,12 @@ def relations_present(ctx: EvalContext, pairs: str = "", min_recall: float = 1.0
 # nommage du LLM, donc ne doivent pas polluer rel_vocab_coverage. Un ancien type
 # narratif (loves, fights…) compte désormais comme dérive.
 CANONICAL_RELS = {
-    "located_at", "member_of", "part_of",
+    "located_at",
+    "member_of",
+    "part_of",
     "lie_a",
-    "involves", "next",
+    "involves",
+    "next",
 }
 
 
@@ -221,7 +234,9 @@ def rel_vocab_coverage(ctx: EvalContext, min_coverage: float = 0.0) -> RelVocabR
     """Part des rel_type DISTINCTS qui sont canoniques (mesure la dérive de nommage).
     Métrique-only au départ (min_coverage=0.0) ; on montera le seuil une fois la
     convergence constatée, car relations_present ignore rel_type."""
-    distinct = sorted({normalize(str(r.get("rel_type", ""))) for r in ctx.output.relations} - {""})
+    distinct = sorted(
+        {normalize(str(r.get("rel_type", ""))) for r in ctx.output.relations} - {""}
+    )
     in_vocab = [t for t in distinct if t in CANONICAL_RELS]
     coverage = len(in_vocab) / len(distinct) if distinct else 1.0
     off = [t for t in distinct if t not in CANONICAL_RELS]
@@ -236,7 +251,8 @@ def rel_vocab_coverage(ctx: EvalContext, min_coverage: float = 0.0) -> RelVocabR
 def _events(ctx: EvalContext) -> list[dict]:
     """Nodes :GenEntity de type 'evenement' (la chronologie du récit)."""
     return [
-        e for e in ctx.output.entities
+        e
+        for e in ctx.output.entities
         if "evenement" in normalize(str(e.get("entity_type", "")))
     ]
 
@@ -250,7 +266,9 @@ class EventsPresentResult:
 
 
 @evaluator
-def graph_has_events(ctx: EvalContext, resumes: str = "", min_recall: float = 1.0) -> EventsPresentResult:
+def graph_has_events(
+    ctx: EvalContext, resumes: str = "", min_recall: float = 1.0
+) -> EventsPresentResult:
     """Recall des actions attendues (CSV de sous-chaînes) parmi les nodes evenement.
     Un beat d'action doit produire un node evenement dont le `resume` contient
     l'action — pas un écrasement de prop sur le personnage (la perte de chrono)."""
@@ -289,7 +307,8 @@ def events_ordered(ctx: EvalContext, min_count: int = 2) -> EventsOrderedResult:
     count = len(chain)
     ordres = [e["ordre"] for e in chain]
     next_rels = [
-        r for r in ctx.output.relations
+        r
+        for r in ctx.output.relations
         if normalize(str(r.get("rel_type", ""))) == "next"
     ]
     stray = len(events) - count
@@ -302,7 +321,9 @@ def events_ordered(ctx: EvalContext, min_count: int = 2) -> EventsOrderedResult:
         problems.append(f"chaîne NEXT incomplète ({len(next_rels)} pour {count})")
     detail = "; ".join(problems)
     if stray:
-        detail += ("; " if detail else "") + f"{stray} stray(s) sans ordre (non-bloquant)"
+        detail += (
+            "; " if detail else ""
+        ) + f"{stray} stray(s) sans ordre (non-bloquant)"
     return EventsOrderedResult(
         chain_len=float(count),
         stray_events=float(stray),
@@ -319,7 +340,9 @@ class EventsInvolveResult:
 
 
 @evaluator
-def events_involve(ctx: EvalContext, who: str = "", min_recall: float = 1.0) -> EventsInvolveResult:
+def events_involve(
+    ctx: EvalContext, who: str = "", min_recall: float = 1.0
+) -> EventsInvolveResult:
     """Fraction des events qui pointent vers `who` via une relation INVOLVES."""
     events = _events(ctx)
     event_ids = {normalize(str(e.get("id", ""))) for e in events}
@@ -328,15 +351,19 @@ def events_involve(ctx: EvalContext, who: str = "", min_recall: float = 1.0) -> 
         normalize(str(r.get("from", "")))
         for r in ctx.output.relations
         if normalize(str(r.get("rel_type", ""))) == "involves"
-        and (target in normalize(str(r.get("to", "")))
-             or normalize(str(r.get("to", ""))) in target)
+        and (
+            target in normalize(str(r.get("to", "")))
+            or normalize(str(r.get("to", ""))) in target
+        )
     }
     hit = involving & event_ids
     recall = len(hit) / len(events) if events else 0.0
     return EventsInvolveResult(
         involve_recall=recall,
         involve_ok=recall >= min_recall and bool(events),
-        involve_detail=f"{len(hit)}/{len(events)} events relient {who}" if events else "aucun event",
+        involve_detail=f"{len(hit)}/{len(events)} events relient {who}"
+        if events
+        else "aucun event",
     )
 
 
@@ -369,10 +396,20 @@ def involves_only_entities(ctx: EvalContext) -> InvolvesTargetResult:
 # lie_a + member_of/part_of (#68) ; les anciens types narratifs restent listés —
 # zéro coût, et un repli du modèle vers eux serait aussi une arête sale.
 ENTITY_ONLY_RELS = {
-    "lie_a", "member_of", "part_of",
-    "fights", "knows", "owns", "creates", "kills",
-    "allied_with", "targets", "witnesses",
-    "commands", "transports", "loves",
+    "lie_a",
+    "member_of",
+    "part_of",
+    "fights",
+    "knows",
+    "owns",
+    "creates",
+    "kills",
+    "allied_with",
+    "targets",
+    "witnesses",
+    "commands",
+    "transports",
+    "loves",
 }
 
 
@@ -392,8 +429,10 @@ def relations_skip_events(ctx: EvalContext) -> RelEventResult:
         f"{r.get('from')}-[{r.get('rel_type')}]->{r.get('to')}"
         for r in ctx.output.relations
         if normalize(str(r.get("rel_type", ""))) in ENTITY_ONLY_RELS
-        and (normalize(str(r.get("from", ""))) in event_ids
-             or normalize(str(r.get("to", ""))) in event_ids)
+        and (
+            normalize(str(r.get("from", ""))) in event_ids
+            or normalize(str(r.get("to", ""))) in event_ids
+        )
     ]
     return RelEventResult(rels_clean_ok=not bad, rels_clean_detail="; ".join(bad[:5]))
 
@@ -417,7 +456,9 @@ def events_distinct(ctx: EvalContext) -> EventsDistinctResult:
     return EventsDistinctResult(
         distinct_ratio=ratio,
         distinct_ok=not dups,
-        distinct_detail=f"{len(resumes) - len(uniq)} doublon(s) : {'; '.join(dups)}" if dups else "",
+        distinct_detail=f"{len(resumes) - len(uniq)} doublon(s) : {'; '.join(dups)}"
+        if dups
+        else "",
     )
 
 
@@ -428,7 +469,9 @@ class PropResult:
 
 
 @evaluator
-def char_props(ctx: EvalContext, name: str = "", has: str = "", hasnt: str = "") -> PropResult:
+def char_props(
+    ctx: EvalContext, name: str = "", has: str = "", hasnt: str = ""
+) -> PropResult:
     """Contenu des propriétés d'un personnage : toutes les sous-chaînes `has` (CSV)
     présentes, toutes les `hasnt` (CSV) absentes — sur la concaténation normalisée
     de ses valeurs de props. Teste overwrite vs add : une valeur divergente s'AJOUTE
@@ -436,10 +479,17 @@ def char_props(ctx: EvalContext, name: str = "", has: str = "", hasnt: str = "")
     target = normalize(name)
     blob = ""
     for c in ctx.output.characters:
-        if target and (target in normalize(str(c.get("name", ""))) or target in normalize(str(c.get("id", "")))):
-            blob = normalize(" ".join(
-                str(v) for k, v in c.items() if k not in ("id", "name", "entity_type")
-            ))
+        if target and (
+            target in normalize(str(c.get("name", "")))
+            or target in normalize(str(c.get("id", "")))
+        ):
+            blob = normalize(
+                " ".join(
+                    str(v)
+                    for k, v in c.items()
+                    if k not in ("id", "name", "entity_type")
+                )
+            )
             break
     want = [normalize(s.strip()) for s in has.split(",") if s.strip()]
     deny = [normalize(s.strip()) for s in hasnt.split(",") if s.strip()]
@@ -460,7 +510,9 @@ class RelTypedResult:
 
 
 @evaluator
-def relation_typed(ctx: EvalContext, a: str = "", b: str = "", rel_type: str = "") -> RelTypedResult:
+def relation_typed(
+    ctx: EvalContext, a: str = "", b: str = "", rel_type: str = ""
+) -> RelTypedResult:
     """Une relation du TYPE attendu doit lier a et b (ids souples, sens ignoré —
     la direction est un chantier à part). Contrairement à relations_present, le
     rel_type compte. Depuis #68 ne sert qu'aux types STRUCTURELS (LOCATED_AT,
@@ -476,17 +528,24 @@ def relation_typed(ctx: EvalContext, a: str = "", b: str = "", rel_type: str = "
         for r in ctx.output.relations
         if normalize(str(r.get("rel_type", ""))) == tt
     ]
-    ok = any((touch(ta, f) and touch(tb, t)) or (touch(tb, f) and touch(ta, t)) for f, t in hits)
+    ok = any(
+        (touch(ta, f) and touch(tb, t)) or (touch(tb, f) and touch(ta, t))
+        for f, t in hits
+    )
     # En échec, lister ce qui touche `a` aide à voir le type de repli choisi.
-    others = sorted({
-        str(r.get("rel_type", ""))
-        for r in ctx.output.relations
-        if touch(ta, normalize(str(r.get("from", "")))) or touch(ta, normalize(str(r.get("to", ""))))
-    })
+    others = sorted(
+        {
+            str(r.get("rel_type", ""))
+            for r in ctx.output.relations
+            if touch(ta, normalize(str(r.get("from", ""))))
+            or touch(ta, normalize(str(r.get("to", ""))))
+        }
+    )
     return RelTypedResult(
         rel_typed_ok=ok,
-        rel_typed_detail="" if ok else
-        f"pas de {rel_type} entre {a} et {b} (relations touchant {a} : {', '.join(others) or '—'})",
+        rel_typed_detail=""
+        if ok
+        else f"pas de {rel_type} entre {a} et {b} (relations touchant {a} : {', '.join(others) or '—'})",
     )
 
 
@@ -497,7 +556,9 @@ class RelVerbeResult:
 
 
 @evaluator
-def relation_verbe(ctx: EvalContext, a: str = "", b: str = "", verbe_has: str = "") -> RelVerbeResult:
+def relation_verbe(
+    ctx: EvalContext, a: str = "", b: str = "", verbe_has: str = ""
+) -> RelVerbeResult:
     """Une arête NARRATIVE (LIE_A) doit lier a et b (ids souples, sens ignoré)
     avec un verbe VERBATIM non vide ; si `verbe_has` (CSV) est donné, le verbe
     doit contenir l'UNE de ces sous-chaînes. Successeur de relation_typed pour
@@ -514,23 +575,39 @@ def relation_verbe(ctx: EvalContext, a: str = "", b: str = "", verbe_has: str = 
         str((r.get("props") or {}).get("verbe", ""))
         for r in ctx.output.relations
         if normalize(str(r.get("rel_type", ""))) == "lie_a"
-        and ((touch(ta, normalize(str(r.get("from", "")))) and touch(tb, normalize(str(r.get("to", "")))))
-             or (touch(tb, normalize(str(r.get("from", "")))) and touch(ta, normalize(str(r.get("to", ""))))))
+        and (
+            (
+                touch(ta, normalize(str(r.get("from", ""))))
+                and touch(tb, normalize(str(r.get("to", ""))))
+            )
+            or (
+                touch(tb, normalize(str(r.get("from", ""))))
+                and touch(ta, normalize(str(r.get("to", ""))))
+            )
+        )
     ]
     ok = any(
         v.strip() and (not terms or any(x in normalize(v) for x in terms))
         for v in linking
     )
     # En échec, montrer les verbes posés (ou les relations de repli touchant `a`).
-    others = sorted({
-        str(r.get("rel_type", ""))
-        for r in ctx.output.relations
-        if touch(ta, normalize(str(r.get("from", "")))) or touch(ta, normalize(str(r.get("to", ""))))
-    })
-    detail = "" if ok else (
-        f"verbes LIE_A entre {a} et {b} : {', '.join(repr(v) for v in linking)} "
-        f"(attendu : {verbe_has or 'non vide'})" if linking else
-        f"pas de LIE_A entre {a} et {b} (relations touchant {a} : {', '.join(others) or '—'})"
+    others = sorted(
+        {
+            str(r.get("rel_type", ""))
+            for r in ctx.output.relations
+            if touch(ta, normalize(str(r.get("from", ""))))
+            or touch(ta, normalize(str(r.get("to", ""))))
+        }
+    )
+    detail = (
+        ""
+        if ok
+        else (
+            f"verbes LIE_A entre {a} et {b} : {', '.join(repr(v) for v in linking)} "
+            f"(attendu : {verbe_has or 'non vide'})"
+            if linking
+            else f"pas de LIE_A entre {a} et {b} (relations touchant {a} : {', '.join(others) or '—'})"
+        )
     )
     return RelVerbeResult(rel_verbe_ok=ok, rel_verbe_detail=detail)
 
@@ -552,7 +629,8 @@ def no_entity_matching(ctx: EvalContext, names: str = "") -> NoEntityResult:
         f"{e.get('name')} [{e.get('entity_type')}]"
         for e in ctx.output.entities
         if any(
-            t in normalize(str(e.get("name", ""))) or t in normalize(str(e.get("id", "")))
+            t in normalize(str(e.get("name", "")))
+            or t in normalize(str(e.get("id", "")))
             for t in terms
         )
     ]
@@ -598,7 +676,9 @@ class AnswerResult:
 
 
 @evaluator
-def answer_mentions(ctx: EvalContext, facts: str = "", min_score: float = 1.0) -> AnswerResult:
+def answer_mentions(
+    ctx: EvalContext, facts: str = "", min_score: float = 1.0
+) -> AnswerResult:
     """La réponse texte doit mentionner chaque fait attendu (CSV)."""
     expected = [normalize(f.strip()) for f in facts.split(",") if f.strip()]
     answer = normalize(ctx.output.answer)
@@ -643,4 +723,6 @@ def graph_blob(ctx: EvalContext, has: str = "", hasnt: str = "") -> GraphBlobRes
         detail += f"attendu absent du graphe : {', '.join(missing)}. "
     if present:
         detail += f"interdit présent : {', '.join(present)}."
-    return GraphBlobResult(graph_ok=not missing and not present, graph_detail=detail.strip())
+    return GraphBlobResult(
+        graph_ok=not missing and not present, graph_detail=detail.strip()
+    )

@@ -26,6 +26,23 @@
 
 **Pointeurs** : noyau `src/felix/core/` (graph.py `entity_timeline` + tie-break `find_node`, check.py `consistency_check` concatène la timeline + `CHECK_PROMPT` temporel, agent.py `CHRONICLE_SYSTEM_PROMPT` « mort = événement », profile.py `consistency_rules` rule 1 + `manages_events`, tools.py `add_event`/`find_non_event`, deps.py `event_seq_lock`) ; route **3 passes** `src/felix/api/routes/atelier.py` ; evals `evals/atelier/` (cas `check_death_then_act`/`check_act_then_death` A/B + `event_chrono` + `roue_de_sang`). Harness checker isolé `/tmp/check_temporal.py` (juge sur graphe fixe, 1 appel/cas — robuste aux transients) et `/tmp/compare_checker.py` (6 scénarios, non-régression faux positifs). Modèle `mistral-small-2506`. Tiering Large/Small parké ([[project_model_tiering]]).
 
+## 2026-09-25 — chore(types): mypy --strict à zéro sur src/ + hook Stop
+
+- **72 erreurs → 0** (94 à la première mesure : la branche avait bougé entre-temps). 54 `[type-arg]` (`dict` nus, etc.) délégués à un Sonnet : vérifiés au compteur mypy et au diff, pas sur son rapport. Accroc : l'agent a supprimé le bloc `[tool.pyright]` que j'ajoutais au même moment, en le prenant pour une config parasite ; remis.
+- **Les 18 restantes à la main** : `app.state` renvoie `Any` → local typé dans les 7 getters de `api/deps.py` ; `chromadb.ClientAPI` introuvable pour mypy → `from chromadb.api import ClientAPI` ; `SCENES` typé via un `TypedDict`.
+- **Deux `type: ignore` commentés, et c'est assumé** : `AsyncSession.__aexit__` n'est pas annoté côté neo4j ; chromadb 1.5 type sa propre `SentenceTransformerEmbeddingFunction` plus étroitement que le paramètre auquel elle est destinée. Ce bug chromadb était invisible tant que `ClientAPI` valait `Any`.
+- **Hook `Stop`** (`.claude/hooks/typecheck-on-stop.sh`) : mypy sur `src/` si un `.py` de `src/` est modifié ou non suivi, exit 2 sinon ; `stop_hook_active` → une seule relance. Testé : types propres (0), erreur (2), garde anti-boucle (0).
+- **ty essayé** (Astral, bêta) : 0,9 s contre 5,9 s pour mypy, mais sur 19 diagnostics, 8 faux positifs : il ne sait pas déduire `Agent[..., T]` du paramètre `output_type=` de pydantic-ai. Il trouve quand même des choses que mypy rate : `session.run(str)` alors que neo4j veut un `LiteralString`, `OpenAIModel` déprécié. On reste sur mypy, ty à revoir quand il sortira de bêta.
+- **Pyright** : `[tool.pyright] venvPath/venv` dans le pyproject, fin du bruit « import could not be resolved ».
+- **Constats laissés hors périmètre** : Chroma est à moitié mort (collection créée dans `main.py`, aucune route n'injecte `Collection`) ; `ruff format` a réécrit `except (A, B):` en `except A, B:` (PEP 758, valide car `requires-python >= 3.14`, mais ça ressemble à du Python 2) ; il reste 31 erreurs `ruff check`, que le hook fera remonter fichier par fichier.
+
+## 2026-09-25 — chore(tooling): hook Claude Code format+lint par fichier édité
+
+- **Constat** : l'outillage était déclaré (`ruff`, `mypy --strict`, `eslint`) mais rien ne le faisait tourner. État mesuré : 79/100 fichiers non formatés, 31 erreurs `ruff check`, 94 erreurs mypy dans 20 fichiers, 1 warning eslint.
+- **Ordre choisi** : d'abord un commit de format pur (`7453bf4`, `ruff format` sur 92 fichiers, 418/418 tests verts), ensuite le hook. Dans l'ordre inverse, chaque edit aurait reformaté le fichier entier et noyé les vrais diffs. Le commit de format est listé dans `.git-blame-ignore-revs`.
+- **Hook** : `.claude/settings.json` → `PostToolUse` `Edit|Write|MultiEdit` → `.claude/hooks/lint-edited.sh`. `.py` : `ruff format` + `ruff check --fix` ; `web/**/*.vue|ts` : `eslint --fix`. S'il reste des erreurs, exit 2 et Claude les reçoit (d'après la doc, un PostToolUse ne peut pas annuler l'edit). Testé sur de faux payloads : fichier propre, F821, `.vue`, fichier hors projet, `.md`.
+- **Pas de hook `Stop` mypy pour l'instant** : avec 94 erreurs existantes, il bloquerait chaque tour. À ajouter une fois la dette purgée.
+
 ## 2026-09-24 — chore: qualification de la branche maintenance/émergent + PR (#85)
 
 **Contexte** : la route chat avait été refactorée (pipeline d'extraction partagé chat+ingestion, gate/maître par profil, garde anti-paraphrase sur `add_relation`, coût/trace, `RecordingDriver`) sans rejouer les e2e. Qualification avant ouverture de la PR vers `main` (85 fichiers, +10891/-518 sur 21 commits depuis `f99a936`).

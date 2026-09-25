@@ -11,6 +11,7 @@ persisté en conversation comme un tour de chat (message utilisateur « Import :
 <fichier> », cartes tool/alert, carte report finale) : même convention que
 `felix.api.routes.atelier`, pour que l'import reste visible après reload.
 """
+
 from __future__ import annotations
 
 import logging
@@ -99,12 +100,19 @@ async def post_ingest_document(  # noqa: PLR0913 — 3 deps d'agents + driver + 
             # demande, indépendant de la réussite de ce qui suit). Son id sert
             # plus bas à poser la provenance (#83).
             user_msg_id = await record_message(
-                driver, "user", "text", f"Import : {safe_name}", project=project,
+                driver,
+                "user",
+                "text",
+                f"Import : {safe_name}",
+                project=project,
             )
             async for ev in stream_ingest_document(
-                driver, tmp_path,
-                profile=resolved_profile, agent=agent,
-                relation_agent=relation_agent, chronicle_agent=chronicle_agent,
+                driver,
+                tmp_path,
+                profile=resolved_profile,
+                agent=agent,
+                relation_agent=relation_agent,
+                chronicle_agent=chronicle_agent,
                 project=project,
             ):
                 yield ev
@@ -116,11 +124,21 @@ async def post_ingest_document(  # noqa: PLR0913 — 3 deps d'agents + driver + 
             # --- Persistance du tour en graphe, visible après reload ---
             for kind, data in turn_cards:
                 await record_message(
-                    driver, "felix", kind, "", payload=data, project=project,
+                    driver,
+                    "felix",
+                    kind,
+                    "",
+                    payload=data,
+                    project=project,
                 )
             if report_json is not None:
                 await record_message(
-                    driver, "felix", "report", "", payload=report_json, project=project,
+                    driver,
+                    "felix",
+                    "report",
+                    "",
+                    payload=report_json,
+                    project=project,
                 )
                 # Provenance (#83) : MÊME helper que le chat
                 # (felix.atelier.routes.atelier → link_produced sur deps.touched_ids) —

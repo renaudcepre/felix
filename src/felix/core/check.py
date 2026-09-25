@@ -4,6 +4,7 @@ Le judge reçoit le sous-graphe 1-hop de l'entité touchée + le journal des
 écritures du tour, et cherche une contradiction. Le profil de domaine, s'il est
 fourni, ajoute ses règles de cohérence au prompt (sans les coder en dur).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

@@ -10,6 +10,7 @@ Univers de TEST : presse à balles BX-9 (vérin, trappe, levier, pression
 hydraulique) — frais, absent de tous les prompts (anti-leakage, cf.
 [[feedback_prompt_test_leakage]]).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -35,7 +36,8 @@ async def _wipe(driver: AsyncDriver) -> None:
     async with driver.session() as session:
         await session.run(
             "MATCH (n:GenEntity) WHERE n.project IN [$p, $p2] DETACH DELETE n",
-            p=PROJ, p2=PROJ_B,
+            p=PROJ,
+            p2=PROJ_B,
         )
 
 
@@ -57,32 +59,54 @@ async def _seed_entity(
         await session.run(
             "MERGE (e:GenEntity {id: $id, project: $project})"
             " SET e.name = $name, e.entity_type = $type",
-            id=entity_id, name=name, type=etype, project=proj,
+            id=entity_id,
+            name=name,
+            type=etype,
+            project=proj,
         )
 
 
 async def _seed_narrative(
-    driver: AsyncDriver, from_id: str, to_id: str, verbe: str, *,
-    proj: str = PROJ, props: dict | None = None,
+    driver: AsyncDriver,
+    from_id: str,
+    to_id: str,
+    verbe: str,
+    *,
+    proj: str = PROJ,
+    props: dict | None = None,
 ) -> None:
     async with driver.session() as session:
         await session.run(
             "MATCH (a:GenEntity {id: $a, project: $p}), (b:GenEntity {id: $b, project: $p})"
             " MERGE (a)-[r:REL {rel_type: 'LIE_A', verbe_slug: $vs}]->(b)"
             " SET r.verbe = $verbe, r += $props",
-            a=from_id, b=to_id, p=proj, vs=slugify(verbe), verbe=verbe, props=props or {},
+            a=from_id,
+            b=to_id,
+            p=proj,
+            vs=slugify(verbe),
+            verbe=verbe,
+            props=props or {},
         )
 
 
 async def _seed_typed(
-    driver: AsyncDriver, from_id: str, to_id: str, rel_type: str, *,
-    proj: str = PROJ, props: dict | None = None,
+    driver: AsyncDriver,
+    from_id: str,
+    to_id: str,
+    rel_type: str,
+    *,
+    proj: str = PROJ,
+    props: dict | None = None,
 ) -> None:
     async with driver.session() as session:
         await session.run(
             "MATCH (a:GenEntity {id: $a, project: $p}), (b:GenEntity {id: $b, project: $p})"
             " MERGE (a)-[r:REL {rel_type: $t}]->(b) SET r += $props",
-            a=from_id, b=to_id, p=proj, t=rel_type, props=props or {},
+            a=from_id,
+            b=to_id,
+            p=proj,
+            t=rel_type,
+            props=props or {},
         )
 
 
@@ -93,7 +117,10 @@ async def _typed_edge(
         result = await session.run(
             "MATCH (a:GenEntity {id: $a, project: $p})-[r:REL {rel_type: $t}]->"
             "(b:GenEntity {id: $b, project: $p}) RETURN properties(r) AS props",
-            a=from_id, b=to_id, p=proj, t=rel_type,
+            a=from_id,
+            b=to_id,
+            p=proj,
+            t=rel_type,
         )
         record = await result.single()
         return dict(record["props"]) if record else None
@@ -110,11 +137,14 @@ async def _narrative_count(driver: AsyncDriver, *, proj: str = PROJ) -> int:
         return record["n"] if record else 0
 
 
-async def _entity_type(driver: AsyncDriver, entity_id: str, *, proj: str = PROJ) -> str | None:
+async def _entity_type(
+    driver: AsyncDriver, entity_id: str, *, proj: str = PROJ
+) -> str | None:
     async with driver.session() as session:
         result = await session.run(
             "MATCH (e:GenEntity {id: $id, project: $p}) RETURN e.entity_type AS t",
-            id=entity_id, p=proj,
+            id=entity_id,
+            p=proj,
         )
         record = await result.single()
         return record["t"] if record else None
@@ -125,10 +155,13 @@ async def _seed_bx9(driver: AsyncDriver, *, proj: str = PROJ) -> None:
     await _seed_entity(driver, "verin", "Vérin", "organe", proj=proj)
     await _seed_entity(driver, "trappe", "Trappe", "organe", proj=proj)
     await _seed_entity(driver, "levier", "Levier", "commande", proj=proj)
-    await _seed_entity(driver, "pression", "Pression hydraulique", "parametre", proj=proj)
+    await _seed_entity(
+        driver, "pression", "Pression hydraulique", "parametre", proj=proj
+    )
 
 
 # ──────────────────── PromoteVerbs : cas nominaux ────────────────────
+
 
 @schema_changes_suite.test()
 async def test_promote_deux_paraphrases_paires_differentes(
@@ -155,7 +188,10 @@ async def test_promote_deux_paraphrases_paires_differentes(
     assert props2 is not None and props2["verbe_origine"] == ["pilote"]
     assert "verbe" not in props1 and "verbe_slug" not in props1
 
-    assert sorted(report.observed_pairs) == [("commande", "parametre"), ("organe", "organe")]
+    assert sorted(report.observed_pairs) == [
+        ("commande", "parametre"),
+        ("organe", "organe"),
+    ]
     assert report.samples and len(report.samples) <= 5
     assert "règle" in report.samples[0] or "pilote" in report.samples[0]
 
@@ -194,7 +230,11 @@ async def test_promote_collapse_dans_arete_preexistante(
     await _seed_bx9(driver)
     await _seed_typed(driver, "verin", "trappe", "CONTROLS", props={"note": "visuel"})
     await _seed_narrative(
-        driver, "verin", "trappe", "règle", props={"note": "ancien", "fiabilite": "haute"}
+        driver,
+        "verin",
+        "trappe",
+        "règle",
+        props={"note": "ancien", "fiabilite": "haute"},
     )
 
     change = PromoteVerbs(verbe_slugs=[slugify("règle")], rel_type="CONTROLS")
@@ -265,10 +305,14 @@ async def test_preview_ecrit_rien_meme_compte(
     change = PromoteVerbs(
         verbe_slugs=[slugify("règle"), slugify("pilote")], rel_type="CONTROLS"
     )
-    preview_report = await apply_schema_change(driver, change, project=PROJ, preview=True)
+    preview_report = await apply_schema_change(
+        driver, change, project=PROJ, preview=True
+    )
 
     assert await _narrative_count(driver) == 2, "preview : rien de supprimé"
-    assert await _typed_edge(driver, "verin", "trappe", "CONTROLS") is None, "preview : rien écrit"
+    assert await _typed_edge(driver, "verin", "trappe", "CONTROLS") is None, (
+        "preview : rien écrit"
+    )
 
     real_report = await apply_schema_change(driver, change, project=PROJ, preview=False)
 
@@ -364,6 +408,7 @@ async def test_merge_types_report_has_no_verbes(
 
 # ──────────────────── MergeTypes ────────────────────
 
+
 @schema_changes_suite.test()
 async def test_merge_types_nominal(
     driver: Annotated[AsyncDriver, Use(_schema_driver)],
@@ -430,7 +475,9 @@ async def test_merge_types_etancheite_projet(
     await apply_schema_change(driver, change, project=PROJ)
 
     assert await _entity_type(driver, "piston1") == "organe"
-    assert await _entity_type(driver, "piston1", proj=PROJ_B) == "piston", "projet B intact"
+    assert await _entity_type(driver, "piston1", proj=PROJ_B) == "piston", (
+        "projet B intact"
+    )
 
 
 @schema_changes_suite.test()
@@ -448,6 +495,7 @@ async def test_merge_types_machinerie_sources_deja_cible_autorise(
 
 
 # ──────────────────── Refus ────────────────────
+
 
 @schema_changes_suite.test()
 async def test_refus_promote_vers_lie_a(

@@ -7,6 +7,7 @@ generator, max_concurrency=1).
 Noms univers isolé : Korvax, Weldra, Thyren — inédits (anti-leakage vérifié dans
 test_no_test_names_in_prompts ci-dessous).
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -35,6 +36,7 @@ _TEST_NAMES = ("Korvax", "Weldra", "Thyren")
 
 # ─────────────────────── Fixture driver réel ───────────────────────────────────
 
+
 @fixture(max_concurrency=1)
 async def _alert_driver() -> AsyncGenerator[AsyncDriver]:
     """Ouvre un driver Neo4j pour la suite ; le ferme en teardown."""
@@ -47,6 +49,7 @@ async def _alert_driver() -> AsyncGenerator[AsyncDriver]:
 
 
 # ─────────────────────── Tests PURS (sans driver) ─────────────────────────────
+
 
 @alerts_suite.test()
 def test_render_empty_alerts_is_empty() -> None:
@@ -90,6 +93,7 @@ def test_render_multiple_alerts_contains_all_bodies() -> None:
 
 # ──────────── Tests avec driver réel (Neo4j) ─────────────────────────────────
 
+
 @alerts_suite.test()
 async def test_record_then_consume_returns_body(
     driver: Annotated[AsyncDriver, Use(_alert_driver)],
@@ -99,7 +103,9 @@ async def test_record_then_consume_returns_body(
     async with driver.session() as session:
         await session.run("MATCH (a:Alert {project: $p}) DETACH DELETE a", p=proj)
     try:
-        await record_alert(driver, "Korvax ne peut pas agir après sa mort", project=proj)
+        await record_alert(
+            driver, "Korvax ne peut pas agir après sa mort", project=proj
+        )
         bodies = await consume_unnotified_alerts(driver, project=proj)
         assert bodies == ["Korvax ne peut pas agir après sa mort"]
         # L'alerte doit être marquée notified=true en base.
@@ -145,7 +151,9 @@ async def test_project_isolation(
     try:
         await record_alert(driver, "Thyren ne peut pas être là", project=proj_a)
         bodies_b = await consume_unnotified_alerts(driver, project=proj_b)
-        assert bodies_b == [], f"alerte de {proj_a} visible dans {proj_b} : contamination"
+        assert bodies_b == [], (
+            f"alerte de {proj_a} visible dans {proj_b} : contamination"
+        )
         bodies_a = await consume_unnotified_alerts(driver, project=proj_a)
         assert bodies_a == ["Thyren ne peut pas être là"]
     finally:
@@ -155,6 +163,7 @@ async def test_project_isolation(
 
 
 # ─────────────────────────── Anti-leakage ────────────────────────────────────
+
 
 @alerts_suite.test()
 def test_no_test_names_in_prompts() -> None:
@@ -179,32 +188,38 @@ from felix.core.check import CheckVerdict, distinct_contradictions  # noqa: E402
 
 
 def _v(message: str, sujets: list[str], *, contradiction: bool = True) -> CheckVerdict:
-    return CheckVerdict(reason="r", contradiction=contradiction, message=message,
-                        sujets=sujets)
+    return CheckVerdict(
+        reason="r", contradiction=contradiction, message=message, sujets=sujets
+    )
 
 
 @alerts_suite.test()
 def test_distinct_contradictions_merges_same_subjects_rephrased() -> None:
-    kept = distinct_contradictions([
-        _v("Korvax ne peut pas dépasser Weldra.", ["Korvax", "Weldra"]),
-        _v("La valeur de Weldra rend Korvax impossible.", ["weldra", "Korvax "]),
-        _v("Korvax, Weldra et Thyren s'excluent.", ["Korvax", "Weldra", "Thyren"]),
-    ])
+    kept = distinct_contradictions(
+        [
+            _v("Korvax ne peut pas dépasser Weldra.", ["Korvax", "Weldra"]),
+            _v("La valeur de Weldra rend Korvax impossible.", ["weldra", "Korvax "]),
+            _v("Korvax, Weldra et Thyren s'excluent.", ["Korvax", "Weldra", "Thyren"]),
+        ]
+    )
     assert [k.message for k in kept] == ["Korvax ne peut pas dépasser Weldra."]
 
 
 @alerts_suite.test()
 def test_distinct_contradictions_keeps_disjoint_and_drops_non_contradictions() -> None:
-    kept = distinct_contradictions([
-        _v("A", ["Korvax", "Weldra"]),
-        _v("B", ["Thyren"]),
-        _v("C", ["Korvax"], contradiction=False),
-    ])
+    kept = distinct_contradictions(
+        [
+            _v("A", ["Korvax", "Weldra"]),
+            _v("B", ["Thyren"]),
+            _v("C", ["Korvax"], contradiction=False),
+        ]
+    )
     assert [k.message for k in kept] == ["A", "B"]
 
 
 @alerts_suite.test()
 def test_distinct_contradictions_without_subjects_falls_back_to_text() -> None:
-    kept = distinct_contradictions([_v("Même phrase", []), _v("même phrase ", []),
-                                    _v("Autre", [])])
+    kept = distinct_contradictions(
+        [_v("Même phrase", []), _v("même phrase ", []), _v("Autre", [])]
+    )
     assert [k.message for k in kept] == ["Même phrase", "Autre"]

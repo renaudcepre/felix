@@ -14,6 +14,7 @@ l'extraction. Deux familles de tests, aucun appel LLM réel :
 
 Noms univers isolé pour ces tests — inédits : Riantel, Doshka.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,6 +36,7 @@ source_verify_suite = ProTestSuite("SourceVerify")
 def _make_verifier(output: dict) -> Agent[None, SourceVerdict]:
     """Agent `FunctionModel` qui rend TOUJOURS `output` comme SourceVerdict —
     contrôle total du verdict (TestModel seul ne le permet pas), sans appel réseau."""
+
     async def respond(_messages: list, info: AgentInfo) -> ModelResponse:
         tool_name = info.output_tools[0].name
         return ModelResponse(parts=[ToolCallPart(tool_name=tool_name, args=output)])
@@ -45,24 +47,33 @@ def _make_verifier(output: dict) -> Agent[None, SourceVerdict]:
 def _boom_verifier() -> Agent[None, SourceVerdict]:
     """Un Agent qui explose s'il est appelé — preuve qu'AUCUN appel LLM n'a
     lieu quand il n'y a pas de page source (repli `unverifiable` en code)."""
+
     async def respond(_messages: list, _info: AgentInfo) -> ModelResponse:
-        msg = "verify_against_source ne doit JAMAIS appeler le verifier sans page source"
+        msg = (
+            "verify_against_source ne doit JAMAIS appeler le verifier sans page source"
+        )
         raise AssertionError(msg)
 
     return Agent(FunctionModel(respond), output_type=SourceVerdict)
 
 
 _VERDICT = CheckVerdict(
-    reason="r", contradiction=True, message="Corps de l'alerte de test.", sujets=["Riantel"],
+    reason="r",
+    contradiction=True,
+    message="Corps de l'alerte de test.",
+    sujets=["Riantel"],
 )
 
 
 # ──────────────────── verify_against_source ────────────────────
 
+
 @source_verify_suite.test()
 async def test_verify_against_source_skips_llm_when_no_pages() -> None:
     ledger = CostLedger()
-    result = await verify_against_source(_VERDICT, [], ledger, verifier=_boom_verifier())
+    result = await verify_against_source(
+        _VERDICT, [], ledger, verifier=_boom_verifier()
+    )
     assert result.kind == "unverifiable"
     assert ledger.summary().total_tokens == 0
 
@@ -70,12 +81,14 @@ async def test_verify_against_source_skips_llm_when_no_pages() -> None:
 @source_verify_suite.test()
 async def test_verify_against_source_document_kind_records_ledger_usage() -> None:
     ledger = CostLedger()
-    verifier = _make_verifier({
-        "reason": "le bon de livraison affiche deux poids totaux différents",
-        "kind": "document",
-        "explanation": "le document se contredit lui-même",
-        "correction": "",
-    })
+    verifier = _make_verifier(
+        {
+            "reason": "le bon de livraison affiche deux poids totaux différents",
+            "kind": "document",
+            "explanation": "le document se contredit lui-même",
+            "correction": "",
+        }
+    )
     pages = [("Bon de livraison Riantel", 1, "texte source")]
     result = await verify_against_source(_VERDICT, pages, ledger, verifier=verifier)
     assert result.kind == "document"
@@ -88,12 +101,14 @@ async def test_verify_against_source_document_kind_records_ledger_usage() -> Non
 @source_verify_suite.test()
 async def test_verify_against_source_extraction_kind_carries_correction() -> None:
     ledger = CostLedger()
-    verifier = _make_verifier({
-        "reason": "le total extrait est le poids d'un seul carton, pas le total",
-        "kind": "extraction",
-        "explanation": "Felix a confondu le poids d'un carton avec le total",
-        "correction": "poids total de la livraison : 72 kg, d'après la page 1",
-    })
+    verifier = _make_verifier(
+        {
+            "reason": "le total extrait est le poids d'un seul carton, pas le total",
+            "kind": "extraction",
+            "explanation": "Felix a confondu le poids d'un carton avec le total",
+            "correction": "poids total de la livraison : 72 kg, d'après la page 1",
+        }
+    )
     pages = [("Bon de livraison Doshka", 1, "6 cartons de 12 kg, total 72 kg")]
     result = await verify_against_source(_VERDICT, pages, ledger, verifier=verifier)
     assert result.kind == "extraction"
@@ -102,9 +117,14 @@ async def test_verify_against_source_extraction_kind_carries_correction() -> Non
 
 @source_verify_suite.test()
 async def test_verify_against_source_without_ledger_still_works() -> None:
-    verifier = _make_verifier({
-        "reason": "r", "kind": "document", "explanation": "e", "correction": "",
-    })
+    verifier = _make_verifier(
+        {
+            "reason": "r",
+            "kind": "document",
+            "explanation": "e",
+            "correction": "",
+        }
+    )
     pages = [("Bon de livraison Riantel", 1, "texte")]
     result = await verify_against_source(_VERDICT, pages, None, verifier=verifier)
     assert result.kind == "document"
@@ -116,10 +136,19 @@ _ALERT_PROJ = "test-source-verify-alerts-v1"
 
 
 async def _stub_check(
-    driver, ref, write_log, profile, *, project, cost_ledger=None,
+    driver,
+    ref,
+    write_log,
+    profile,
+    *,
+    project,
+    cost_ledger=None,
 ) -> CheckVerdict:
     return CheckVerdict(
-        reason="r", contradiction=True, message="Corps de test.", sujets=["Riantel", "Doshka"],
+        reason="r",
+        contradiction=True,
+        message="Corps de test.",
+        sujets=["Riantel", "Doshka"],
     )
 
 
@@ -133,7 +162,10 @@ async def _noop_record_alert(driver, body, *, project):
 
 def _stub_verify(kind: str, correction: str = ""):
     async def _verify(verdict, pages, ledger=None, *, verifier=None) -> SourceVerdict:
-        return SourceVerdict(reason="r", kind=kind, explanation="e", correction=correction)
+        return SourceVerdict(
+            reason="r", kind=kind, explanation="e", correction=correction
+        )
+
     return _verify
 
 
@@ -156,14 +188,19 @@ async def test_consistency_alerts_document_kind_gets_document_title() -> None:
 
 
 @source_verify_suite.test()
-async def test_consistency_alerts_extraction_kind_gets_calmer_title_and_correction() -> None:
+async def test_consistency_alerts_extraction_kind_gets_calmer_title_and_correction() -> (
+    None
+):
     deps = GenericDeps(driver=None, project_id=_ALERT_PROJ)  # type: ignore[arg-type]
     deps.check_candidates = {"riantel"}
     correction = "poids total de la livraison : 72 kg, d'après la page 1"
     with (
         patch("felix.atelier.pipeline.consistency_check", _stub_check),
         patch("felix.atelier.pipeline._source_pages_for_subjects", _stub_source_pages),
-        patch("felix.atelier.pipeline.verify_against_source", _stub_verify("extraction", correction)),
+        patch(
+            "felix.atelier.pipeline.verify_against_source",
+            _stub_verify("extraction", correction),
+        ),
         patch("felix.atelier.pipeline.record_alert", _noop_record_alert),
     ):
         events = [ev async for ev in consistency_alerts(None, deps, None)]  # type: ignore[arg-type]
@@ -180,7 +217,9 @@ async def test_consistency_alerts_unverifiable_kind_keeps_default_title() -> Non
     with (
         patch("felix.atelier.pipeline.consistency_check", _stub_check),
         patch("felix.atelier.pipeline._source_pages_for_subjects", _stub_source_pages),
-        patch("felix.atelier.pipeline.verify_against_source", _stub_verify("unverifiable")),
+        patch(
+            "felix.atelier.pipeline.verify_against_source", _stub_verify("unverifiable")
+        ),
         patch("felix.atelier.pipeline.record_alert", _noop_record_alert),
     ):
         events = [ev async for ev in consistency_alerts(None, deps, None)]  # type: ignore[arg-type]
@@ -197,7 +236,9 @@ async def test_consistency_alerts_calls_verifier_once_per_distinct_alert() -> No
     appels répétés)."""
     calls: list[CheckVerdict] = []
 
-    async def _counting_verify(verdict, pages, ledger=None, *, verifier=None) -> SourceVerdict:
+    async def _counting_verify(
+        verdict, pages, ledger=None, *, verifier=None
+    ) -> SourceVerdict:
         calls.append(verdict)
         return SourceVerdict(reason="r", kind="document")
 
@@ -211,4 +252,6 @@ async def test_consistency_alerts_calls_verifier_once_per_distinct_alert() -> No
     ):
         events = [ev async for ev in consistency_alerts(None, deps, None)]  # type: ignore[arg-type]
     assert len(events) == 1, "une seule contradiction distincte → une seule carte"
-    assert len(calls) == 1, "verify_against_source doit être appelé UNE fois par alerte distincte"
+    assert len(calls) == 1, (
+        "verify_against_source doit être appelé UNE fois par alerte distincte"
+    )

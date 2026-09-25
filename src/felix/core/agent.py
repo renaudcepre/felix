@@ -8,10 +8,11 @@ create_core_agent assemble les instructions en trois couches :
 Sans argument, create_core_agent() reproduit le comportement du prototype
 générique (discipline seule, aucun domaine).
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic_ai import Agent
 from pydantic_ai.settings import ModelSettings
@@ -171,7 +172,7 @@ de nouveau avec add_event dans ce cas.
 def create_core_agent(
     profile: Profile | None = None,
     persona: str = "",
-    tools: Sequence[Callable] | None = None,
+    tools: Sequence[Callable[..., Any]] | None = None,
     system_prompt: str = SYSTEM_PROMPT,
     model: Model | None = None,
 ) -> Agent[GenericDeps, str]:
@@ -194,8 +195,15 @@ def create_core_agent(
     )
     # tools=None → noyau complet (5 outils). Un sous-agent peut restreindre
     # l'ensemble (ex. relieur : lecture seule + add_relation).
-    default = (describe_schema, find_entity, add_entity, update_entity, add_relation,
-               rename_entity, retype_entity)
-    for tool in (tools if tools is not None else default):
+    default = (
+        describe_schema,
+        find_entity,
+        add_entity,
+        update_entity,
+        add_relation,
+        rename_entity,
+        retype_entity,
+    )
+    for tool in tools if tools is not None else default:
         agent.tool(tool)
     return agent

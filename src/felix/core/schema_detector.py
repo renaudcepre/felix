@@ -11,11 +11,12 @@ Chaque ``Proposal`` porte son ``ChangeReport`` en PREVIEW (``apply_schema_change
 avec ``preview=True``) : la file de validation (hors scope ici) montre à
 l'humain exactement ce que ferait le clic « accepter », avant qu'il ne clique.
 """
+
 from __future__ import annotations
 
 import re
 import unicodedata
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 from rapidfuzz import fuzz
@@ -46,25 +47,84 @@ if TYPE_CHECKING:
 # aucun article/déterminant n'était dans la liste. Ajout des familles qui
 # manquaient : articles/déterminants, prépositions simples, formes courantes
 # d'être/avoir, et quelques verbes-relais (même veine que permet/permettent).
-_STOPWORDS = frozenset({
-    # Déjà présent : auxiliaires courts, négation, pronoms, locutions vues en
-    # clustering réel.
-    "est", "sont", "a", "ont", "se", "s", "ne", "n", "pour", "permet",
-    "permettent", "de", "d", "l", "la", "le", "les", "en", "y", "qui", "il",
-    "elle", "on", "que",
-    # Articles indéfinis / déterminants (le bug du 2026-09-24 : « une »).
-    "un", "une", "des", "du", "au", "aux",
-    # Prépositions simples (« à » perd son accent → « a », déjà listé ci-dessus).
-    "par", "sur", "dans", "avec", "vers", "entre",
-    # Être, formes courantes (est/sont déjà listés).
-    "suis", "es", "sommes", "etes", "etait", "etaient", "sera", "serons",
-    "serez", "seront", "ete", "fut", "furent", "etant",
-    # Avoir, formes courantes (a/ont déjà listés).
-    "ai", "as", "avons", "avez", "avait", "avaient", "aura", "aurons",
-    "aurez", "auront", "eu", "ayant",
-    # Verbes-relais quasi fonctionnels, même veine que permet/permettent.
-    "peut", "peuvent", "doit", "doivent", "fait",
-})
+_STOPWORDS = frozenset(
+    {
+        # Déjà présent : auxiliaires courts, négation, pronoms, locutions vues en
+        # clustering réel.
+        "est",
+        "sont",
+        "a",
+        "ont",
+        "se",
+        "s",
+        "ne",
+        "n",
+        "pour",
+        "permet",
+        "permettent",
+        "de",
+        "d",
+        "l",
+        "la",
+        "le",
+        "les",
+        "en",
+        "y",
+        "qui",
+        "il",
+        "elle",
+        "on",
+        "que",
+        # Articles indéfinis / déterminants (le bug du 2026-09-24 : « une »).
+        "un",
+        "une",
+        "des",
+        "du",
+        "au",
+        "aux",
+        # Prépositions simples (« à » perd son accent → « a », déjà listé ci-dessus).
+        "par",
+        "sur",
+        "dans",
+        "avec",
+        "vers",
+        "entre",
+        # Être, formes courantes (est/sont déjà listés).
+        "suis",
+        "es",
+        "sommes",
+        "etes",
+        "etait",
+        "etaient",
+        "sera",
+        "serons",
+        "serez",
+        "seront",
+        "ete",
+        "fut",
+        "furent",
+        "etant",
+        # Avoir, formes courantes (a/ont déjà listés).
+        "ai",
+        "as",
+        "avons",
+        "avez",
+        "avait",
+        "avaient",
+        "aura",
+        "aurons",
+        "aurez",
+        "auront",
+        "eu",
+        "ayant",
+        # Verbes-relais quasi fonctionnels, même veine que permet/permettent.
+        "peut",
+        "peuvent",
+        "doit",
+        "doivent",
+        "fait",
+    }
+)
 
 # Sous ce seuil, retirer un suffixe casserait le radical (« as » n'est pas
 # retiré de « pas », etc.) — cf. _light_suffix_strip.
@@ -115,8 +175,18 @@ def _light_suffix_strip(token: str) -> str:
 # l'apostrophe droite ASCII que ``_normalize`` reconnaît) se scinde en
 # « lorsqu » + « il »/« elle » : la tête retombe pile sur « lorsqu ».
 _CONJUNCTION_WORDS = (
-    "sinon", "si", "quand", "lorsque", "lorsqu", "car", "donc", "mais",
-    "puis", "ou", "et", "comme",
+    "sinon",
+    "si",
+    "quand",
+    "lorsque",
+    "lorsqu",
+    "car",
+    "donc",
+    "mais",
+    "puis",
+    "ou",
+    "et",
+    "comme",
 )
 _CONJUNCTION_HEADS = frozenset(_light_suffix_strip(w) for w in _CONJUNCTION_WORDS)
 
@@ -180,13 +250,15 @@ def suggest_rel_type(verbe: str) -> str:
     return "_".join(chosen).upper()
 
 
-def cluster_verbs(edges: list[dict], *, min_count: int) -> dict[str, list[dict]]:
+def cluster_verbs(
+    edges: list[dict[str, str]], *, min_count: int
+) -> dict[str, list[dict[str, str]]]:
     """Groupe des arêtes LIE_A (dicts avec au moins la clé ``verbe``) par tête de
     verbe — pure, testable sans Neo4j. Ne garde que les clusters atteignant
     ``min_count`` arêtes ; un verbe sans tête substantielle (pur mot de
     fonction) n'entre dans aucun cluster, ni un verbe dont la tête est en fait
     une conjonction/subordonnant (#81, cf. ``_CONJUNCTION_HEADS``)."""
-    clusters: dict[str, list[dict]] = {}
+    clusters: dict[str, list[dict[str, str]]] = {}
     for edge in edges:
         head = verb_head(str(edge.get("verbe", "")))
         if not head or head in _CONJUNCTION_HEADS:
@@ -213,22 +285,27 @@ def pair_near_duplicate_types(counts: dict[str, int]) -> list[MergeTypes]:
     for i, type_a in enumerate(types):
         if type_a in already_merged:
             continue
-        for type_b in types[i + 1:]:
+        for type_b in types[i + 1 :]:
             if type_b in already_merged:
                 continue
             same_singular = _singular(type_a) == _singular(type_b)
-            fuzzy = fuzz.ratio(_normalize(type_a), _normalize(type_b)) >= _FUZZY_TYPE_THRESHOLD
+            fuzzy = (
+                fuzz.ratio(_normalize(type_a), _normalize(type_b))
+                >= _FUZZY_TYPE_THRESHOLD
+            )
             if not (same_singular or fuzzy):
                 continue
             rarer, target = (
-                (type_a, type_b) if counts[type_a] <= counts[type_b] else (type_b, type_a)
+                (type_a, type_b)
+                if counts[type_a] <= counts[type_b]
+                else (type_b, type_a)
             )
             merges.append(MergeTypes(sources=[rarer], target=target))
             already_merged.add(rarer)
     return merges
 
 
-def _rejection_signature(change: dict) -> tuple[str, frozenset[str]]:
+def _rejection_signature(change: dict[str, Any]) -> tuple[str, frozenset[str]]:
     """Signature stable d'un changement, pour comparer une proposition à un refus
     passé — INDÉPENDANTE du nom cible choisi (``rel_type``/``target``) : ce qui
     définit « le même refus », c'est l'ensemble SOURCE (les verbes ou les types
@@ -257,7 +334,9 @@ class Proposal(BaseModel):
     pairs_readable: str = ""
 
 
-async def _fetch_narrative_edges(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def _fetch_narrative_edges(
+    driver: AsyncDriver, *, project: str
+) -> list[dict[str, str]]:
     """Arêtes LIE_A du projet — exclut celles dont la SOURCE OU LA CIBLE est le
     nœud ``document`` (#81 : la moitié des propositions vues en direct étaient
     du bruit — CONCERNE/COUVRE, des liens du nœud document VERS tout le
@@ -274,12 +353,15 @@ async def _fetch_narrative_edges(driver: AsyncDriver, *, project: str) -> list[d
                    a.name AS from_name, b.name AS to_name
             ORDER BY r.verbe_slug, a.id, b.id
             """,
-            project=project, narr=NARRATIVE_REL,
+            project=project,
+            narr=NARRATIVE_REL,
         )
         return [dict(r) for r in await result.data()]
 
 
-async def _fetch_entity_type_counts(driver: AsyncDriver, *, project: str) -> dict[str, int]:
+async def _fetch_entity_type_counts(
+    driver: AsyncDriver, *, project: str
+) -> dict[str, int]:
     async with driver.session() as session:
         result = await session.run(
             """
@@ -312,20 +394,32 @@ async def _verb_proposals(
         slugs = sorted({row["verbe_slug"] for row in rows})
         change = PromoteVerbs(verbe_slugs=slugs, rel_type=rel_type)
         try:
-            report = await apply_schema_change(driver, change, project=project, preview=True)
+            report = await apply_schema_change(
+                driver, change, project=project, preview=True
+            )
         except ValueError:
             # rel_type dérivé invalide (machinerie, vide…) — pas une proposition
             # exploitable ; on ne réimplémente pas ici la garde de schema_changes.
             continue
         examples = [
-            {"from": str(row["from_name"]), "verb": str(row["verbe"]), "to": str(row["to_name"])}
+            {
+                "from": str(row["from_name"]),
+                "verb": str(row["verbe"]),
+                "to": str(row["to_name"]),
+            }
             for row in rows[:3]
         ]
         pairs_readable = ", ".join(f"{a} → {b}" for a, b in report.observed_pairs)
-        proposals.append(Proposal(
-            change=change, report=report, occurrences=len(rows),
-            phrases=phrases, examples=examples, pairs_readable=pairs_readable,
-        ))
+        proposals.append(
+            Proposal(
+                change=change,
+                report=report,
+                occurrences=len(rows),
+                phrases=phrases,
+                examples=examples,
+                pairs_readable=pairs_readable,
+            )
+        )
     return proposals
 
 
@@ -336,7 +430,9 @@ async def _type_proposals(driver: AsyncDriver, *, project: str) -> list[Proposal
     proposals: list[Proposal] = []
     for change in merges:
         try:
-            report = await apply_schema_change(driver, change, project=project, preview=True)
+            report = await apply_schema_change(
+                driver, change, project=project, preview=True
+            )
         except ValueError:
             continue
         proposals.append(Proposal(change=change, report=report))
@@ -364,6 +460,7 @@ async def detect_proposals(
     type_proposals = await _type_proposals(driver, project=project)
     all_proposals = verb_proposals + type_proposals
     return [
-        p for p in all_proposals
+        p
+        for p in all_proposals
         if _rejection_signature(p.change.model_dump()) not in rejected_sigs
     ]

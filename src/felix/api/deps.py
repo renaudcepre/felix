@@ -12,11 +12,13 @@ from felix.core import GenericDeps
 
 
 def get_driver(request: Request) -> AsyncDriver:
-    return request.app.state.driver
+    driver: AsyncDriver = request.app.state.driver
+    return driver
 
 
 def get_collection(request: Request) -> chromadb.Collection:
-    return request.app.state.collection
+    collection: chromadb.Collection = request.app.state.collection
+    return collection
 
 
 def get_gate_agents(request: Request) -> dict[str, Agent[None, RouteDecision]]:
@@ -24,28 +26,39 @@ def get_gate_agents(request: Request) -> dict[str, Agent[None, RouteDecision]]:
     question posée au gate (fait de récit ? fait technique ?) dépend du domaine,
     comme le maître et les extracteurs. Appelé avec le message SEUL, jamais
     d'historique."""
-    return request.app.state.gate_agents
+    gate_agents: dict[str, Agent[None, RouteDecision]] = request.app.state.gate_agents
+    return gate_agents
 
 
 def get_master_agents(request: Request) -> dict[str, Agent[GenericDeps, str]]:
     """Agents « maître » (passe 0) pré-construits par profil : mènent la
     conversation (lecture seule, purement conversationnels)."""
-    return request.app.state.master_agents
+    master_agents: dict[str, Agent[GenericDeps, str]] = request.app.state.master_agents
+    return master_agents
 
 
 def get_atelier_agents(request: Request) -> dict[str, Agent[GenericDeps, str]]:
     """Agents du bot B pré-construits par profil (scenario/chantier/none)."""
-    return request.app.state.atelier_agents
+    atelier_agents: dict[str, Agent[GenericDeps, str]] = (
+        request.app.state.atelier_agents
+    )
+    return atelier_agents
 
 
 def get_relation_agents(request: Request) -> dict[str, Agent[GenericDeps, str]]:
     """Sous-agents « relieur » (2e passe) pré-construits par profil."""
-    return request.app.state.relation_agents
+    relation_agents: dict[str, Agent[GenericDeps, str]] = (
+        request.app.state.relation_agents
+    )
+    return relation_agents
 
 
 def get_chronicle_agents(request: Request) -> dict[str, Agent[GenericDeps, str]]:
     """Sous-agents « chroniqueur » (3e passe, événements) pré-construits par profil."""
-    return request.app.state.chronicle_agents
+    chronicle_agents: dict[str, Agent[GenericDeps, str]] = (
+        request.app.state.chronicle_agents
+    )
+    return chronicle_agents
 
 
 Neo4jDriver: TypeAlias = Annotated[AsyncDriver, Depends(get_driver)]

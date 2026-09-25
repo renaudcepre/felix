@@ -11,6 +11,7 @@ Anti-leakage : les noms de ce module (Brulard, Gretchen, Orvaine) ne doivent
 PAS apparaître dans les prompts des agents (src/felix/) — vérification dans
 ``test_no_test_names_in_prompts``.
 """
+
 from __future__ import annotations
 
 import pathlib

@@ -14,6 +14,7 @@ Lois testées (`ToolCard.changes`, cf. `felix.core.models.PropChange`) :
 
 Univers Vasnier/Ombreval, frais, absent de tous les prompts.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -39,9 +40,7 @@ PROJ = "test-update-entity-changes"
 
 async def _wipe(driver: AsyncDriver) -> None:
     async with driver.session() as session:
-        await session.run(
-            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ
-        )
+        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=PROJ)
 
 
 @fixture(max_concurrency=1)
@@ -81,7 +80,9 @@ async def test_modification_emet_previous_et_sort_de_added(
     assert change.field == "age"
     assert change.before == "25"
     assert change.after == "30"
-    assert "age" not in card.added, "un champ MODIFIÉ ne doit plus apparaître dans added"
+    assert "age" not in card.added, (
+        "un champ MODIFIÉ ne doit plus apparaître dans added"
+    )
 
 
 @update_entity_changes_suite.test()

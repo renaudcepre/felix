@@ -77,4 +77,4 @@ class Settings(BaseSettings):
     chroma_path: str = "chroma_data"
 
 
-settings = Settings()  # type: ignore[call-arg]
+settings = Settings()

@@ -3,6 +3,7 @@
 Déplacé depuis felix.atelier.models : la carte est désormais celle du noyau, le
 bot B (atelier) la ré-exporte pour compatibilité.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel

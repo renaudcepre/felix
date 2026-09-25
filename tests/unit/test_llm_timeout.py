@@ -10,6 +10,7 @@ rendre un 504, et on attend tout du long.
 La loi vérifiée ici : le client SDK Mistral construit par build_model porte un
 `timeout_ms` explicite — c'est LE canal que le SDK honore vraiment.
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite
@@ -36,7 +37,9 @@ def test_mistral_sdk_carries_explicit_timeout() -> None:
 @llm_timeout_suite.test()
 def test_gate_model_fallback_chat() -> None:
     """Sans FLX_LLM_GATE_MODEL, le gate tourne sur le modèle de chat (fallback)."""
-    assert settings.llm_gate_model is None, "préconception du test : pas d'override gate"
+    assert settings.llm_gate_model is None, (
+        "préconception du test : pas d'override gate"
+    )
     assert build_gate_model().model_name == build_chat_model().model_name
 
 

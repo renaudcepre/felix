@@ -11,6 +11,7 @@ graphe fournir les faits anciens. Coût/tour plat quelle que soit la durée du p
 
 Fonctions PURES (sans I/O, sans LLM, sans Neo4j) → testables en isolation.
 """
+
 from __future__ import annotations
 
 import json

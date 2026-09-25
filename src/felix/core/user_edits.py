@@ -12,6 +12,7 @@ tools), et la route de chat injecte EN CODE le bloc « décisions de l'auteur »
 Même mécanique neuro-symbolique que le working set (cf. graph.render_recent_block) :
 posé par du code, jamais par le modèle.
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -33,13 +34,16 @@ async def record_user_edit(
         await session.run(
             "CREATE (:UserEdit {kind: $kind, name: $name, detail: $detail,"
             " ts: timestamp(), notified: false, project: $project})",
-            kind=kind, name=name, detail=detail, project=project,
+            kind=kind,
+            name=name,
+            detail=detail,
+            project=project,
         )
 
 
 async def recent_user_edits(
     driver: AsyncDriver, limit: int, ttl_minutes: int, *, project: str
-) -> list[dict]:
+) -> list[dict[str, str]]:
     """Les actions manuelles encore vivantes (TTL), plus anciennes d'abord — et PURGE
     au passage celles qui ont expiré (un appel par tour de chat suffit comme GC).
 
@@ -53,7 +57,8 @@ async def recent_user_edits(
         await session.run(
             "MATCH (u:UserEdit {project: $project})"
             " WHERE u.ts < timestamp() - $cutoff DELETE u",
-            cutoff=cutoff_ms, project=project,
+            cutoff=cutoff_ms,
+            project=project,
         )
         result = await session.run(
             """
@@ -61,14 +66,17 @@ async def recent_user_edits(
             RETURN u.kind AS kind, u.name AS name, u.detail AS detail
             ORDER BY u.ts DESC LIMIT $limit
             """,
-            limit=limit, project=project,
+            limit=limit,
+            project=project,
         )
         rows = [dict(r) for r in await result.data()]
     rows.reverse()  # chronologique : la dernière action en dernier (la plus saillante)
     return rows
 
 
-async def consume_unnotified_edits(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def consume_unnotified_edits(
+    driver: AsyncDriver, *, project: str
+) -> list[dict[str, str]]:
     """Les actions pas encore annoncées au MAÎTRE — marquées `notified` au passage.
 
     Le maître est threadé : une fois le marqueur entré dans son fil, le répéter
@@ -88,7 +96,7 @@ async def consume_unnotified_edits(driver: AsyncDriver, *, project: str) -> list
         return [dict(r) for r in await result.data()]
 
 
-def render_user_edits_block(rows: list[dict]) -> str:
+def render_user_edits_block(rows: list[dict[str, str]]) -> str:
     """Bloc « décisions de l'auteur » préfixé en code aux prompts (pur, testable).
 
     Rend "" sans action manuelle → le prompt reste nu, aucun cas dégénéré. Balisé

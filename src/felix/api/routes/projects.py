@@ -4,6 +4,7 @@ Créer/lister seulement (v1) : « Nouvelle histoire » au front = POST ici puis
 switch local. La suppression attend l'export par histoire (#42) — on ne jette
 pas une bible sans pouvoir l'archiver.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException

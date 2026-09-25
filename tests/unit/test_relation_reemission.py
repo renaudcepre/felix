@@ -16,6 +16,7 @@ d'autres tours les deux SENS. `same_narrative_link` (pure) + le garde-fou de
 
 Univers Ostive/Bellac/Vandre — frais, absent de tous les prompts (anti-leakage).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -42,7 +43,8 @@ async def _wipe(driver: AsyncDriver) -> None:
     async with driver.session() as session:
         await session.run(
             "MATCH (n:GenEntity) WHERE n.project IN [$p, $p2] DETACH DELETE n",
-            p=PROJ, p2=PROJ + "-b",
+            p=PROJ,
+            p2=PROJ + "-b",
         )
 
 
@@ -71,7 +73,10 @@ async def _seed_pair(driver: AsyncDriver, proj: str = PROJ) -> RunContext[Generi
             await session.run(
                 "MERGE (e:GenEntity {id: $id, project: $project})"
                 " SET e.name = $name, e.entity_type = $type",
-                id=name.lower(), name=name, type=etype, project=proj,
+                id=name.lower(),
+                name=name,
+                type=etype,
+                project=proj,
             )
     return _make_ctx(driver, proj)
 
@@ -145,6 +150,7 @@ async def test_etancheite_projet(
 # verbe sous deux formes ; « règle »/« signale » et « lance »/« arrête » sont
 # bien deux liens DIFFÉRENTS.
 
+
 @relation_reemission_suite.test()
 def test_same_narrative_link_paraphrase_accordee_et_nominalisee() -> None:
     assert same_narrative_link("concerné par", ["Machine concernée"])
@@ -171,6 +177,7 @@ def test_same_narrative_link_empty_or_no_match() -> None:
 
 # ──────────────────── add_relation : garde anti-paraphrase (Neo4j) ────────────────────
 
+
 @relation_reemission_suite.test()
 async def test_add_relation_refuse_paraphrase_meme_paire(
     driver: Annotated[AsyncDriver, Use(_rel_driver)],
@@ -185,7 +192,9 @@ async def test_add_relation_refuse_paraphrase_meme_paire(
     assert "Relation" in out1
 
     ctx2 = _make_ctx(driver)
-    out2 = await add_relation(ctx2, "Bellac", "Ostive", "LIE_A", verbe="Machine concernée")
+    out2 = await add_relation(
+        ctx2, "Bellac", "Ostive", "LIE_A", verbe="Machine concernée"
+    )
     assert ctx2.deps.ui_events == [], "paraphrase → aucune 2e arête écrite"
     assert ctx2.deps.write_log == []
     assert "concerné par" in out2, "le refus liste le verbe déjà posé"

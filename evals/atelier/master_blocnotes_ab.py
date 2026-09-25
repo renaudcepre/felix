@@ -16,6 +16,7 @@ cible :
 `just ab-blocnotes`. Réutilise les helpers de master_ab (DRY). Base laissée VIDE
 par le run small d'avant ; FLX_AB_WIPE=1 pour forcer. Réglages FLX_AB_REPS (6).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -82,8 +83,11 @@ VARIANTS = {
 
 def build_variant(persona: str, system_prompt: str, model_name: str) -> Agent:
     return create_core_agent(
-        profile=CHOICE.profile, persona=persona, system_prompt=system_prompt,
-        tools=MASTER_TOOLS, model=build_model(model_name),
+        profile=CHOICE.profile,
+        persona=persona,
+        system_prompt=system_prompt,
+        tools=MASTER_TOOLS,
+        model=build_model(model_name),
     )
 
 
@@ -155,8 +159,14 @@ class Cell(BaseModel):
 
 
 async def play_cell(  # noqa: PLR0913 — variante + juge + driver + tour + historique
-    sem: asyncio.Semaphore, agent: Agent, judge: Agent, driver: object,
-    variant: str, key: str, message: str, history: list,
+    sem: asyncio.Semaphore,
+    agent: Agent,
+    judge: Agent,
+    driver: object,
+    variant: str,
+    key: str,
+    message: str,
+    history: list,
 ) -> Cell:
     async with sem:
         cell = Cell(variant=variant, key=key, message=message)
@@ -167,9 +177,13 @@ async def play_cell(  # noqa: PLR0913 — variante + juge + driver + tour + hist
             return cell
         cell.relance = poses_question(cell.reply)
         try:
-            verdict = (await with_backoff(lambda: judge.run(
-                f"MESSAGE de l'auteur :\n{message}\n\nRÉPLIQUE de Felix :\n{cell.reply}"
-            ))).output
+            verdict = (
+                await with_backoff(
+                    lambda: judge.run(
+                        f"MESSAGE de l'auteur :\n{message}\n\nRÉPLIQUE de Felix :\n{cell.reply}"
+                    )
+                )
+            ).output
             cell.confabule = verdict.confabule
             cell.constat = verdict.constat
         except Exception as exc:
@@ -183,8 +197,10 @@ async def main() -> int:
     judge_model = os.environ.get("FLX_AB_JUDGE", "mistral-medium-latest")
     all_turns = [*TRAPS, CONTROL]
 
-    print(f"A/B PERSONA maître — interviewer vs bloc-notes — small={small} x "
-          f"{len(all_turns)} tours x {reps} rep (juge confab : {judge_model})\n")
+    print(
+        f"A/B PERSONA maître — interviewer vs bloc-notes — small={small} x "
+        f"{len(all_turns)} tours x {reps} rep (juge confab : {judge_model})\n"
+    )
 
     async with lifespan(app):
         driver = get_driver()
@@ -193,8 +209,10 @@ async def main() -> int:
                 await s.run("MATCH (n) DETACH DELETE n")
                 await s.run("MATCH (u:UserEdit) DETACH DELETE u")
         n_ents = len(await all_entities(driver, project=DEFAULT_PROJECT))
-        print(f"BASE au départ : {n_ents} entité(s) "
-              f"({'VIDE — démarrage à froid' if n_ents == 0 else 'peuplée'})\n")
+        print(
+            f"BASE au départ : {n_ents} entité(s) "
+            f"({'VIDE — démarrage à froid' if n_ents == 0 else 'peuplée'})\n"
+        )
 
         judge = build_confab_judge(judge_model)
         sem = asyncio.Semaphore(2)

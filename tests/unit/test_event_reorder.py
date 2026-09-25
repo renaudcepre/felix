@@ -9,6 +9,7 @@ Deux pans :
 Anti-leakage : les noms de ce module (Prol, Sevne, Tarvex) ne doivent PAS
 apparaître dans les prompts des agents (src/felix/) — vérification ci-dessous.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -92,9 +93,11 @@ def test_resolve_not_found_lists_resumes() -> None:
     interdictions sémantiques) : c'est l'information pour réussir au 2e essai."""
     _event, err = resolve_event_fragment(_EVENTS, "la mort de Prol")
     assert err is not None
-    for resume in ("Prol franchit la porte blindée",
-                   "Sevne active le détonateur",
-                   "Tarvex s'effondre dans la fumée"):
+    for resume in (
+        "Prol franchit la porte blindée",
+        "Sevne active le détonateur",
+        "Tarvex s'effondre dans la fumée",
+    ):
         assert resume in err, f"le refus doit lister « {resume} »"
 
 
@@ -212,7 +215,10 @@ async def _seed_events(driver: AsyncDriver, proj: str, resumes: list[str]) -> li
                 "MERGE (e:GenEntity {id: $id, project: $project})"
                 " SET e.name = $resume, e.entity_type = 'evenement',"
                 "     e.resume = $resume, e.ordre = $ordre",
-                id=eid, project=proj, resume=resume, ordre=i,
+                id=eid,
+                project=proj,
+                resume=resume,
+                ordre=i,
             )
             ids.append(eid)
         for i in range(len(ids) - 1):
@@ -220,7 +226,9 @@ async def _seed_events(driver: AsyncDriver, proj: str, resumes: list[str]) -> li
                 "MATCH (a:GenEntity {id: $a, project: $p}),"
                 " (b:GenEntity {id: $b, project: $p})"
                 " MERGE (a)-[:REL {rel_type: 'NEXT'}]->(b)",
-                a=ids[i], b=ids[i + 1], p=proj,
+                a=ids[i],
+                b=ids[i + 1],
+                p=proj,
             )
     return ids
 
@@ -275,10 +283,14 @@ async def test_add_event_avant_ordres_contigus(
     proj = "test-reorder-insert-v1"
     await _wipe_proj(driver, proj)
     try:
-        await _seed_events(driver, proj, [
-            "Prol franchit la porte blindée",
-            "Sevne active le détonateur",
-        ])
+        await _seed_events(
+            driver,
+            proj,
+            [
+                "Prol franchit la porte blindée",
+                "Sevne active le détonateur",
+            ],
+        )
         ctx = _make_ctx(driver, proj)
 
         result = await add_event(
@@ -352,10 +364,14 @@ async def test_add_event_avant_reference_ambigue(
     proj = "test-reorder-ambig-v1"
     await _wipe_proj(driver, proj)
     try:
-        await _seed_events(driver, proj, [
-            "Prol franchit la porte blindée",
-            "Sevne verrouille la porte de secours",
-        ])
+        await _seed_events(
+            driver,
+            proj,
+            [
+                "Prol franchit la porte blindée",
+                "Sevne verrouille la porte de secours",
+            ],
+        )
         ctx = _make_ctx(driver, proj)
 
         result = await add_event(
@@ -386,11 +402,15 @@ async def test_move_event_avant_ordres_corrects(
     proj = "test-reorder-move-avant-v1"
     await _wipe_proj(driver, proj)
     try:
-        await _seed_events(driver, proj, [
-            "Prol franchit la porte blindée",
-            "Sevne active le détonateur",
-            "Tarvex s'effondre dans la fumée",
-        ])
+        await _seed_events(
+            driver,
+            proj,
+            [
+                "Prol franchit la porte blindée",
+                "Sevne active le détonateur",
+                "Tarvex s'effondre dans la fumée",
+            ],
+        )
         ctx = _make_ctx(driver, proj)
 
         result = await move_event(
@@ -434,11 +454,15 @@ async def test_move_event_apres_ordres_corrects(
     proj = "test-reorder-move-apres-v1"
     await _wipe_proj(driver, proj)
     try:
-        await _seed_events(driver, proj, [
-            "Prol franchit la porte blindée",
-            "Sevne active le détonateur",
-            "Tarvex s'effondre dans la fumée",
-        ])
+        await _seed_events(
+            driver,
+            proj,
+            [
+                "Prol franchit la porte blindée",
+                "Sevne active le détonateur",
+                "Tarvex s'effondre dans la fumée",
+            ],
+        )
         ctx = _make_ctx(driver, proj)
 
         result = await move_event(
@@ -454,9 +478,13 @@ async def test_move_event_apres_ordres_corrects(
         assert sorted(ordres) == [1, 2, 3], f"Ordres non contigus : {ordres}"
 
         resume_order = [e["resume"] for e in events]
-        assert "Sevne" in resume_order[0], f"Sevne devrait être premier : {resume_order}"
+        assert "Sevne" in resume_order[0], (
+            f"Sevne devrait être premier : {resume_order}"
+        )
         assert "Prol" in resume_order[1], f"Prol devrait être deuxième : {resume_order}"
-        assert "Tarvex" in resume_order[2], f"Tarvex devrait être troisième : {resume_order}"
+        assert "Tarvex" in resume_order[2], (
+            f"Tarvex devrait être troisième : {resume_order}"
+        )
     finally:
         await _wipe_proj(driver, proj)
 
@@ -469,10 +497,14 @@ async def test_move_event_reference_introuvable(
     proj = "test-reorder-move-notfound-v1"
     await _wipe_proj(driver, proj)
     try:
-        await _seed_events(driver, proj, [
-            "Prol franchit la porte blindée",
-            "Sevne active le détonateur",
-        ])
+        await _seed_events(
+            driver,
+            proj,
+            [
+                "Prol franchit la porte blindée",
+                "Sevne active le détonateur",
+            ],
+        )
         ordres_avant = [e["ordre"] for e in await _get_events(driver, proj)]
         ctx = _make_ctx(driver, proj)
 
@@ -498,10 +530,14 @@ async def test_move_event_resume_ambigu(
     proj = "test-reorder-move-ambig-v1"
     await _wipe_proj(driver, proj)
     try:
-        await _seed_events(driver, proj, [
-            "Prol franchit la porte blindée",
-            "Sevne force la porte de secours",
-        ])
+        await _seed_events(
+            driver,
+            proj,
+            [
+                "Prol franchit la porte blindée",
+                "Sevne force la porte de secours",
+            ],
+        )
         ordres_avant = [e["ordre"] for e in await _get_events(driver, proj)]
         ctx = _make_ctx(driver, proj)
 
@@ -529,15 +565,23 @@ async def test_project_isolation(
     for p in (proj_a, proj_b):
         await _wipe_proj(driver, p)
     try:
-        await _seed_events(driver, proj_b, [
-            "Prol franchit la porte blindée",
-            "Sevne active le détonateur",
-        ])
+        await _seed_events(
+            driver,
+            proj_b,
+            [
+                "Prol franchit la porte blindée",
+                "Sevne active le détonateur",
+            ],
+        )
         events_b_avant = await _get_events(driver, proj_b)
 
-        await _seed_events(driver, proj_a, [
-            "Tarvex s'effondre dans la fumée",
-        ])
+        await _seed_events(
+            driver,
+            proj_a,
+            [
+                "Tarvex s'effondre dans la fumée",
+            ],
+        )
         ctx_a = _make_ctx(driver, proj_a)
 
         await add_event(

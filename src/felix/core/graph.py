@@ -9,10 +9,11 @@ Modèle de données volontairement minimal :
 Aucune sémantique de domaine ici : ces helpers ne savent ni ce qu'est un
 personnage ni ce qu'est une date — ils lisent et écrivent des entités libres.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from felix.ingest.resolver import slugify
 
@@ -44,7 +45,7 @@ NARRATIVE_REL = "LIE_A"
 REL_RESERVED_KEYS = {"rel_type", "verbe", "verbe_slug"}
 
 
-def rel_label(rel: dict) -> str:
+def rel_label(rel: dict[str, Any]) -> str:
     """Libellé d'une arête pour l'affichage/les prompts : le VERBE de l'auteur
     pour une arête narrative (« a —[était la maîtresse de]→ b »), le type
     canonique sinon. `rel` est une ligne d'all_relations (props inclus) ou
@@ -57,7 +58,9 @@ def rel_label(rel: dict) -> str:
     return str(rel.get("rel_type", props.get("rel_type", "?")))
 
 
-async def touch_entities(driver: AsyncDriver, ids: Iterable[str], *, project: str) -> None:
+async def touch_entities(
+    driver: AsyncDriver, ids: Iterable[str], *, project: str
+) -> None:
     """Tamponne `last_touched` (ms epoch, horloge Neo4j) sur les entités données.
 
     Posé EN CODE par les tools à chaque écriture ET lecture résolue (jamais par le
@@ -70,11 +73,14 @@ async def touch_entities(driver: AsyncDriver, ids: Iterable[str], *, project: st
         await session.run(
             "MATCH (e:GenEntity {project: $project}) WHERE e.id IN $ids"
             " SET e.last_touched = timestamp()",
-            ids=id_list, project=project,
+            ids=id_list,
+            project=project,
         )
 
 
-async def recent_entities(driver: AsyncDriver, limit: int, *, project: str) -> list[dict]:
+async def recent_entities(
+    driver: AsyncDriver, limit: int, *, project: str
+) -> list[dict[str, str]]:
     """Les entités (non-événement) les plus récemment touchées, récentes d'abord.
 
     C'est la BORNE anti « toute la base dans le prompt » : à 400 entités, seules
@@ -89,12 +95,13 @@ async def recent_entities(driver: AsyncDriver, limit: int, *, project: str) -> l
             ORDER BY coalesce(e.last_touched, 0) DESC, e.id
             LIMIT $limit
             """,
-            limit=limit, project=project,
+            limit=limit,
+            project=project,
         )
         return [dict(r) for r in await result.data()]
 
 
-def render_recent_block(rows: list[dict]) -> str:
+def render_recent_block(rows: list[dict[str, str]]) -> str:
     """Bloc « entités déjà en base » préfixé au prompt des extracteurs (pur, testable).
 
     L'ordre reçu est préservé (la récence EST l'information). Balisé comme contexte
@@ -111,7 +118,9 @@ def render_recent_block(rows: list[dict]) -> str:
     )
 
 
-async def find_node(driver: AsyncDriver, ref: str, *, project: str) -> dict | None:
+async def find_node(
+    driver: AsyncDriver, ref: str, *, project: str
+) -> dict[str, Any] | None:
     """Entité par slug exact, sinon par nom (contains, insensible à la casse).
 
     Tie-break : on PRÉFÈRE l'id qui matche exactement, puis une entité
@@ -137,7 +146,9 @@ async def find_node(driver: AsyncDriver, ref: str, *, project: str) -> dict | No
         return dict(record["e"]) if record else None
 
 
-async def find_non_event(driver: AsyncDriver, ref: str, *, project: str) -> dict | None:
+async def find_non_event(
+    driver: AsyncDriver, ref: str, *, project: str
+) -> dict[str, Any] | None:
     """Comme find_node mais IGNORE les nodes événement (entity_type='evenement').
 
     Les participants d'un événement et les extrémités d'une relation entre entités
@@ -161,7 +172,9 @@ async def find_non_event(driver: AsyncDriver, ref: str, *, project: str) -> dict
         return dict(record["e"]) if record else None
 
 
-async def entity_events(driver: AsyncDriver, ref: str, *, project: str) -> list[dict]:
+async def entity_events(
+    driver: AsyncDriver, ref: str, *, project: str
+) -> list[dict[str, Any]]:
     """Événements ORDONNÉS impliquant une entité, en lignes brutes `{ordre, resume}`.
 
     Le sujet est résolu via `find_non_event` (un événement n'est jamais le sujet
@@ -201,8 +214,7 @@ async def entity_timeline(driver: AsyncDriver, ref: str, *, project: str) -> str
     subject = await find_non_event(driver, ref, project=project)
     name = subject["name"] if subject else ref
     lines = [
-        f"CHRONOLOGIE de {name} "
-        "(événements où il/elle est impliqué(e), dans l'ordre) :"
+        f"CHRONOLOGIE de {name} (événements où il/elle est impliqué(e), dans l'ordre) :"
     ]
     lines.extend(f"  #{r['ordre']} : {r['resume']}" for r in rows)
     return "\n".join(lines)
@@ -227,7 +239,10 @@ async def merge_entity_into(
             "WHERE o.id <> $dst AND r.rel_type <> $narr "
             "MATCH (t:GenEntity {id:$dst, project:$project}) "
             "MERGE (t)-[nr:REL {rel_type: r.rel_type}]->(o) SET nr += properties(r)",
-            src=src_id, dst=dst_id, narr=NARRATIVE_REL, project=project,
+            src=src_id,
+            dst=dst_id,
+            narr=NARRATIVE_REL,
+            project=project,
         )
         await session.run(
             "MATCH (f:GenEntity {id:$src, project:$project})-[r:REL {rel_type: $narr}]->(o) "
@@ -236,7 +251,10 @@ async def merge_entity_into(
             "MERGE (t)-[nr:REL {rel_type: $narr, "
             "verbe_slug: coalesce(r.verbe_slug, '')}]->(o) "
             "SET nr += properties(r)",
-            src=src_id, dst=dst_id, narr=NARRATIVE_REL, project=project,
+            src=src_id,
+            dst=dst_id,
+            narr=NARRATIVE_REL,
+            project=project,
         )
         # Relations ENTRANTES vers src → dst (inclut les INVOLVES/LOCATED_AT
         # d'événements) — mêmes deux passes.
@@ -245,7 +263,10 @@ async def merge_entity_into(
             "WHERE s.id <> $dst AND r.rel_type <> $narr "
             "MATCH (t:GenEntity {id:$dst, project:$project}) "
             "MERGE (s)-[nr:REL {rel_type: r.rel_type}]->(t) SET nr += properties(r)",
-            src=src_id, dst=dst_id, narr=NARRATIVE_REL, project=project,
+            src=src_id,
+            dst=dst_id,
+            narr=NARRATIVE_REL,
+            project=project,
         )
         await session.run(
             "MATCH (s)-[r:REL {rel_type: $narr}]->(f:GenEntity {id:$src, project:$project}) "
@@ -254,29 +275,38 @@ async def merge_entity_into(
             "MERGE (s)-[nr:REL {rel_type: $narr, "
             "verbe_slug: coalesce(r.verbe_slug, '')}]->(t) "
             "SET nr += properties(r)",
-            src=src_id, dst=dst_id, narr=NARRATIVE_REL, project=project,
+            src=src_id,
+            dst=dst_id,
+            narr=NARRATIVE_REL,
+            project=project,
         )
         # Props : dst garde les siennes, on complète avec celles que src a en plus.
         result = await session.run(
             "MATCH (f:GenEntity {id:$src, project:$project}),"
             " (t:GenEntity {id:$dst, project:$project}) "
             "RETURN properties(f) AS fp, properties(t) AS tp",
-            src=src_id, dst=dst_id, project=project,
+            src=src_id,
+            dst=dst_id,
+            project=project,
         )
         record = await result.single()
         if record:
             missing = {
-                k: v for k, v in record["fp"].items()
+                k: v
+                for k, v in record["fp"].items()
                 if k not in record["tp"] and k not in RESERVED_KEYS
             }
             if missing:
                 await session.run(
                     "MATCH (t:GenEntity {id:$dst, project:$project}) SET t += $props",
-                    dst=dst_id, props=missing, project=project,
+                    dst=dst_id,
+                    props=missing,
+                    project=project,
                 )
         await session.run(
             "MATCH (f:GenEntity {id:$src, project:$project}) DETACH DELETE f",
-            src=src_id, project=project,
+            src=src_id,
+            project=project,
         )
 
 
@@ -292,17 +322,24 @@ async def delete_entity(driver: AsyncDriver, entity_id: str, *, project: str) ->
                   -[:REL {rel_type: 'NEXT'}]->(n:GenEntity)
             MERGE (p)-[:REL {rel_type: 'NEXT'}]->(n)
             """,
-            id=entity_id, project=project,
+            id=entity_id,
+            project=project,
         )
         await session.run(
             "MATCH (e:GenEntity {id: $id, project: $project}) DETACH DELETE e",
-            id=entity_id, project=project,
+            id=entity_id,
+            project=project,
         )
 
 
 async def delete_relation(  # noqa: PLR0913 — la clé d'arête est composite (paire+type+verbe) + le scope projet
-    driver: AsyncDriver, from_id: str, to_id: str, rel_type: str,
-    verbe_slug: str | None = None, *, project: str,
+    driver: AsyncDriver,
+    from_id: str,
+    to_id: str,
+    rel_type: str,
+    verbe_slug: str | None = None,
+    *,
+    project: str,
 ) -> bool:
     """Supprime UNE relation orientée (from —[rel_type]→ to). Rend False si elle
     n'existait pas (la clé vient du front — elle peut être périmée).
@@ -318,7 +355,11 @@ async def delete_relation(  # noqa: PLR0913 — la clé d'arête est composite (
             WHERE $vs IS NULL OR r.verbe_slug = $vs
             DELETE r RETURN count(r) AS n
             """,
-            a=from_id, b=to_id, t=rel_type, vs=verbe_slug, project=project,
+            a=from_id,
+            b=to_id,
+            t=rel_type,
+            vs=verbe_slug,
+            project=project,
         )
         record = await result.single()
         return bool(record and record["n"])
@@ -353,31 +394,49 @@ async def rename_or_merge(
         async with driver.session() as session:
             await session.run(
                 "MATCH (e:GenEntity {id: $id, project: $project}) SET e.name = $name",
-                id=node["id"], name=new_name, project=project,
+                id=node["id"],
+                name=new_name,
+                project=project,
             )
-        return RenameOutcome("refreshed", old_name=node["name"],
-                             new_name=new_name, final_id=node["id"])
+        return RenameOutcome(
+            "refreshed", old_name=node["name"], new_name=new_name, final_id=node["id"]
+        )
 
     target = await find_node(driver, new_id, project=project)
-    if target and target["id"] != node["id"]:  # collision → FUSION dans le nom canonique
+    if (
+        target and target["id"] != node["id"]
+    ):  # collision → FUSION dans le nom canonique
         await merge_entity_into(driver, node["id"], target["id"], project=project)
-        return RenameOutcome("merged", old_name=node["name"],
-                             new_name=target["name"], final_id=target["id"])
+        return RenameOutcome(
+            "merged",
+            old_name=node["name"],
+            new_name=target["name"],
+            final_id=target["id"],
+        )
 
     # Renommage simple : migrer id + name. Les arêtes suivent le NŒUD, pas l'id.
     async with driver.session() as session:
         await session.run(
             "MATCH (e:GenEntity {id: $old, project: $project})"
             " SET e.id = $new, e.name = $name",
-            old=node["id"], new=new_id, name=new_name, project=project,
+            old=node["id"],
+            new=new_id,
+            name=new_name,
+            project=project,
         )
-    return RenameOutcome("renamed", old_name=node["name"],
-                         new_name=new_name, final_id=new_id)
+    return RenameOutcome(
+        "renamed", old_name=node["name"], new_name=new_name, final_id=new_id
+    )
 
 
 async def create_entity(  # noqa: PLR0913 — chemin de création partagé, un champ par colonne du nœud
-    driver: AsyncDriver, entity_id: str, name: str, entity_type: str,
-    props: dict[str, str], *, project: str,
+    driver: AsyncDriver,
+    entity_id: str,
+    name: str,
+    entity_type: str,
+    props: dict[str, str],
+    *,
+    project: str,
 ) -> None:
     """MERGE d'une entité :GenEntity — le chemin de création PARTAGÉ entre le
     tool `add_entity` (LLM) et l'ingestion de document EN CODE (#Étape 2) : même
@@ -389,13 +448,21 @@ async def create_entity(  # noqa: PLR0913 — chemin de création partagé, un c
             "MERGE (e:GenEntity {id: $id, project: $project})"
             " ON CREATE SET e.name = $name, e.entity_type = $type"
             " SET e += $props",
-            id=entity_id, name=name, type=entity_type, props=props, project=project,
+            id=entity_id,
+            name=name,
+            type=entity_type,
+            props=props,
+            project=project,
         )
 
 
 async def link_described_in(
-    driver: AsyncDriver, entity_ids: Iterable[str], document_id: str, page: int,
-    *, project: str,
+    driver: AsyncDriver,
+    entity_ids: Iterable[str],
+    document_id: str,
+    page: int,
+    *,
+    project: str,
 ) -> None:
     """Pose EN CODE la relation DESCRIBED_IN {entité → document} à l'ingestion
     (#Étape 2, ``felix.ingest.document.ingest_document``) : chaque entité
@@ -418,11 +485,14 @@ async def link_described_in(
                 ELSE coalesce(r.pages, []) + $page
             END
             """,
-            ids=ids, doc=document_id, page=page, project=project,
+            ids=ids,
+            doc=document_id,
+            page=page,
+            project=project,
         )
 
 
-async def all_entities(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def all_entities(driver: AsyncDriver, *, project: str) -> list[dict[str, Any]]:
     async with driver.session() as session:
         result = await session.run(
             "MATCH (e:GenEntity {project: $project}) RETURN e ORDER BY e.id",
@@ -431,7 +501,7 @@ async def all_entities(driver: AsyncDriver, *, project: str) -> list[dict]:
         return [dict(r["e"]) for r in await result.data()]
 
 
-async def all_relations(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def all_relations(driver: AsyncDriver, *, project: str) -> list[dict[str, Any]]:
     # Une relation ne traverse jamais deux projets (les deux extrémités sont
     # résolues dans le même projet au write) : filtrer la source suffit.
     async with driver.session() as session:
@@ -446,7 +516,10 @@ async def all_relations(driver: AsyncDriver, *, project: str) -> list[dict]:
 
 
 async def entity_relation_counts(
-    driver: AsyncDriver, *, project: str, excluded_rel_types: Iterable[str],
+    driver: AsyncDriver,
+    *,
+    project: str,
+    excluded_rel_types: Iterable[str],
 ) -> dict[str, int]:
     """Nombre de relations par entité, hors types exclus (#73 : la carte compte
     les LIENS utiles pour choisir une fiche, pas la machinerie chronologie/
@@ -463,12 +536,15 @@ async def entity_relation_counts(
               WHERE NOT r.rel_type IN $excluded
             RETURN e.id AS id, count(r) AS n
             """,
-            project=project, excluded=list(excluded_rel_types),
+            project=project,
+            excluded=list(excluded_rel_types),
         )
         return {row["id"]: row["n"] for row in await result.data()}
 
 
-async def entity_primary_sources(driver: AsyncDriver, *, project: str) -> dict[str, dict]:
+async def entity_primary_sources(
+    driver: AsyncDriver, *, project: str
+) -> dict[str, dict[str, Any]]:
     """Premier document DESCRIBED_IN de chaque entité (titre + pages), une seule
     requête pour tout le projet. Une entité peut décrire plusieurs documents —
     on ne garde QUE le premier (id document trié, déterministe) : la carte
@@ -488,9 +564,10 @@ async def entity_primary_sources(driver: AsyncDriver, *, project: str) -> dict[s
         return {row["id"]: row["source"] for row in await result.data()}
 
 
-def fmt_props(props: dict, *, skip_reserved: bool = True) -> str:
+def fmt_props(props: dict[str, Any], *, skip_reserved: bool = True) -> str:
     items = [
-        f"{k}={v!r}" for k, v in sorted(props.items())
+        f"{k}={v!r}"
+        for k, v in sorted(props.items())
         if not (skip_reserved and k in RESERVED_KEYS)
     ]
     return ", ".join(items) if items else "(aucune propriété)"
@@ -504,15 +581,19 @@ async def neighborhood(driver: AsyncDriver, ref: str, *, project: str) -> str | 
     relations = await all_relations(driver, project=project)
     entities = {e["id"]: e for e in await all_entities(driver, project=project)}
 
-    lines = [f"ENTITÉ : {node['name']} (type: {node.get('entity_type')})",
-             f"  propriétés : {fmt_props(node)}"]
+    lines = [
+        f"ENTITÉ : {node['name']} (type: {node.get('entity_type')})",
+        f"  propriétés : {fmt_props(node)}",
+    ]
     for r in relations:
         if node["id"] not in (r["from"], r["to"]):
             continue
         other_id = r["to"] if r["from"] == node["id"] else r["from"]
         other = entities.get(other_id, {})
         rel_props = {k: v for k, v in r["props"].items() if k not in REL_RESERVED_KEYS}
-        rel_extra = f" ({fmt_props(rel_props, skip_reserved=False)})" if rel_props else ""
+        rel_extra = (
+            f" ({fmt_props(rel_props, skip_reserved=False)})" if rel_props else ""
+        )
         # Arête narrative : le juge lit le VERBE exact de l'auteur (plus précis
         # qu'un type canonique), une structurelle garde son type (#68).
         lines.append(

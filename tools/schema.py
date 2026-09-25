@@ -18,6 +18,7 @@ Usage :
       --json '{"kind": "promote_verbs", "verbe_slugs": ["regle"], "rel_type": "CONTROLS"}'
   uv run python tools/schema.py accept-all --project e2e-emergent
 """
+
 # ruff: noqa: T201 — CLI, le print EST la sortie
 from __future__ import annotations
 
@@ -54,24 +55,36 @@ def _parse_args() -> argparse.Namespace:
     # ne s'écrit QU'APRÈS la sous-commande (cf. docstring du module).
     project_parent = argparse.ArgumentParser(add_help=False)
     project_parent.add_argument(
-        "--project", default=DEFAULT_PROJECT, help="Projet cible (défaut : defaut)",
+        "--project",
+        default=DEFAULT_PROJECT,
+        help="Projet cible (défaut : defaut)",
     )
 
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("profile", help="Affiche le profil réel du projet", parents=[project_parent])
+    sub.add_parser(
+        "profile", help="Affiche le profil réel du projet", parents=[project_parent]
+    )
     p_proposals = sub.add_parser(
-        "proposals", help="Liste les propositions du détecteur", parents=[project_parent],
+        "proposals",
+        help="Liste les propositions du détecteur",
+        parents=[project_parent],
     )
     p_proposals.add_argument("--min-count", type=int, default=2)
     p_apply = sub.add_parser(
-        "apply", help="Applique un changement (migre + évolue + sauve)",
+        "apply",
+        help="Applique un changement (migre + évolue + sauve)",
         parents=[project_parent],
     )
-    p_apply.add_argument("--json", required=True, dest="change_json",
-                          help="Le SchemaChange en JSON (PromoteVerbs ou MergeTypes)")
+    p_apply.add_argument(
+        "--json",
+        required=True,
+        dest="change_json",
+        help="Le SchemaChange en JSON (PromoteVerbs ou MergeTypes)",
+    )
     p_accept = sub.add_parser(
-        "accept-all", help="Accepte toutes les propositions courantes",
+        "accept-all",
+        help="Accepte toutes les propositions courantes",
         parents=[project_parent],
     )
     p_accept.add_argument("--min-count", type=int, default=2)
@@ -81,7 +94,9 @@ def _parse_args() -> argparse.Namespace:
 async def _current_profile(driver: AsyncDriver, project: str) -> Profile:
     choice = ATELIER_CHOICES["emergent"]
     profile = await resolve_profile(driver, choice, project=project)
-    assert profile is not None  # le choix "emergent" a toujours un profil (le seed au pire)
+    assert (
+        profile is not None
+    )  # le choix "emergent" a toujours un profil (le seed au pire)
     return profile
 
 

@@ -1,4 +1,5 @@
 """Utilitaires partagés entre les suites d'evals."""
+
 from __future__ import annotations
 
 import asyncio
@@ -31,7 +32,13 @@ def is_transient_error(exc: Exception) -> bool:
     return any(
         pattern in msg
         for pattern in (
-            "429", "rate", "timeout", "500", "502", "503", "504",
+            "429",
+            "rate",
+            "timeout",
+            "500",
+            "502",
+            "503",
+            "504",
             "invalid_function_call",
         )
     )

@@ -7,6 +7,7 @@ SUIVANT, une seule fois (flag `notified`). Le fil threadé garde la mémoire ens
 
 Invisible des tools (hors :GenEntity), scopé par projet (#60).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -26,7 +27,8 @@ async def record_alert(driver: AsyncDriver, body: str, *, project: str) -> None:
         await session.run(
             "CREATE (:Alert {body: $body, ts: timestamp(), notified: false,"
             " project: $project})",
-            body=body, project=project,
+            body=body,
+            project=project,
         )
 
 
@@ -44,7 +46,8 @@ async def consume_unnotified_alerts(driver: AsyncDriver, *, project: str) -> lis
         await session.run(
             "MATCH (a:Alert {project: $project})"
             " WHERE a.notified = true AND a.ts < timestamp() - $cutoff DELETE a",
-            project=project, cutoff=cutoff_ms,
+            project=project,
+            cutoff=cutoff_ms,
         )
         # Read-and-mark atomique : renvoie ET marque en une seule transaction.
         result = await session.run(

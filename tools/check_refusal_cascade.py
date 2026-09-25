@@ -10,6 +10,7 @@ et toléré : c'est la chronologie, pas le contournement.
 
 Usage : uv run python tools/check_refusal_cascade.py
 """
+
 # ruff: noqa: T201
 from __future__ import annotations
 
@@ -40,7 +41,9 @@ checks: list[tuple[str, bool, str]] = []
 
 def check(label: str, ok: bool, detail: str = "") -> None:
     checks.append((label, ok, detail))
-    print(f"{'✓' if ok else '✗'} {label}" + (f" — {detail}" if detail and not ok else ""))
+    print(
+        f"{'✓' if ok else '✗'} {label}" + (f" — {detail}" if detail and not ok else "")
+    )
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -50,9 +53,19 @@ def _is_transient(exc: Exception) -> bool:
     if "timeout" in type(exc).__qualname__.lower():
         return True
     msg = str(exc).lower()
-    return any(p in msg for p in (
-        "429", "rate", "timeout", "500", "502", "503", "504", "invalid_function_call",
-    ))
+    return any(
+        p in msg
+        for p in (
+            "429",
+            "rate",
+            "timeout",
+            "500",
+            "502",
+            "503",
+            "504",
+            "invalid_function_call",
+        )
+    )
 
 
 async def _run_agent(make_coro, attempts: int = 3) -> object:
@@ -94,7 +107,8 @@ async def run_once(driver) -> bool:
     # Un nœud evenement créé par add_event (entity_type='evenement') est ATTENDU
     # et ne compte pas comme un contournement.
     bataille_non_event = [
-        e for e in entities
+        e
+        for e in entities
         if "bataille" in str(e.get("name", "")).lower()
         and str(e.get("entity_type", "")).lower() != "evenement"
     ]
@@ -130,7 +144,9 @@ async def main() -> int:
         )
 
         failed = [label for label, ok, _ in checks if not ok]
-        print(f"\n{len(checks) - len(failed)}/{len(checks)} checks verts  ({passes}/{N} passes)")
+        print(
+            f"\n{len(checks) - len(failed)}/{len(checks)} checks verts  ({passes}/{N} passes)"
+        )
         return 1 if failed else 0
 
     finally:

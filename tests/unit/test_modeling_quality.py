@@ -8,6 +8,7 @@ Test déterministe (sans LLM) des deux décisions actées :
    `update_entity` (il garde `add_entity` en backfill). Supprime la 2e source de churn
    (re-update des mêmes props par-dessus la passe 1).
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite
@@ -75,7 +76,9 @@ def test_overwrite_allowed_with_correction() -> None:
 def test_new_key_always_applied() -> None:
     """Une nouvelle clé (fait durable inédit) passe toujours — c'est l'enrichissement additif."""
     to_set, blocked = plan_property_update(
-        {"traits": "colonial"}, {"background": "fils de légionnaire"}, is_correction=False
+        {"traits": "colonial"},
+        {"background": "fils de légionnaire"},
+        is_correction=False,
     )
     assert blocked == []
     assert to_set == {"background": "fils de légionnaire"}

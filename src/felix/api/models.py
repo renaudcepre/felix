@@ -34,8 +34,8 @@ class ConversationMessageOut(BaseModel):
     carte de résumé d'ingestion — cf. felix.ingest.document.IngestReport)."""
 
     id: str
-    role: str   # 'user' | 'felix'
-    kind: str   # 'text' | 'tool' | 'alert' | 'report'
+    role: str  # 'user' | 'felix'
+    kind: str  # 'text' | 'tool' | 'alert' | 'report'
     body: str
     ord: int
     payload: dict[str, Any] | None = None

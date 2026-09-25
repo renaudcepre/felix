@@ -11,9 +11,10 @@ Neo4j Community : pas de multi-database ni de contrainte composite — l'unicit�
 de {id, project} est garantie par les clés de MERGE des writers, pas par une
 contrainte (suffisant en local-first mono-utilisateur).
 """
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from felix.ingest.resolver import slugify
 
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 DEFAULT_PROJECT = "defaut"
 
 
-async def list_projects(driver: AsyncDriver) -> list[dict]:
+async def list_projects(driver: AsyncDriver) -> list[dict[str, Any]]:
     """Tous les projets du registre, plus récents d'abord (le défaut en dernier
     s'il est seul — l'ordre de création est l'ordre naturel du sélecteur)."""
     async with driver.session() as session:
@@ -38,7 +39,7 @@ async def list_projects(driver: AsyncDriver) -> list[dict]:
         return [dict(r) for r in await result.data()]
 
 
-async def create_project(driver: AsyncDriver, name: str) -> dict | None:
+async def create_project(driver: AsyncDriver, name: str) -> dict[str, Any] | None:
     """Crée (ou retrouve) un projet par nom. Rend None sur nom vide/invalide.
 
     MERGE sur l'id (slug du nom) : recréer « Alger 1957 » ne duplique pas le
@@ -54,7 +55,8 @@ async def create_project(driver: AsyncDriver, name: str) -> dict | None:
             ON CREATE SET p.name = $name, p.created_at = timestamp()
             RETURN p.id AS id, p.name AS name, p.created_at AS created_at
             """,
-            id=project_id, name=name.strip(),
+            id=project_id,
+            name=name.strip(),
         )
         record = await result.single()
         return dict(record) if record else None
@@ -70,7 +72,8 @@ async def ensure_project_scoping(driver: AsyncDriver) -> None:
             "ON CREATE SET p.name = $name, p.created_at = timestamp() "
             # Répare un registre abîmé (projet créé sans nom par un ancien writer).
             "ON MATCH SET p.name = coalesce(p.name, $name)",
-            id=DEFAULT_PROJECT, name="Projet par défaut",
+            id=DEFAULT_PROJECT,
+            name="Projet par défaut",
         )
         await session.run(
             "MATCH (e:GenEntity) WHERE e.project IS NULL SET e.project = $p",

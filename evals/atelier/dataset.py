@@ -7,6 +7,7 @@ Note : bapteme_differe n'est PAS dans atelier_cases — il est joué en multi-ru
 (N=3, seuil 2/3) depuis session.py via run_atelier_multirun_case. Son scénario
 est exporté dans BAPTEME_DIFFERE_INPUTS pour rester la source canonique.
 """
+
 from __future__ import annotations
 
 from protest import ForEach
@@ -106,10 +107,15 @@ _nadir_beats = [
 # Vesuvio localisé à Lyon — sans l'adresse, Marseille vs « au Vesuvio » ne serait
 # pas une contradiction démontrable (leçon des evals generic).
 _check_seed = [
-    {"name": "Marco Santi",
-     "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
-    {"name": "Le Vesuvio", "entity_type": "lieu",
-     "props": {"adresse": "8 quai de Bondy, Lyon"}},
+    {
+        "name": "Marco Santi",
+        "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"},
+    },
+    {
+        "name": "Le Vesuvio",
+        "entity_type": "lieu",
+        "props": {"adresse": "8 quai de Bondy, Lyon"},
+    },
 ]
 
 # Seed partagé des deux cas « checker temporel » (mort-puis-agit). Borin est un
@@ -118,8 +124,11 @@ _check_seed = [
 _garde_seed = [
     {"name": "Borin", "props": {"role": "garde du corps du Baron Arkham"}},
     {"name": "Le Baron Arkham", "props": {"role": "seigneur du château"}},
-    {"name": "La salle du trône", "entity_type": "lieu",
-     "props": {"description": "la grande salle du château d'Arkham"}},
+    {
+        "name": "La salle du trône",
+        "entity_type": "lieu",
+        "props": {"description": "la grande salle du château d'Arkham"},
+    },
 ]
 
 # Scénario du baptême différé : une entité introduite sans nom propre reçoit
@@ -307,7 +316,10 @@ atelier_cases = ForEach(
                 "message": "Rappelle-moi qui sont mes personnages ?",
                 "seed": [
                     {"name": "Jean", "background": "Pêcheur taciturne."},
-                    {"name": "Camille", "background": "Institutrice, ancienne amie de Jean."},
+                    {
+                        "name": "Camille",
+                        "background": "Institutrice, ancienne amie de Jean.",
+                    },
                 ],
             },
             evaluators=[
@@ -322,8 +334,12 @@ atelier_cases = ForEach(
             inputs={
                 "message": "Ajoute que Marco était au Vesuvio, à Lyon, le soir du 12 juin.",
                 "seed": [
-                    {"name": "Marco Santi",
-                     "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
+                    {
+                        "name": "Marco Santi",
+                        "props": {
+                            "alibi": "chez sa mère à Marseille le soir du 12 juin"
+                        },
+                    },
                 ],
             },
             # Fait divergent (autre lieu, même soir) → s'AJOUTE sans écraser l'alibi.
@@ -340,8 +356,12 @@ atelier_cases = ForEach(
             inputs={
                 "message": "Correction : en fait l'alibi de Marco Santi, c'était Lyon, pas Marseille.",
                 "seed": [
-                    {"name": "Marco Santi",
-                     "props": {"alibi": "chez sa mère à Marseille le soir du 12 juin"}},
+                    {
+                        "name": "Marco Santi",
+                        "props": {
+                            "alibi": "chez sa mère à Marseille le soir du 12 juin"
+                        },
+                    },
                 ],
             },
             # Correction explicite (« correction », « en fait ») → REMPLACE.
@@ -352,7 +372,7 @@ atelier_cases = ForEach(
             name="check_contradiction",
             inputs={
                 "message": "Ajoute à la fiche de Marco qu'il était au Vesuvio,"
-                           " à Lyon, le soir du 12 juin.",
+                " à Lyon, le soir du 12 juin.",
                 "seed": _check_seed,
                 "check": "marco",
             },
@@ -378,7 +398,7 @@ atelier_cases = ForEach(
                 # extraction cumulative : les entités phares sont présentes (souple)
                 graph_has_entities(
                     ids="silas, eleonore, arkham, athanor, fonderie, golems, mages, "
-                        "milice, grande chaudiere, vapor-dominus, eclipse",
+                    "milice, grande chaudiere, vapor-dominus, eclipse",
                     min_recall=0.8,
                 ),
                 # résolution : les 2 leads = UN seul nœud sur 7 beats. Noms propres
@@ -392,7 +412,7 @@ atelier_cases = ForEach(
                 # baisser pour faire passer (cf. evals aspirationnelles Felix).
                 relations_present(
                     pairs="silas->cadavre, mages->athanor, mages->ouvriers, "
-                          "eleonore->silas, silas->arkham",
+                    "eleonore->silas, silas->arkham",
                     min_recall=0.8,
                 ),
                 # Dérive des noms de relations : métrique-only (ne gate pas encore).
@@ -441,7 +461,7 @@ atelier_cases = ForEach(
             name="verbe_maitresse",
             inputs={
                 "message": "Tessa était la maîtresse du forgeron Hadrin ; leur "
-                           "liaison secrète dure depuis des années.",
+                "liaison secrète dure depuis des années.",
                 "seed": [],
             },
             # Sonde du VERBE uniquement : pas de graph_char_count ici — la forme de
@@ -455,7 +475,7 @@ atelier_cases = ForEach(
             name="verbe_ordonne",
             inputs={
                 "message": "La capitaine Ressac ordonne à son éclaireur Joun de "
-                           "fouiller l'épave avant la nuit.",
+                "fouiller l'épave avant la nuit.",
                 "seed": [],
             },
             evaluators=[
@@ -466,7 +486,7 @@ atelier_cases = ForEach(
             name="verbe_transporte",
             inputs={
                 "message": "Le passeur Wendel transporte une cargaison de "
-                           "lanternes interdites cachée à bord de sa barge.",
+                "lanternes interdites cachée à bord de sa barge.",
                 "seed": [],
             },
             evaluators=[
@@ -509,8 +529,16 @@ FLASHBACK_CORRECTION_INPUTS = {
         "En fait, l'annonce de Kezra c'était la veille de la mort de Jovan — je raconte dans le désordre.",
     ],
     "seed": [
-        {"name": "Jovan", "entity_type": "personnage", "props": {"role": "acrobate vedette"}},
-        {"name": "Kezra", "entity_type": "personnage", "props": {"role": "présentatrice"}},
+        {
+            "name": "Jovan",
+            "entity_type": "personnage",
+            "props": {"role": "acrobate vedette"},
+        },
+        {
+            "name": "Kezra",
+            "entity_type": "personnage",
+            "props": {"role": "présentatrice"},
+        },
     ],
 }
 
@@ -525,7 +553,11 @@ FLASHBACK_CREATION_INPUTS = {
         "La tempête avait soufflé les antennes trois jours avant l'arrivée d'Imra — je raconte dans le désordre, c'est un flashback.",
     ],
     "seed": [
-        {"name": "Imra", "entity_type": "personnage", "props": {"role": "cheffe de plateforme"}},
+        {
+            "name": "Imra",
+            "entity_type": "personnage",
+            "props": {"role": "cheffe de plateforme"},
+        },
     ],
 }
 

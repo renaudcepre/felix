@@ -10,12 +10,13 @@ Protocole d'événements (aligné sur le modèle AtelierMsg du front) :
 - ``alert``   : incohérence détectée par le check de cohérence (JSON, kind=alert)
 - ``done`` / ``error``
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Query
 from pydantic_ai.messages import ModelMessagesTypeAdapter
@@ -98,7 +99,9 @@ async def _master_prompt(driver: AsyncDriver, message: str, project: str) -> str
 
 
 async def _apply_gate_verdict(
-    gate_task: asyncio.Task, gate_agent: Agent[None, RouteDecision], deps: GenericDeps
+    gate_task: asyncio.Task[Any],
+    gate_agent: Agent[None, RouteDecision],
+    deps: GenericDeps,
 ) -> None:
     """Attend le gate et pose `extraction_requested`. Best-effort FAIL-CLOSED : si le
     gate crashe (transient LLM), on n'extrait pas ce tour — l'invariant produit n°1
@@ -148,7 +151,9 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
         turn = build_turn_agents(choice, profile)
         gate_agent, master_agent = turn.gate, turn.master
         agent, relation_agent, chronicle_agent = (
-            turn.atelier, turn.relation, turn.chronicle,
+            turn.atelier,
+            turn.relation,
+            turn.chronicle,
         )
     else:
         gate_agent = gate_agents[choice.key]
@@ -176,7 +181,9 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
         raw = await load_llm_history(driver, project=body.project)
         if raw is not None:
             full = ModelMessagesTypeAdapter.validate_python(json.loads(raw))
-            message_history = window_history_by_tokens(full, settings.history_token_budget)
+            message_history = window_history_by_tokens(
+                full, settings.history_token_budget
+            )
 
     async def event_generator() -> AsyncGenerator[ServerSentEvent]:
         # Persistance du message utilisateur dès l'entrée du tour (#63) : si une
@@ -199,10 +206,14 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             # Passe 0 « maître » : MÈNE la conversation (texte streamé), threadée.
             # La décision d'extraire ne lui appartient plus (cf. gate ci-dessus).
             yield ServerSentEvent(data="Felix répond…", event="phase")
-            master: dict = {}
+            master: dict[str, Any] = {}
             async for ev in stream_pass(
-                master_agent, await _master_prompt(driver, body.message, body.project),
-                message_history, deps, stream_text=True, holder=master
+                master_agent,
+                await _master_prompt(driver, body.message, body.project),
+                message_history,
+                deps,
+                stream_text=True,
+                holder=master,
             ):
                 yield ev
                 # Accumulation du texte et collecte des cartes outil du maître.
@@ -231,10 +242,14 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 # Décisions manuelles de l'auteur (#61) : injectées à CHAQUE tour
                 # d'extraction tant que le tombstone vit (TTL) — c'est la garantie
                 # qu'une fiche supprimée depuis l'UI ne renaît pas via l'historique.
-                edits_block = render_user_edits_block(await recent_user_edits(
-                    driver, settings.user_edits_limit, settings.user_edits_ttl_minutes,
-                    project=body.project,
-                ))
+                edits_block = render_user_edits_block(
+                    await recent_user_edits(
+                        driver,
+                        settings.user_edits_limit,
+                        settings.user_edits_ttl_minutes,
+                        project=body.project,
+                    )
+                )
                 extract_prompt = "\n\n".join(
                     part for part in (edits_block, block, body.message) if part
                 )
@@ -242,9 +257,14 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                 # felix.atelier.pipeline. Le chroniqueur (si le domaine en tient
                 # un) reçoit le message NU, sans historique (sinon re-chronique).
                 async for ev in run_extractors(
-                    agent, relation_agent, chronicle_agent,
-                    extract_prompt, body.message, message_history,
-                    deps, profile,
+                    agent,
+                    relation_agent,
+                    chronicle_agent,
+                    extract_prompt,
+                    body.message,
+                    message_history,
+                    deps,
+                    profile,
                 ):
                     yield ev
                     if ev.event == "tool":
@@ -273,7 +293,9 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             # L'historique threadé = le FIL DU MAÎTRE (la conversation), pas les
             # tool-calls d'extraction : le graphe est la mémoire longue, relue à la
             # demande. Plus léger, et la conversation reste cohérente d'un tour à l'autre.
-            serialized = ModelMessagesTypeAdapter.dump_python(master["messages"], mode="json")
+            serialized = ModelMessagesTypeAdapter.dump_python(
+                master["messages"], mode="json"
+            )
             yield ServerSentEvent(data=json.dumps(serialized), event="history")
 
             # --- Persistance du tour en graphe (#63) ---
@@ -288,12 +310,17 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
             trace_json = trace_summary.model_dump()
             if master_text_buf:
                 text_payload = (
-                    None if turn_cards
+                    None
+                    if turn_cards
                     else json.dumps({"cost": cost_json, "trace": trace_json})
                 )
                 await record_message(
-                    driver, "felix", "text", "".join(master_text_buf),
-                    payload=text_payload, project=body.project,
+                    driver,
+                    "felix",
+                    "text",
+                    "".join(master_text_buf),
+                    payload=text_payload,
+                    project=body.project,
                 )
             for idx, (kind, card_data) in enumerate(turn_cards):
                 card = json.loads(card_data)
@@ -301,22 +328,28 @@ async def atelier_chat(  # noqa: PLR0913, PLR0915 — params FastAPI + setup ava
                     card["cost"] = cost_json
                     card["trace"] = trace_json
                 await record_message(
-                    driver, "felix", kind, "", payload=json.dumps(card),
+                    driver,
+                    "felix",
+                    kind,
+                    "",
+                    payload=json.dumps(card),
                     project=body.project,
                 )
             # Coût persistant du projet (#coût) : accumulé en base pour le total
             # affiché dans la topbar, INDÉPENDAMMENT de l'historique des messages
             # (survit à « nouvelle conversation »/archivage).
-            await record_cost_entry(driver, cost_summary, project=body.project, kind="chat")
+            await record_cost_entry(
+                driver, cost_summary, project=body.project, kind="chat"
+            )
             # Provenance : le message de l'AUTEUR a produit les entités touchées
             # ce tour. Scoping fort : link_produced ne traverse pas les projets.
-            await link_produced(driver, user_msg_id, deps.touched_ids, project=body.project)
+            await link_produced(
+                driver, user_msg_id, deps.touched_ids, project=body.project
+            )
             # Le fil threadé du maître est stocké côté serveur : le front web n'a
             # plus besoin de localStorage. Les evals/e2e qui fournissent
             # message_history continuent à fonctionner sans aucun changement.
-            await save_llm_history(
-                driver, json.dumps(serialized), project=body.project
-            )
+            await save_llm_history(driver, json.dumps(serialized), project=body.project)
 
             yield ServerSentEvent(data="", event="done")
         except Exception as e:
@@ -341,11 +374,11 @@ async def get_conversation(
     out = []
     for m in msgs:
         payload_raw = m.get("payload")
-        payload_dict: dict | None = None
+        payload_dict: dict[str, Any] | None = None
         if payload_raw is not None:
             try:
                 payload_dict = json.loads(payload_raw)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 payload_dict = None
         out.append(
             ConversationMessageOut(

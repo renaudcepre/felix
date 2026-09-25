@@ -15,6 +15,7 @@ Quatre familles de tests :
 Univers de test : Zorvun/Kelphi/Astaroth (fictifs, cf. tests/unit/test_cost.py
 — aucun recoupement avec des exemples de prompt, cf. CLAUDE.md anti-leakage).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -54,6 +55,7 @@ tool_trace_suite = ProTestSuite("ToolTrace")
 
 # ─────────────────────── QueryTrace : calcul pur ────────────────────────
 
+
 @tool_trace_suite.test()
 def test_add_query_truncates_long_string_param_values() -> None:
     trace = QueryTrace()
@@ -84,7 +86,9 @@ def test_queries_beyond_cap_are_counted_not_kept() -> None:
 @tool_trace_suite.test()
 def test_merge_combines_tool_calls_and_queries() -> None:
     a = QueryTrace()
-    a.add_tool_call("find_entity", {"name": "Zorvun"}, "Recherche d'informations sur Zorvun")
+    a.add_tool_call(
+        "find_entity", {"name": "Zorvun"}, "Recherche d'informations sur Zorvun"
+    )
     a.add_query("MATCH (e) RETURN e", {"id": "zorvun"})
     b = QueryTrace()
     b.add_tool_call("list_entities", {}, "Liste des fiches")
@@ -119,6 +123,7 @@ def test_empty_trace_has_no_queries_omitted() -> None:
 
 # ─────────────────────── fixture driver réel (Neo4j) ────────────────────
 
+
 @fixture(max_concurrency=1)
 async def _trace_driver() -> AsyncGenerator[AsyncDriver]:
     driver = get_driver()
@@ -140,19 +145,24 @@ async def _wipe(driver: AsyncDriver, proj: str) -> None:
 
 # ─────────── RecordingDriver : un VRAI appel d'outil contre Neo4j ───────────
 
+
 def _make_single_tool_caller(
-    tool_name: str, args: dict[str, object], final_text: str = "fait.",
+    tool_name: str,
+    args: dict[str, object],
+    final_text: str = "fait.",
 ):
     """Function pour `FunctionModel` : appelle `tool_name(**args)` au premier
     tour, renvoie du texte au second (dès que le dernier message porte le
     retour d'outil) — un stub IN-PROCESS, aucun appel réseau, cf.
     tests/unit/test_cost.py pour le même principe avec `TestModel`."""
+
     def model_fn(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
         last = messages[-1]
         already_called = any(isinstance(p, ToolReturnPart) for p in last.parts)
         if already_called:
             return ModelResponse(parts=[TextPart(content=final_text)])
         return ModelResponse(parts=[ToolCallPart(tool_name=tool_name, args=args)])
+
     return model_fn
 
 
@@ -167,14 +177,17 @@ async def test_recording_driver_captures_query_and_params_for_a_real_tool_call(
         deps = GenericDeps(driver=driver, project_id=proj)
         agent = Agent(
             FunctionModel(_make_single_tool_caller("find_entity", {"name": "Zorvun"})),
-            deps_type=GenericDeps, output_type=str,
+            deps_type=GenericDeps,
+            output_type=str,
         )
         agent.tool(find_entity)
 
         await agent.run("cherche Zorvun", deps=deps)
 
         queries = deps.query_trace.summary().queries
-        assert queries, "aucune requête capturée — le driver de deps n'est pas proxifié ?"
+        assert queries, (
+            "aucune requête capturée — le driver de deps n'est pas proxifié ?"
+        )
         matched = [q for q in queries if q.params.get("project") == proj]
         assert matched, [q.query for q in queries]
         # find_node résout par slug ET par nom (cf. felix.core.graph.find_node) —
@@ -195,17 +208,26 @@ async def test_stream_pass_captures_tool_name_args_and_human_label(
         deps = GenericDeps(driver=driver, project_id=proj)
         agent = Agent(
             FunctionModel(_make_single_tool_caller("find_entity", {"name": "Kelphi"})),
-            deps_type=GenericDeps, output_type=str,
+            deps_type=GenericDeps,
+            output_type=str,
         )
         agent.tool(find_entity)
 
         holder: dict = {}
         events = [
-            ev async for ev in stream_pass(
-                agent, "cherche Kelphi", None, deps, stream_text=False, holder=holder,
+            ev
+            async for ev in stream_pass(
+                agent,
+                "cherche Kelphi",
+                None,
+                deps,
+                stream_text=False,
+                holder=holder,
             )
         ]
-        assert events == [] or all(ev.event == "tool" for ev in events)  # find_entity ne pousse pas de carte
+        assert events == [] or all(
+            ev.event == "tool" for ev in events
+        )  # find_entity ne pousse pas de carte
 
         calls = deps.query_trace.summary().tool_calls
         assert len(calls) == 1
@@ -218,12 +240,14 @@ async def test_stream_pass_captures_tool_name_args_and_human_label(
 
 # ─────── persistance bout en bout : /api/atelier/chat → GET /conversation ───────
 
+
 def _text_only_model(messages: list[ModelMessage], _info: AgentInfo) -> ModelResponse:
     return ModelResponse(parts=[TextPart(content="Bien reçu.")])
 
 
 async def _text_only_stream(
-    _messages: list[ModelMessage], _info: AgentInfo,
+    _messages: list[ModelMessage],
+    _info: AgentInfo,
 ) -> AsyncGenerator[str]:
     # Le maître est streamé (stream_text=True dans stream_pass) : FunctionModel
     # exige une fonction de STREAM dédiée pour ce chemin, la fonction non-stream
@@ -243,44 +267,71 @@ async def test_chat_turn_persists_trace_in_the_last_felix_message_payload(
     await _wipe(driver, proj)
     try:
         gate_agent = Agent(
-            TestModel(custom_output_args={"fait": "Astaroth est un personnage", "noter": True}),
+            TestModel(
+                custom_output_args={"fait": "Astaroth est un personnage", "noter": True}
+            ),
             output_type=RouteDecision,
         )
         master_agent: Agent[GenericDeps, str] = Agent(
             FunctionModel(_text_only_model, stream_function=_text_only_stream),
-            deps_type=GenericDeps, output_type=str,
+            deps_type=GenericDeps,
+            output_type=str,
         )
         entities_agent: Agent[GenericDeps, str] = Agent(
-            FunctionModel(_make_single_tool_caller(
-                "add_entity", {"name": "Astaroth", "entity_type": "personnage"},
-            )),
-            deps_type=GenericDeps, output_type=str,
+            FunctionModel(
+                _make_single_tool_caller(
+                    "add_entity",
+                    {"name": "Astaroth", "entity_type": "personnage"},
+                )
+            ),
+            deps_type=GenericDeps,
+            output_type=str,
         )
         entities_agent.tool(add_entity)
         noop_agent: Agent[GenericDeps, str] = Agent(
-            FunctionModel(_text_only_model), deps_type=GenericDeps, output_type=str,
+            FunctionModel(_text_only_model),
+            deps_type=GenericDeps,
+            output_type=str,
         )
 
         test_app = FastAPI()
         test_app.include_router(atelier_routes.router)
         test_app.dependency_overrides[api_deps.get_driver] = lambda: driver
-        test_app.dependency_overrides[api_deps.get_gate_agents] = lambda: {"scenario": gate_agent}
-        test_app.dependency_overrides[api_deps.get_master_agents] = lambda: {"scenario": master_agent}
-        test_app.dependency_overrides[api_deps.get_atelier_agents] = lambda: {"scenario": entities_agent}
-        test_app.dependency_overrides[api_deps.get_relation_agents] = lambda: {"scenario": noop_agent}
-        test_app.dependency_overrides[api_deps.get_chronicle_agents] = lambda: {"scenario": noop_agent}
+        test_app.dependency_overrides[api_deps.get_gate_agents] = lambda: {
+            "scenario": gate_agent
+        }
+        test_app.dependency_overrides[api_deps.get_master_agents] = lambda: {
+            "scenario": master_agent
+        }
+        test_app.dependency_overrides[api_deps.get_atelier_agents] = lambda: {
+            "scenario": entities_agent
+        }
+        test_app.dependency_overrides[api_deps.get_relation_agents] = lambda: {
+            "scenario": noop_agent
+        }
+        test_app.dependency_overrides[api_deps.get_chronicle_agents] = lambda: {
+            "scenario": noop_agent
+        }
 
         transport = httpx.ASGITransport(app=test_app)
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
             response = await client.post(
                 "/api/atelier/chat",
-                json={"message": "Astaroth est un personnage.", "profile": "scenario", "project": proj},
+                json={
+                    "message": "Astaroth est un personnage.",
+                    "profile": "scenario",
+                    "project": proj,
+                },
             )
             assert response.status_code == 200
             assert "event: error" not in response.text, response.text
             assert "event: trace" in response.text, response.text
 
-            conv = await client.get("/api/atelier/conversation", params={"project": proj})
+            conv = await client.get(
+                "/api/atelier/conversation", params={"project": proj}
+            )
         assert conv.status_code == 200
         messages = conv.json()
         tool_msgs = [m for m in messages if m["kind"] == "tool"]
@@ -291,7 +342,9 @@ async def test_chat_turn_persists_trace_in_the_last_felix_message_payload(
         trace = payload["trace"]
         assert [c["name"] for c in trace["tool_calls"]] == ["add_entity"]
         assert trace["tool_calls"][0]["label"] == "Création de la fiche Astaroth"
-        assert trace["queries"], "la Cypher de add_entity doit apparaître dans la trace persistée"
+        assert trace["queries"], (
+            "la Cypher de add_entity doit apparaître dans la trace persistée"
+        )
         assert any(q["params"].get("project") == proj for q in trace["queries"])
         # Le coût (#coût) est persisté dans le MÊME payload, même convention.
         assert "cost" in payload

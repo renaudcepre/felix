@@ -11,6 +11,7 @@ par les arêtes promues), la glose et les exemples des verbes verbatim d'origine
 (``report.verbes``). ``MergeTypes`` renomme le(s) type(s) source(s) en la cible,
 partout où ils apparaissent (``entity_types`` ET ``relation_vocabulary``).
 """
+
 from __future__ import annotations
 
 import dataclasses
@@ -46,7 +47,10 @@ def _evolve_promote_verbs(
     if existing is None:
         gloss = report.verbes[0] if report.verbes else change.rel_type.lower()
         new_spec = RelationSpec(
-            name=change.rel_type, gloss=gloss, subjects=subjects, objects=objects,
+            name=change.rel_type,
+            gloss=gloss,
+            subjects=subjects,
+            objects=objects,
             examples=", ".join(report.verbes),
         )
         new_vocab = (*profile.relation_vocabulary, new_spec)
@@ -57,13 +61,16 @@ def _evolve_promote_verbs(
         merged_subjects = tuple(sorted(set(existing.subjects) | set(subjects)))
         merged_objects = tuple(sorted(set(existing.objects) | set(objects)))
         new_spec = RelationSpec(
-            name=change.rel_type, gloss=existing.gloss,
-            subjects=merged_subjects, objects=merged_objects,
+            name=change.rel_type,
+            gloss=existing.gloss,
+            subjects=merged_subjects,
+            objects=merged_objects,
             allow_self=existing.allow_self,
             examples=_merge_examples(existing.examples, report.verbes),
         )
         new_vocab = tuple(
-            new_spec if s.name == change.rel_type else s for s in profile.relation_vocabulary
+            new_spec if s.name == change.rel_type else s
+            for s in profile.relation_vocabulary
         )
     return dataclasses.replace(profile, relation_vocabulary=new_vocab)
 
@@ -84,16 +91,22 @@ def _evolve_merge_types(
             existing = merged_types[name]
             merged_keys = tuple(dict.fromkeys((*existing.keys, *et.keys)))
             merged_types[name] = EntityType(
-                name=name, keys=merged_keys, note=existing.note or et.note,
+                name=name,
+                keys=merged_keys,
+                note=existing.note or et.note,
             )
     new_entity_types = tuple(merged_types.values())
 
     new_vocab = tuple(
         RelationSpec(
-            name=spec.name, gloss=spec.gloss,
-            subjects=tuple(dict.fromkeys(_rename_type(s, change) for s in spec.subjects)),
+            name=spec.name,
+            gloss=spec.gloss,
+            subjects=tuple(
+                dict.fromkeys(_rename_type(s, change) for s in spec.subjects)
+            ),
             objects=tuple(dict.fromkeys(_rename_type(o, change) for o in spec.objects)),
-            allow_self=spec.allow_self, examples=spec.examples,
+            allow_self=spec.allow_self,
+            examples=spec.examples,
         )
         for spec in profile.relation_vocabulary
     )
@@ -102,7 +115,9 @@ def _evolve_merge_types(
     )
 
 
-def evolve_profile(profile: Profile, change: SchemaChange, report: ChangeReport) -> Profile:
+def evolve_profile(
+    profile: Profile, change: SchemaChange, report: ChangeReport
+) -> Profile:
     """Le profil qui résulte de l'application d'un changement VALIDÉ — pure,
     aucun accès réseau. ``report`` est celui du run RÉEL (``preview=False``) :
     ``observed_pairs``/``verbes`` y décrivent ce qui a vraiment été converti."""

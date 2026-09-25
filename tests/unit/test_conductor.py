@@ -11,6 +11,7 @@ le gate stateless (RouteDecision). Garanties clés, vérifiées ici sans LLM :
   routage est triviale.
 La décision comportementale, elle, est mesurée par `just e2e-conductor`.
 """
+
 from __future__ import annotations
 
 import re
@@ -27,24 +28,47 @@ from felix.core.deps import GenericDeps
 
 conductor_suite = ProTestSuite("Conductor")
 
-WRITE_TOOLS = {"add_entity", "update_entity", "add_relation", "add_event", "rename_entity"}
+WRITE_TOOLS = {
+    "add_entity",
+    "update_entity",
+    "add_relation",
+    "add_event",
+    "rename_entity",
+}
 
 # Univers utilisés par les TESTS du routage (conductor_e2e : sessions mêlée et
 # ornière ; evals : bapteme_differe). S'ils entrent dans un prompt, le test ne
 # mesure plus rien — le modèle récite au lieu de généraliser.
-TEST_UNIVERSES = ("Nora", "Castan", "Port-Vendres", "Veil",
-                  "Vada", "Tilio", "Sorne",
-                  "Adator", "Alikazeth",
-                  "Ottra", "Vels", "Velsgarde", "Doran",
-                  # A/B tiering du maître (#62/#49) : noms des tours-pièges.
-                  "Hector", "Brise", "Talou", "Vorn", "Roche-Pâle")
+TEST_UNIVERSES = (
+    "Nora",
+    "Castan",
+    "Port-Vendres",
+    "Veil",
+    "Vada",
+    "Tilio",
+    "Sorne",
+    "Adator",
+    "Alikazeth",
+    "Ottra",
+    "Vels",
+    "Velsgarde",
+    "Doran",
+    # A/B tiering du maître (#62/#49) : noms des tours-pièges.
+    "Hector",
+    "Brise",
+    "Talou",
+    "Vorn",
+    "Roche-Pâle",
+)
 
 
 @conductor_suite.test()
 def test_master_has_no_write_tools() -> None:
     """Le maître n'a AUCUN outil d'écriture → il ne peut pas inventer d'entité."""
     names = {t.__name__ for t in MASTER_TOOLS}
-    assert names & WRITE_TOOLS == set(), f"le maître a des outils d'écriture : {names & WRITE_TOOLS}"
+    assert names & WRITE_TOOLS == set(), (
+        f"le maître a des outils d'écriture : {names & WRITE_TOOLS}"
+    )
 
 
 @conductor_suite.test()
@@ -68,7 +92,8 @@ def test_no_test_universe_leaks_into_prompts() -> None:
     Match sur MOT ENTIER : « Veil » ne doit pas matcher dans « surveille »."""
     prompts = GATE_SYSTEM_PROMPT + MASTER_SYSTEM_PROMPT
     leaked = [
-        name for name in TEST_UNIVERSES
+        name
+        for name in TEST_UNIVERSES
         if re.search(rf"\b{re.escape(name)}\b", prompts, re.IGNORECASE)
     ]
     assert not leaked, f"univers de test présents dans les prompts : {leaked}"

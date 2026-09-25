@@ -6,6 +6,7 @@ Vérifie la classification des exceptions en transients récupérables
 Anti-leakage : noms de ce module (Reldar, Sontave, Morvex) n'entrent
 pas dans les prompts des agents (src/felix/).
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite

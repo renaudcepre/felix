@@ -10,6 +10,7 @@ inputs = {
 Même base Neo4j partagée que le reste — wipe global par cas, lock asyncio.
 Ne pas lancer en même temps que les autres sessions d'evals.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -69,8 +70,11 @@ async def _seed(driver: AsyncDriver, seed: dict[str, Any]) -> None:
             await session.run(
                 "MERGE (x:GenEntity {id: $id, project: $project})"
                 " SET x.name = $name, x.entity_type = $type, x += $props",
-                id=slugify(e["name"]), name=e["name"],
-                type=e["entity_type"], props=props, project=DEFAULT_PROJECT,
+                id=slugify(e["name"]),
+                name=e["name"],
+                type=e["entity_type"],
+                props=props,
+                project=DEFAULT_PROJECT,
             )
         for r in seed.get("relations", []):
             await session.run(
@@ -78,7 +82,9 @@ async def _seed(driver: AsyncDriver, seed: dict[str, Any]) -> None:
                 MATCH (a:GenEntity {id: $a}), (b:GenEntity {id: $b})
                 MERGE (a)-[rel:REL {rel_type: $t}]->(b)
                 """,
-                a=slugify(r["from"]), b=slugify(r["to"]), t=r["rel_type"],
+                a=slugify(r["from"]),
+                b=slugify(r["to"]),
+                t=r["rel_type"],
             )
 
 
@@ -108,8 +114,9 @@ async def run_generic_case(
         out.cards = [card.model_dump() for card in deps.ui_events]
 
         if inputs.get("check"):
-            verdict = await consistency_check(driver, inputs["check"], deps.write_log,
-                                              project=DEFAULT_PROJECT)
+            verdict = await consistency_check(
+                driver, inputs["check"], deps.write_log, project=DEFAULT_PROJECT
+            )
             out.check = verdict.model_dump()
 
     return TaskResult(

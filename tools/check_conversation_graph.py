@@ -6,6 +6,7 @@ prompts) sont créés, testés, puis SUPPRIMÉS (ménage garanti par finally).
 
 Usage : uv run python tools/check_conversation_graph.py
 """
+
 # ruff: noqa: T201 — sonde CLI, le print EST la sortie
 from __future__ import annotations
 
@@ -32,7 +33,9 @@ checks: list[tuple[str, bool, str]] = []
 def check(label: str, ok: bool, detail: str = "") -> None:
     """Enregistre et affiche un check (✓ / ✗)."""
     checks.append((label, ok, detail))
-    print(f"{'✓' if ok else '✗'} {label}" + (f" — {detail}" if detail and not ok else ""))
+    print(
+        f"{'✓' if ok else '✗'} {label}" + (f" — {detail}" if detail and not ok else "")
+    )
 
 
 async def main() -> int:  # noqa: PLR0915 — sonde linéaire, chaque check est intentionnel
@@ -41,13 +44,25 @@ async def main() -> int:  # noqa: PLR0915 — sonde linéaire, chaque check est 
         # --- Check 8 : load_llm_history d'un projet vierge → None ---
         # Doit fonctionner AVANT tout save_llm_history sur ce projet.
         raw_vierge = await load_llm_history(driver, project=PROJ_ALPHA)
-        check("load_llm_history projet vierge → None", raw_vierge is None, f"got={raw_vierge!r}")
+        check(
+            "load_llm_history projet vierge → None",
+            raw_vierge is None,
+            f"got={raw_vierge!r}",
+        )
 
         # --- Alimentation de PROJ_ALPHA : 3 messages de types variés ---
-        id1 = await record_message(driver, "user", "text", "bonjour felix", project=PROJ_ALPHA)
-        await record_message(driver, "felix", "text", "bonjour auteur", project=PROJ_ALPHA)
+        id1 = await record_message(
+            driver, "user", "text", "bonjour felix", project=PROJ_ALPHA
+        )
         await record_message(
-            driver, "felix", "tool", "", payload='{"kind":"tool","title":"Mira"}',
+            driver, "felix", "text", "bonjour auteur", project=PROJ_ALPHA
+        )
+        await record_message(
+            driver,
+            "felix",
+            "tool",
+            "",
+            payload='{"kind":"tool","title":"Mira"}',
             project=PROJ_ALPHA,
         )
 
@@ -84,14 +99,20 @@ async def main() -> int:  # noqa: PLR0915 — sonde linéaire, chaque check est 
         ids_alpha_set = {m["id"] for m in msgs_alpha}
         ids_beta_set = {m["id"] for m in msgs_beta}
         check("alpha ne voit pas beta", id_beta not in ids_alpha_set)
-        check("beta ne voit pas alpha", id1 not in ids_beta_set, f"ids_beta={ids_beta_set}")
+        check(
+            "beta ne voit pas alpha",
+            id1 not in ids_beta_set,
+            f"ids_beta={ids_beta_set}",
+        )
 
         # --- Check 4 : link_produced isole par projet ---
         # Une entité de PROJ_ALPHA ne doit PAS être liée depuis un message de PROJ_BETA.
         async with driver.session() as session:
             await session.run(
                 "CREATE (:GenEntity {id: $id, name: $name, project: $project})",
-                id="sonde-entity-alpha", name="entité sonde alpha", project=PROJ_ALPHA,
+                id="sonde-entity-alpha",
+                name="entité sonde alpha",
+                project=PROJ_ALPHA,
             )
         # Tentative cross-projet : message de BETA, entité de ALPHA → aucune arête.
         await link_produced(driver, id_beta, {"sonde-entity-alpha"}, project=PROJ_BETA)
@@ -99,27 +120,40 @@ async def main() -> int:  # noqa: PLR0915 — sonde linéaire, chaque check est 
         await link_produced(driver, id1, {"sonde-entity-alpha"}, project=PROJ_ALPHA)
 
         async with driver.session() as session:
-            r_cross = await (await session.run(
-                "MATCH (m:Message {id: $mid})-[:PRODUCED]->() RETURN count(*) AS n",
-                mid=id_beta,
-            )).single()
-            r_legit = await (await session.run(
-                "MATCH (m:Message {id: $mid})-[:PRODUCED]->() RETURN count(*) AS n",
-                mid=id1,
-            )).single()
+            r_cross = await (
+                await session.run(
+                    "MATCH (m:Message {id: $mid})-[:PRODUCED]->() RETURN count(*) AS n",
+                    mid=id_beta,
+                )
+            ).single()
+            r_legit = await (
+                await session.run(
+                    "MATCH (m:Message {id: $mid})-[:PRODUCED]->() RETURN count(*) AS n",
+                    mid=id1,
+                )
+            ).single()
         no_cross = (r_cross["n"] if r_cross else 1) == 0
         has_legit = (r_legit["n"] if r_legit else 0) == 1
-        check("link_produced : pas d'arête cross-projet", no_cross,
-              f"n_cross={r_cross['n'] if r_cross else '?'}")
-        check("link_produced : arête légitime créée", has_legit,
-              f"n_legit={r_legit['n'] if r_legit else '?'}")
+        check(
+            "link_produced : pas d'arête cross-projet",
+            no_cross,
+            f"n_cross={r_cross['n'] if r_cross else '?'}",
+        )
+        check(
+            "link_produced : arête légitime créée",
+            has_legit,
+            f"n_legit={r_legit['n'] if r_legit else '?'}",
+        )
 
         # --- Check 7 : round-trip save/load_llm_history ---
         test_history = json.dumps([{"role": "user", "content": "tour de test"}])
         await save_llm_history(driver, test_history, project=PROJ_ALPHA)
         loaded = await load_llm_history(driver, project=PROJ_ALPHA)
-        check("round-trip save/load_llm_history", loaded == test_history,
-              f"loaded={loaded!r}")
+        check(
+            "round-trip save/load_llm_history",
+            loaded == test_history,
+            f"loaded={loaded!r}",
+        )
 
         # --- Check 5 : archive_conversation ---
         n_actifs_avant = len(await conversation_messages(driver, project=PROJ_ALPHA))
@@ -127,22 +161,32 @@ async def main() -> int:  # noqa: PLR0915 — sonde linéaire, chaque check est 
         msgs_apres = await conversation_messages(driver, project=PROJ_ALPHA)
 
         async with driver.session() as session:
-            r_total = await (await session.run(
-                "MATCH (m:Message {project: $project}) RETURN count(m) AS n",
-                project=PROJ_ALPHA,
-            )).single()
+            r_total = await (
+                await session.run(
+                    "MATCH (m:Message {project: $project}) RETURN count(m) AS n",
+                    project=PROJ_ALPHA,
+                )
+            ).single()
         total_en_base = r_total["n"] if r_total else 0
 
         history_post_archive = await load_llm_history(driver, project=PROJ_ALPHA)
 
-        check("archive retourne le bon compte", archived_count == n_actifs_avant,
-              f"{archived_count} vs {n_actifs_avant}")
-        check("archive vide le fil actif", msgs_apres == [],
-              f"msgs_apres={msgs_apres}")
-        check("archive garde les nœuds en base", total_en_base >= n_actifs_avant,
-              f"total_en_base={total_en_base}")
-        check("archive remet llm_history à null",
-              history_post_archive is None, f"history={history_post_archive!r}")
+        check(
+            "archive retourne le bon compte",
+            archived_count == n_actifs_avant,
+            f"{archived_count} vs {n_actifs_avant}",
+        )
+        check("archive vide le fil actif", msgs_apres == [], f"msgs_apres={msgs_apres}")
+        check(
+            "archive garde les nœuds en base",
+            total_en_base >= n_actifs_avant,
+            f"total_en_base={total_en_base}",
+        )
+        check(
+            "archive remet llm_history à null",
+            history_post_archive is None,
+            f"history={history_post_archive!r}",
+        )
 
         # --- Check 6 : ord continue après archivage ---
         # La numérotation doit reprendre à max_ord+1 (archivés inclus dans le max).
@@ -151,7 +195,9 @@ async def main() -> int:  # noqa: PLR0915 — sonde linéaire, chaque check est 
         ord_reprise = msgs_reprise[0]["ord"] if msgs_reprise else None
         check(
             "ord continue après archivage",
-            len(msgs_reprise) == 1 and ord_reprise is not None and ord_reprise > n_actifs_avant,
+            len(msgs_reprise) == 1
+            and ord_reprise is not None
+            and ord_reprise > n_actifs_avant,
             f"ord_reprise={ord_reprise}, n_actifs_avant={n_actifs_avant}",
         )
 

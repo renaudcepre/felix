@@ -5,9 +5,10 @@ compteur muté en place, l'agrégat se recalcule par somme (même esprit que
 suivante, `felix.api.routes.costs`) lit `project_cost_totals` pour le total
 persistant affiché dans la topbar du front.
 """
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from neo4j import AsyncDriver
@@ -43,13 +44,16 @@ async def record_cost_entry(
             "   at: timestamp()"
             " })"
             " CREATE (p)-[:HAS_COST]->(e)",
-            project=project, kind=kind,
-            request_tokens=summary.request_tokens, response_tokens=summary.response_tokens,
-            total_tokens=summary.total_tokens, cost_usd=summary.cost_usd,
+            project=project,
+            kind=kind,
+            request_tokens=summary.request_tokens,
+            response_tokens=summary.response_tokens,
+            total_tokens=summary.total_tokens,
+            cost_usd=summary.cost_usd,
         )
 
 
-async def project_cost_totals(driver: AsyncDriver, *, project: str) -> dict:
+async def project_cost_totals(driver: AsyncDriver, *, project: str) -> dict[str, Any]:
     """Totaux agrégés du projet : tokens in/out/total, USD total (None si AU
     MOINS une opération avait un prix inconnu — même règle que
     `CostLedger.summary`), et nombre d'opérations par nature (`kind`)."""

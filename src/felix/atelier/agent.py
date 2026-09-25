@@ -6,6 +6,7 @@ instruction de domaine. Tous gardent les 5 tools du noyau + list_entities, et la
 discipline schemaless (SYSTEM_PROMPT) qui est le moteur, pas une instruction de
 domaine. create_atelier_agent() conserve sa signature (défaut = scénario).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -387,31 +388,48 @@ _DOC_PLACEHOLDER = "Décris la machine ou pose ta question…"
 # Registre des modes proposés par le sélecteur de l'UI.
 ATELIER_CHOICES: dict[str, AgentChoice] = {
     "scenario": AgentChoice(
-        "scenario", "Scénario", SCENARIO_PROFILE, ATELIER_PERSONA,
-        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        "scenario",
+        "Scénario",
+        SCENARIO_PROFILE,
+        ATELIER_PERSONA,
+        MASTER_SYSTEM_PROMPT,
+        GATE_SYSTEM_PROMPT,
         welcome="Bonjour. Raconte-moi ton histoire : décris tes personnages au "
         "fil de l'eau, et je tiendrai leurs fiches à jour dans la bible.",
         input_placeholder="Écris à Felix… (idée, scène, question)",
     ),
     "chantier": AgentChoice(
-        "chantier", "Chantier", CHANTIER_PROFILE, CHANTIER_PERSONA,
-        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        "chantier",
+        "Chantier",
+        CHANTIER_PROFILE,
+        CHANTIER_PERSONA,
+        MASTER_SYSTEM_PROMPT,
+        GATE_SYSTEM_PROMPT,
         welcome="Bonjour. Décris l'avancement du chantier — outils, matériaux, "
         "ouvrages, intervenants — et je tiendrai les fiches à jour.",
         input_placeholder="Décris le chantier… (outil, matériau, avancement)",
     ),
     "none": AgentChoice(
-        "none", "Aucun (noyau nu)", None, NEUTRAL_PERSONA,
-        MASTER_SYSTEM_PROMPT, GATE_SYSTEM_PROMPT,
+        "none",
+        "Aucun (noyau nu)",
+        None,
+        NEUTRAL_PERSONA,
+        MASTER_SYSTEM_PROMPT,
+        GATE_SYSTEM_PROMPT,
         welcome="Bonjour. Décris ce que tu veux suivre, et je tiendrai les "
         "fiches à jour au fil de la conversation.",
         input_placeholder="Écris à Felix…",
     ),
     "maintenance": AgentChoice(
-        "maintenance", "Maintenance", MAINTENANCE_PROFILE, MAINTENANCE_PERSONA,
-        MAINTENANCE_MASTER_SYSTEM_PROMPT, MAINTENANCE_GATE_SYSTEM_PROMPT,
+        "maintenance",
+        "Maintenance",
+        MAINTENANCE_PROFILE,
+        MAINTENANCE_PERSONA,
+        MAINTENANCE_MASTER_SYSTEM_PROMPT,
+        MAINTENANCE_GATE_SYSTEM_PROMPT,
         master_persona=MAINTENANCE_PERSONA,
-        welcome=_DOC_WELCOME, input_placeholder=_DOC_PLACEHOLDER,
+        welcome=_DOC_WELCOME,
+        input_placeholder=_DOC_PLACEHOLDER,
     ),
     # Schéma ÉMERGENT (plan `maintenance_profile.md`) : part du noyau nu
     # (EMERGENT_SEED_PROFILE) et apprend son vocabulaire au fil des documents —
@@ -419,10 +437,15 @@ ATELIER_CHOICES: dict[str, AgentChoice] = {
     # ne comble jamais un trou par une valeur plausible), la seule qui convient
     # à un domaine encore inconnu.
     "emergent": AgentChoice(
-        "emergent", "Émergent (profil appris)", EMERGENT_SEED_PROFILE,
-        MAINTENANCE_PERSONA, MAINTENANCE_MASTER_SYSTEM_PROMPT,
-        MAINTENANCE_GATE_SYSTEM_PROMPT, master_persona=MAINTENANCE_PERSONA,
-        welcome=_DOC_WELCOME, input_placeholder=_DOC_PLACEHOLDER,
+        "emergent",
+        "Émergent (profil appris)",
+        EMERGENT_SEED_PROFILE,
+        MAINTENANCE_PERSONA,
+        MAINTENANCE_MASTER_SYSTEM_PROMPT,
+        MAINTENANCE_GATE_SYSTEM_PROMPT,
+        master_persona=MAINTENANCE_PERSONA,
+        welcome=_DOC_WELCOME,
+        input_placeholder=_DOC_PLACEHOLDER,
         evolving=True,
     ),
 }
@@ -467,7 +490,8 @@ def build_atelier_agent(
     ÉVOLUTIF : le profil réel d'un projet vit en base, jamais dans ``choice``
     (cf. ``resolve_profile``)."""
     agent = create_core_agent(
-        profile=profile if profile is not None else choice.profile, persona=choice.persona
+        profile=profile if profile is not None else choice.profile,
+        persona=choice.persona,
     )
     agent.tool(list_entities)
     return agent
@@ -527,7 +551,9 @@ def build_relation_agent(
     return agent
 
 
-def create_relation_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
+def create_relation_agent(
+    profile_key: str = DEFAULT_PROFILE,
+) -> Agent[GenericDeps, str]:
     return build_relation_agent(ATELIER_CHOICES[profile_key])
 
 
@@ -550,7 +576,9 @@ def build_chronicle_agent(
     return agent
 
 
-def create_chronicle_agent(profile_key: str = DEFAULT_PROFILE) -> Agent[GenericDeps, str]:
+def create_chronicle_agent(
+    profile_key: str = DEFAULT_PROFILE,
+) -> Agent[GenericDeps, str]:
     return build_chronicle_agent(ATELIER_CHOICES[profile_key])
 
 

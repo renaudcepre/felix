@@ -7,6 +7,7 @@ c'est précisément la discipline qu'on mesure.
 NB protest : chaque evaluator a sa propre dataclass avec des noms de champs
 uniques — deux evaluators d'un même cas ne peuvent pas émettre le même score.
 """
+
 from __future__ import annotations
 
 import re
@@ -55,7 +56,8 @@ def entities_exist(ctx: EvalContext, names: str = "") -> EntitiesResult:
     missing = [n for n in expected if not _match(n, ctx.output.entities)]
     score = 1.0 - len(missing) / len(expected) if expected else 1.0
     return EntitiesResult(
-        entity_recall=score, entities_ok=not missing,
+        entity_recall=score,
+        entities_ok=not missing,
         entities_missing=", ".join(missing),
     )
 
@@ -78,7 +80,9 @@ def has_prop_keys(ctx: EvalContext, entity: str = "", keys: str = "") -> HasKeys
     réutilisation de clés seedées, découvertes via describe_schema."""
     node = _match(entity, ctx.output.entities)
     if not node:
-        return HasKeysResult(has_keys_ok=False, has_keys_detail=f"entité « {entity} » absente")
+        return HasKeysResult(
+            has_keys_ok=False, has_keys_detail=f"entité « {entity} » absente"
+        )
     expected = [k.strip() for k in keys.split(",") if k.strip()]
     missing = [k for k in expected if k not in node]
     if not missing:
@@ -87,7 +91,7 @@ def has_prop_keys(ctx: EvalContext, entity: str = "", keys: str = "") -> HasKeys
     return HasKeysResult(
         has_keys_ok=False,
         has_keys_detail=f"clés manquantes sur {node['id']} : {', '.join(missing)}"
-                        f" (présentes : {', '.join(actual) or '—'})",
+        f" (présentes : {', '.join(actual) or '—'})",
     )
 
 
@@ -98,7 +102,9 @@ class SharedKeyResult:
 
 
 @evaluator
-def prop_key_shared(ctx: EvalContext, entities: str = "", pattern: str = "") -> SharedKeyResult:
+def prop_key_shared(
+    ctx: EvalContext, entities: str = "", pattern: str = ""
+) -> SharedKeyResult:
     """Les entités données doivent partager UNE seule et même clé matchant le
     motif regex (ex: 'achat|date') — pas un synonyme chacune."""
     refs = [e.strip() for e in entities.split(",") if e.strip()]
@@ -107,14 +113,20 @@ def prop_key_shared(ctx: EvalContext, entities: str = "", pattern: str = "") -> 
     for ref in refs:
         node = _match(ref, ctx.output.entities)
         if not node:
-            return SharedKeyResult(shared_key_ok=False, shared_key_detail=f"entité « {ref} » absente")
+            return SharedKeyResult(
+                shared_key_ok=False, shared_key_detail=f"entité « {ref} » absente"
+            )
         found[ref] = {k for k in node if k not in _RESERVED and rx.search(k)}
 
     all_keys = set().union(*found.values())
     if len(all_keys) == 1 and all(len(ks) == 1 for ks in found.values()):
-        return SharedKeyResult(shared_key_ok=True, shared_key_detail=f"clé partagée : {all_keys.pop()}")
+        return SharedKeyResult(
+            shared_key_ok=True, shared_key_detail=f"clé partagée : {all_keys.pop()}"
+        )
     detail = " ; ".join(f"{ref}: {sorted(ks) or '∅'}" for ref, ks in found.items())
-    return SharedKeyResult(shared_key_ok=False, shared_key_detail=f"clés divergentes — {detail}")
+    return SharedKeyResult(
+        shared_key_ok=False, shared_key_detail=f"clés divergentes — {detail}"
+    )
 
 
 @dataclass
@@ -131,12 +143,19 @@ def same_entity_type(ctx: EvalContext, entities: str = "") -> SameTypeResult:
     for ref in refs:
         node = _match(ref, ctx.output.entities)
         if not node:
-            return SameTypeResult(same_type_ok=False, same_type_detail=f"entité « {ref} » absente")
+            return SameTypeResult(
+                same_type_ok=False, same_type_detail=f"entité « {ref} » absente"
+            )
         types[ref] = normalize(str(node.get("entity_type", "")))
     if len(set(types.values())) == 1:
-        return SameTypeResult(same_type_ok=True, same_type_detail=f"type commun : {next(iter(types.values()))}")
+        return SameTypeResult(
+            same_type_ok=True,
+            same_type_detail=f"type commun : {next(iter(types.values()))}",
+        )
     detail = " ; ".join(f"{r}: {t}" for r, t in types.items())
-    return SameTypeResult(same_type_ok=False, same_type_detail=f"types divergents — {detail}")
+    return SameTypeResult(
+        same_type_ok=False, same_type_detail=f"types divergents — {detail}"
+    )
 
 
 @dataclass
@@ -155,7 +174,9 @@ def relation_between(ctx: EvalContext, a: str = "", b: str = "") -> RelationResu
     for r in ctx.output.relations:
         if {r["from"], r["to"]} == ids:
             return RelationResult(relation_ok=True, relation_detail=r["rel_type"])
-    return RelationResult(relation_ok=False, relation_detail=f"aucune relation {na['id']} ↔ {nb['id']}")
+    return RelationResult(
+        relation_ok=False, relation_detail=f"aucune relation {na['id']} ↔ {nb['id']}"
+    )
 
 
 @dataclass
@@ -170,12 +191,16 @@ def count_matching(ctx: EvalContext, pattern: str = "", n: int = 1) -> CountMatc
     « Marco », « Marco Santi », « Santi » → une seule entité)."""
     rx = re.compile(pattern, re.IGNORECASE)
     hits = [
-        e["id"] for e in ctx.output.entities
-        if rx.search(normalize(str(e.get("id", "")))) or rx.search(normalize(str(e.get("name", ""))))
+        e["id"]
+        for e in ctx.output.entities
+        if rx.search(normalize(str(e.get("id", ""))))
+        or rx.search(normalize(str(e.get("name", ""))))
     ]
     return CountMatchResult(
         count_match_ok=len(hits) == n,
-        count_match_detail="" if len(hits) == n else f"attendu {n}, trouvé {len(hits)} : {', '.join(hits)}",
+        count_match_detail=""
+        if len(hits) == n
+        else f"attendu {n}, trouvé {len(hits)} : {', '.join(hits)}",
     )
 
 
@@ -193,7 +218,9 @@ def has_prop_value(
     (test de correction utilisateur : l'ancienne valeur a bien été remplacée)."""
     node = _match(entity, ctx.output.entities)
     if not node:
-        return PropValueResult(prop_value_ok=False, prop_value_detail=f"entité « {entity} » absente")
+        return PropValueResult(
+            prop_value_ok=False, prop_value_detail=f"entité « {entity} » absente"
+        )
     rx = re.compile(key_pattern, re.IGNORECASE)
     candidates = {k: v for k, v in node.items() if k not in _RESERVED and rx.search(k)}
     if any(normalize(value) in normalize(str(v)) for v in candidates.values()):

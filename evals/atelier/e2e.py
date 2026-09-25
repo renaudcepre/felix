@@ -9,6 +9,7 @@ ce que fait le front. Puis il inspecte le graphe et ASSERTE les invariants.
 À lancer à la demande (≈40 appels LLM) : `just e2e-atelier`. Wipe la base partagée,
 NE PAS lancer en // de l'API ou des evals. Sort en code 1 si un invariant casse.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -42,8 +43,15 @@ TURNS = [
 
 # Relations RÉSERVÉES aux entités : ne doivent jamais toucher un node événement.
 ENTITY_ONLY_RELS = {
-    "fights", "knows", "owns", "creates", "kills",
-    "member_of", "allied_with", "targets", "witnesses",
+    "fights",
+    "knows",
+    "owns",
+    "creates",
+    "kills",
+    "member_of",
+    "allied_with",
+    "targets",
+    "witnesses",
 }
 
 
@@ -86,8 +94,9 @@ async def main() -> int:
 
         transport = httpx.ASGITransport(app=app)
         errors = 0
-        async with httpx.AsyncClient(transport=transport, base_url="http://test",
-                                     timeout=180) as client:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test", timeout=180
+        ) as client:
             history = None
             for i, msg in enumerate(TURNS, 1):
                 try:
@@ -107,12 +116,18 @@ async def main() -> int:
     event_ids = {e["id"] for e in evs}
     resumes = [norm(e.get("resume", e.get("name", ""))) for e in evs]
     dups = sorted({r for r in resumes if resumes.count(r) > 1})
-    bad_rels = [f"{r['from']} -[{r['rel_type']}]-> {r['to']}" for r in rels
-                if norm(r["rel_type"]) in ENTITY_ONLY_RELS
-                and (r["from"] in event_ids or r["to"] in event_ids)]
+    bad_rels = [
+        f"{r['from']} -[{r['rel_type']}]-> {r['to']}"
+        for r in rels
+        if norm(r["rel_type"]) in ENTITY_ONLY_RELS
+        and (r["from"] in event_ids or r["to"] in event_ids)
+    ]
     ordres = [e.get("ordre") for e in evs if e.get("ordre") is not None]
-    vance_perso = any(norm(e.get("name")) == "vance"
-                      and "personnage" in norm(e.get("entity_type", "")) for e in ents)
+    vance_perso = any(
+        norm(e.get("name")) == "vance"
+        and "personnage" in norm(e.get("entity_type", ""))
+        for e in ents
+    )
 
     print("\n===== BILAN GRAPHE =====")
     by: dict[str, list[str]] = {}
@@ -126,11 +141,16 @@ async def main() -> int:
     checks = [
         ("aucun doublon de resume d'event", not dups, f"doublons: {dups[:3]}"),
         ("aucune relation entité↔event", not bad_rels, f"{bad_rels[:5]}"),
-        ("events bornés (< 3 par tour)", len(evs) < 3 * len(TURNS),
-         f"{len(evs)} events pour {len(TURNS)} tours"),
-        ("ordres distincts et complets",
-         len(ordres) == len(evs) and len(set(ordres)) == len(evs),
-         f"{len(ordres)} ordres pour {len(evs)} events"),
+        (
+            "events bornés (< 3 par tour)",
+            len(evs) < 3 * len(TURNS),
+            f"{len(evs)} events pour {len(TURNS)} tours",
+        ),
+        (
+            "ordres distincts et complets",
+            len(ordres) == len(evs) and len(set(ordres)) == len(evs),
+            f"{len(ordres)} ordres pour {len(evs)} events",
+        ),
         ("Vance est un personnage", vance_perso, "Vance manquant ou mal typé"),
     ]
     print("\n===== INVARIANTS =====")
@@ -139,7 +159,9 @@ async def main() -> int:
         print(f"  {'✓' if ok else '✗'} {label}" + ("" if ok else f"  → {detail}"))
         failed += not ok
     if errors:
-        print(f"  ⚠ {errors} tour(s) en erreur (backend transient) — résultats partiels")
+        print(
+            f"  ⚠ {errors} tour(s) en erreur (backend transient) — résultats partiels"
+        )
     print(f"\n{'✓ E2E OK' if not failed else f'✗ {failed} invariant(s) cassé(s)'}")
     return 1 if failed else 0
 

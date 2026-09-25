@@ -15,10 +15,11 @@ round-trip exact, tuples reconstruits) + deux fonctions Neo4j (``load``/``save``
 ``Profile`` lui-même (il n'a pas à savoir ce qu'on a refusé, seulement ce qui a
 été validé) — round-trip de ``profile_to_dict``/``profile_from_dict`` intact.
 """
+
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from felix.core.profile import EntityType, Profile, RelationSpec
 
@@ -28,7 +29,7 @@ if TYPE_CHECKING:
     from felix.core.schema_changes import SchemaChange
 
 
-def profile_to_dict(profile: Profile) -> dict:
+def profile_to_dict(profile: Profile) -> dict[str, Any]:
     """Sérialise un ``Profile`` en dict JSON-compatible (tuples → listes)."""
     return {
         "name": profile.name,
@@ -56,7 +57,7 @@ def profile_to_dict(profile: Profile) -> dict:
     }
 
 
-def profile_from_dict(data: dict) -> Profile:
+def profile_from_dict(data: dict[str, Any]) -> Profile:
     """Reconstruit un ``Profile`` depuis un dict (ex. ``json.loads`` de la base) —
     inverse exact de ``profile_to_dict`` : les listes redeviennent des tuples."""
     return Profile(
@@ -100,7 +101,9 @@ async def load_project_profile(driver: AsyncDriver, *, project: str) -> Profile 
     return profile_from_dict(json.loads(record["data"]))
 
 
-async def save_project_profile(driver: AsyncDriver, profile: Profile, *, project: str) -> int:
+async def save_project_profile(
+    driver: AsyncDriver, profile: Profile, *, project: str
+) -> int:
     """Sauvegarde le profil ÉVOLUÉ du projet, version incrémentée. Rend la
     nouvelle version (1 à la première sauvegarde)."""
     data = json.dumps(profile_to_dict(profile))
@@ -112,11 +115,13 @@ async def save_project_profile(driver: AsyncDriver, profile: Profile, *, project
             SET p.data = $data, p.version = p.version + 1
             RETURN p.version AS version
             """,
-            project=project, data=data,
+            project=project,
+            data=data,
         )
         record = await result.single()
     assert record is not None  # MERGE ... RETURN garantit toujours une ligne
-    return record["version"]
+    version: int = record["version"]
+    return version
 
 
 async def load_project_profile_version(driver: AsyncDriver, *, project: str) -> int:
@@ -132,10 +137,13 @@ async def load_project_profile_version(driver: AsyncDriver, *, project: str) -> 
         record = await result.single()
     if record is None or record["version"] is None:
         return 0
-    return record["version"]
+    version: int = record["version"]
+    return version
 
 
-async def load_rejected_changes(driver: AsyncDriver, *, project: str) -> list[dict]:
+async def load_rejected_changes(
+    driver: AsyncDriver, *, project: str
+) -> list[dict[str, Any]]:
     """Changements REFUSÉS par l'humain pour ce projet, en dicts (mêmes clés
     qu'un ``SchemaChange.model_dump()``) — ``schema_detector.detect_proposals``
     s'en sert pour ne plus re-proposer un cluster déjà tranché."""
@@ -165,5 +173,6 @@ async def save_rejected_change(
             ON CREATE SET p.version = 0
             SET p.rejected = coalesce(p.rejected, []) + $payload
             """,
-            project=project, payload=payload,
+            project=project,
+            payload=payload,
         )

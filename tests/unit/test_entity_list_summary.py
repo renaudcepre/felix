@@ -5,6 +5,7 @@ jamais exposées, ni en liste ni en fiche, une SEULE définition (`INTERNAL_PROP
 Univers de test isolé — inédit : atelier de reliure du Corbeau-Gris (relieuse,
 presse, cahiers).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -37,7 +38,9 @@ PROJ_B = "test-entity-list-b-v1"
 
 async def _wipe(driver: AsyncDriver, project: str) -> None:
     async with driver.session() as session:
-        await session.run("MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=project)
+        await session.run(
+            "MATCH (n:GenEntity {project: $p}) DETACH DELETE n", p=project
+        )
 
 
 @fixture(max_concurrency=1)
@@ -53,13 +56,21 @@ async def _driver() -> AsyncGenerator[AsyncDriver]:
 
 
 async def _link(
-    driver: AsyncDriver, from_id: str, to_id: str, rel_type: str, *, project: str,
+    driver: AsyncDriver,
+    from_id: str,
+    to_id: str,
+    rel_type: str,
+    *,
+    project: str,
 ) -> None:
     async with driver.session() as session:
         await session.run(
             "MATCH (a:GenEntity {id: $a, project: $p}), (b:GenEntity {id: $b, project: $p})"
             " MERGE (a)-[:REL {rel_type: $t}]->(b)",
-            a=from_id, b=to_id, t=rel_type, p=project,
+            a=from_id,
+            b=to_id,
+            t=rel_type,
+            p=project,
         )
 
 
@@ -69,6 +80,7 @@ def _summary(summaries: list, entity_id: str):
 
 # ──────────────────── INTERNAL_PROPS : une seule définition ────────────────────
 
+
 @entity_list_summary_suite.test()
 def test_internal_props_contains_last_touched_and_is_disjoint_from_reserved() -> None:
     assert "last_touched" in INTERNAL_PROPS
@@ -77,13 +89,19 @@ def test_internal_props_contains_last_touched_and_is_disjoint_from_reserved() ->
 
 # ──────────────────── Fiche (EntityDetail.props) ────────────────────
 
+
 @entity_list_summary_suite.test()
 async def test_last_touched_never_reaches_the_fiche(
     driver: Annotated[AsyncDriver, Use(_driver)],
 ) -> None:
     await _wipe(driver, PROJ_A)
     await create_entity(
-        driver, "relieuse-hilde", "Hilde", "personnage", {"metier": "relieuse"}, project=PROJ_A,
+        driver,
+        "relieuse-hilde",
+        "Hilde",
+        "personnage",
+        {"metier": "relieuse"},
+        project=PROJ_A,
     )
     await touch_entities(driver, ["relieuse-hilde"], project=PROJ_A)
 
@@ -105,7 +123,10 @@ async def test_patch_cannot_set_or_remove_last_touched(
     await touch_entities(driver, ["presse-corbeau"], project=PROJ_A)
 
     await patch_entity(
-        "presse-corbeau", EntityPatch(props={"last_touched": "0"}), driver, project=PROJ_A,
+        "presse-corbeau",
+        EntityPatch(props={"last_touched": "0"}),
+        driver,
+        project=PROJ_A,
     )
     detail = await get_entity("presse-corbeau", driver, project=PROJ_A)
     assert "last_touched" not in detail.props
@@ -117,10 +138,13 @@ async def test_patch_cannot_set_or_remove_last_touched(
         )
         record = await result.single()
     assert record is not None
-    assert record["lt"] != "0", "le PATCH n'a pas dû écraser last_touched avec une valeur libre"
+    assert record["lt"] != "0", (
+        "le PATCH n'a pas dû écraser last_touched avec une valeur libre"
+    )
 
 
 # ──────────────────── Liste (EntitySummary) ────────────────────
+
 
 @entity_list_summary_suite.test()
 async def test_prop_count_excludes_reserved_and_internal_keys(
@@ -128,14 +152,20 @@ async def test_prop_count_excludes_reserved_and_internal_keys(
 ) -> None:
     await _wipe(driver, PROJ_A)
     await create_entity(
-        driver, "cahier-un", "Cahier Un", "objet",
-        {"matiere": "cuir", "etat": "neuf"}, project=PROJ_A,
+        driver,
+        "cahier-un",
+        "Cahier Un",
+        "objet",
+        {"matiere": "cuir", "etat": "neuf"},
+        project=PROJ_A,
     )
     await touch_entities(driver, ["cahier-un"], project=PROJ_A)  # pose last_touched
 
     summaries = await list_entities(driver, type=None, project=PROJ_A)
     s = _summary(summaries, "cahier-un")
-    assert s.prop_count == 2  # matiere + etat, ni id/name/entity_type/project, ni last_touched
+    assert (
+        s.prop_count == 2
+    )  # matiere + etat, ni id/name/entity_type/project, ni last_touched
 
 
 @entity_list_summary_suite.test()
@@ -145,7 +175,9 @@ async def test_relation_count_excludes_described_in_and_event_machinery(
     await _wipe(driver, PROJ_A)
     await create_entity(driver, "hilde", "Hilde", "personnage", {}, project=PROJ_A)
     await create_entity(driver, "corvine", "Corvine", "personnage", {}, project=PROJ_A)
-    await create_entity(driver, "cahier-annales", "Les Annales", "document", {}, project=PROJ_A)
+    await create_entity(
+        driver, "cahier-annales", "Les Annales", "document", {}, project=PROJ_A
+    )
     # Seul le type importe ici (relation_count doit ignorer l'INVOLVES qui suit) —
     # `ordre`/`resume` d'un vrai événement sont posés EN CODE, pas via `props`
     # (cf. tools.py `add_event`), inutiles pour ce test.
@@ -164,7 +196,9 @@ async def test_source_is_none_without_described_in(
     driver: Annotated[AsyncDriver, Use(_driver)],
 ) -> None:
     await _wipe(driver, PROJ_A)
-    await create_entity(driver, "orpheline", "Orpheline", "personnage", {}, project=PROJ_A)
+    await create_entity(
+        driver, "orpheline", "Orpheline", "personnage", {}, project=PROJ_A
+    )
 
     summaries = await list_entities(driver, type=None, project=PROJ_A)
     assert _summary(summaries, "orpheline").source is None
@@ -179,8 +213,12 @@ async def test_source_is_title_and_sorted_pages_of_first_document(
     posées dans le désordre."""
     await _wipe(driver, PROJ_A)
     await create_entity(driver, "corvine", "Corvine", "personnage", {}, project=PROJ_A)
-    await create_entity(driver, "doc-a", "Cahier des annales", "document", {}, project=PROJ_A)
-    await create_entity(driver, "doc-b", "Registre secondaire", "document", {}, project=PROJ_A)
+    await create_entity(
+        driver, "doc-a", "Cahier des annales", "document", {}, project=PROJ_A
+    )
+    await create_entity(
+        driver, "doc-b", "Registre secondaire", "document", {}, project=PROJ_A
+    )
     # Pages posées dans le désordre + document B lié en premier (l'ordre d'écriture
     # ne doit pas décider — seul l'id du document, trié, décide du "premier").
     await link_described_in(driver, ["corvine"], "doc-b", 1, project=PROJ_A)
@@ -197,6 +235,7 @@ async def test_source_is_title_and_sorted_pages_of_first_document(
 
 # ──────────────────── Isolation projet ────────────────────
 
+
 @entity_list_summary_suite.test()
 async def test_counts_and_source_are_project_isolated(
     driver: Annotated[AsyncDriver, Use(_driver)],
@@ -205,7 +244,12 @@ async def test_counts_and_source_are_project_isolated(
     await _wipe(driver, PROJ_B)
     # Même id d'entité dans les deux projets, contenu très différent.
     await create_entity(
-        driver, "carnet", "Carnet", "objet", {"couleur": "rouge"}, project=PROJ_A,
+        driver,
+        "carnet",
+        "Carnet",
+        "objet",
+        {"couleur": "rouge"},
+        project=PROJ_A,
     )
     await create_entity(driver, "carnet", "Carnet", "objet", {}, project=PROJ_B)
     await create_entity(driver, "corvine", "Corvine", "personnage", {}, project=PROJ_A)
@@ -242,8 +286,12 @@ async def test_entity_relation_counts_and_primary_sources_are_project_isolated(
     await _link(driver, "levier", "presse", "PART_OF", project=PROJ_A)
     await link_described_in(driver, ["levier"], "doc-a", 1, project=PROJ_A)
 
-    counts_a = await entity_relation_counts(driver, project=PROJ_A, excluded_rel_types=set())
-    counts_b = await entity_relation_counts(driver, project=PROJ_B, excluded_rel_types=set())
+    counts_a = await entity_relation_counts(
+        driver, project=PROJ_A, excluded_rel_types=set()
+    )
+    counts_b = await entity_relation_counts(
+        driver, project=PROJ_B, excluded_rel_types=set()
+    )
     assert counts_a["levier"] == 2  # PART_OF + DESCRIBED_IN, rien exclu ici
     assert counts_b["levier"] == 0
 

@@ -6,6 +6,7 @@ par bloc : entités, relieur, chroniqueur si le domaine en tient un).
 
 Usage : uv run python tools/ingest_doc.py <path> [--profile maintenance] [--project NAME]
 """
+
 # ruff: noqa: T201 — CLI, le print EST la sortie
 from __future__ import annotations
 
@@ -30,11 +31,15 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("path", type=Path, help="Fichier à ingérer (PDF, .txt, .md)")
     parser.add_argument(
-        "--profile", default="maintenance", choices=sorted(ATELIER_CHOICES),
+        "--profile",
+        default="maintenance",
+        choices=sorted(ATELIER_CHOICES),
         help="Profil de domaine (défaut : maintenance)",
     )
     parser.add_argument(
-        "--project", default=DEFAULT_PROJECT, help="Projet/histoire cible (défaut : defaut)",
+        "--project",
+        default=DEFAULT_PROJECT,
+        help="Projet/histoire cible (défaut : defaut)",
     )
     return parser.parse_args()
 
@@ -54,7 +59,8 @@ async def main() -> int:
         # profil stocké — les 3 agents sont construits pour LUI, pas pour le seed.
         profile = await resolve_profile(driver, choice, project=args.project)
         report = await ingest_document(
-            driver, args.path,
+            driver,
+            args.path,
             profile=profile,
             agent=build_atelier_agent(choice, profile),
             relation_agent=build_relation_agent(choice, profile),
@@ -68,8 +74,10 @@ async def main() -> int:
     print(f"  blocs traités  : {report.chunks}")
     print(f"  entités touchées : {report.entities_touched}")
     print(f"  relations créées : {report.relations}")
-    print(f"  tokens (req/rép/total) : "
-          f"{report.request_tokens}/{report.response_tokens}/{report.total_tokens}")
+    print(
+        f"  tokens (req/rép/total) : "
+        f"{report.request_tokens}/{report.response_tokens}/{report.total_tokens}"
+    )
     cost = f"{report.cost_usd:.4f} $" if report.cost_usd is not None else "prix inconnu"
     print(f"  coût estimé : {cost}")
     if report.alerts:

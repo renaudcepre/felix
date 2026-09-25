@@ -4,6 +4,7 @@ Les docstrings portent la DISCIPLINE de schéma émergent (réutiliser types et 
 de propriétés existants plutôt que d'en inventer) : c'est par elles que le petit
 modèle tient le cap, pas par du code. Ne pas les diluer.
 """
+
 from __future__ import annotations
 
 import unicodedata
@@ -55,7 +56,7 @@ LabelTemplate = str | Callable[[Mapping[str, Any]], str]
 TOOL_LABELS: dict[str, Callable[[Mapping[str, Any]], str]] = {}
 
 
-class _GracefulArgs(dict):
+class _GracefulArgs(dict[str, Any]):
     """Formatage TOLÉRANT : un arg manquant à l'appel (tool appelé sans un
     paramètre optionnel, ou args partiels dans un test) devient une chaîne
     vide plutôt qu'une KeyError — jamais un libellé qui plante l'affichage."""
@@ -74,8 +75,11 @@ def tool_label(template: LabelTemplate) -> Callable[[F], F]:
         if callable(template):
             TOOL_LABELS[fn.__name__] = template
         else:
-            def render(args: Mapping[str, Any], _template: str = template) -> str:
+            fmt: str = template
+
+            def render(args: Mapping[str, Any], _template: str = fmt) -> str:
                 return _template.format_map(_GracefulArgs(args))
+
             TOOL_LABELS[fn.__name__] = render
         return fn
 
@@ -114,7 +118,7 @@ def _norm(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
-def _list_resumes(events: list[dict], limit: int = 15) -> str:
+def _list_resumes(events: list[dict[str, Any]], limit: int = 15) -> str:
     """Liste numérotée des résumés (ordre diégétique), pour les messages de refus.
 
     Sans elle, le modèle s'entête : il dit naturellement « la mort de X » quand le
@@ -129,8 +133,8 @@ def _list_resumes(events: list[dict], limit: int = 15) -> str:
 
 
 def resolve_event_fragment(
-    events: list[dict], fragment: str
-) -> tuple[dict | None, str | None]:
+    events: list[dict[str, Any]], fragment: str
+) -> tuple[dict[str, Any] | None, str | None]:
     """Résout un fragment de résumé vers un événement existant.
 
     Matching insensible à la casse et aux accents sur le champ ``resume``.
@@ -142,10 +146,7 @@ def resolve_event_fragment(
         disponibles pour que le modèle cite un fragment exact au 2e essai.
     """
     norm_frag = _norm(fragment)
-    matches = [
-        e for e in events
-        if norm_frag in _norm(str(e.get("resume", "")))
-    ]
+    matches = [e for e in events if norm_frag in _norm(str(e.get("resume", "")))]
     if len(matches) == 0:
         return None, (
             f"référence introuvable — aucun événement ne contient « {fragment} ». "
@@ -185,16 +186,14 @@ def compute_move_before(
     return [*without[:idx], event_id, *without[idx:]]
 
 
-def compute_move_after(
-    ordered_ids: list[str], event_id: str, ref_id: str
-) -> list[str]:
+def compute_move_after(ordered_ids: list[str], event_id: str, ref_id: str) -> list[str]:
     """Retourne la liste avec ``event_id`` déplacé APRÈS ``ref_id``.
 
     Pure (sans effet de bord) — testable sans Neo4j.
     """
     without = [i for i in ordered_ids if i != event_id]
     idx = without.index(ref_id)
-    return [*without[:idx + 1], event_id, *without[idx + 1:]]
+    return [*without[: idx + 1], event_id, *without[idx + 1 :]]
 
 
 async def _rebuild_event_sequence(
@@ -224,7 +223,9 @@ async def _rebuild_event_sequence(
         async with driver.session() as session:
             await session.run(
                 "MATCH (e:GenEntity {id: $id, project: $project}) SET e.ordre = $ordre",
-                id=eid, ordre=i, project=proj,
+                id=eid,
+                ordre=i,
+                project=proj,
             )
     # 3. Recoudre la chaîne NEXT
     for i in range(len(ordered_ids) - 1):
@@ -233,7 +234,9 @@ async def _rebuild_event_sequence(
                 "MATCH (a:GenEntity {id: $a, project: $project}),"
                 " (b:GenEntity {id: $b, project: $project})"
                 " MERGE (a)-[:REL {rel_type: 'NEXT'}]->(b)",
-                a=ordered_ids[i], b=ordered_ids[i + 1], project=proj,
+                a=ordered_ids[i],
+                b=ordered_ids[i + 1],
+                project=proj,
             )
 
 
@@ -252,7 +255,7 @@ async def describe_schema(ctx: RunContext[GenericDeps]) -> str:
             return ctx.deps.profile.render_schema_hint()
         return "Base vide : aucun type, aucune propriété. Tu définis le schéma."
 
-    by_type: dict[str, dict] = {}
+    by_type: dict[str, dict[str, Any]] = {}
     for e in entities:
         t = e.get("entity_type", "?")
         slot = by_type.setdefault(t, {"count": 0, "keys": set()})
@@ -269,8 +272,12 @@ async def describe_schema(ctx: RunContext[GenericDeps]) -> str:
     # Verbes narratifs déjà posés : les montrer incite à RÉUTILISER le même verbe
     # pour le même lien (la clé de dédup est le slug du verbe, cf. add_relation).
     verbs = sorted(
-        {str(r["props"].get("verbe", "")).strip() for r in relations
-         if r["rel_type"] == NARRATIVE_REL} - {""}
+        {
+            str(r["props"].get("verbe", "")).strip()
+            for r in relations
+            if r["rel_type"] == NARRATIVE_REL
+        }
+        - {""}
     )
     if verbs:
         lines.append(f"Verbes {NARRATIVE_REL} déjà utilisés : {', '.join(verbs)}")
@@ -294,7 +301,8 @@ async def list_entities(ctx: RunContext[GenericDeps]) -> str:
             e.get("name", e.get("id", "?"))
         )
     return "\n".join(
-        f"{t} ({len(names)}) : {', '.join(names)}" for t, names in sorted(by_type.items())
+        f"{t} ({len(names)}) : {', '.join(names)}"
+        for t, names in sorted(by_type.items())
     )
 
 
@@ -358,8 +366,11 @@ def check_add_entity_guards(
         )
 
     # 2. Garde type réservé : evenement
-    if (profile is not None and profile.manages_events
-            and etype_low in {"evenement", "événement", "évènement", "event"}):
+    if (
+        profile is not None
+        and profile.manages_events
+        and etype_low in {"evenement", "événement", "évènement", "event"}
+    ):
         return (
             f"« {entity_type} » est un type réservé : un événement appartient à la "
             f"chronologie (add_event), pas au graphe d'entités. N'enregistre pas "
@@ -369,7 +380,13 @@ def check_add_entity_guards(
 
     # 3. Garde anti-sur-entification (#64)
     if etype_low in {
-        "etat", "état", "maladie", "sentiment", "emotion", "émotion", "humeur",
+        "etat",
+        "état",
+        "maladie",
+        "sentiment",
+        "emotion",
+        "émotion",
+        "humeur",
     }:
         return (
             f"« {entity_type} » n'est pas un type d'entité : un état interne se "
@@ -423,11 +440,21 @@ async def add_entity(
     # create_entity est le chemin PARTAGÉ avec l'ingestion de document EN CODE
     # (#Étape 2) : même forme de nœud, une seule requête.
     await create_entity(
-        ctx.deps.driver, entity_id, name, entity_type, clean, project=ctx.deps.project_id,
+        ctx.deps.driver,
+        entity_id,
+        name,
+        entity_type,
+        clean,
+        project=ctx.deps.project_id,
     )
     ctx.deps.ui_events.append(
-        ToolCard(title="Entité créée", subject=name, field=entity_type,
-                 added=fmt_props(clean, skip_reserved=False), entity_id=entity_id)
+        ToolCard(
+            title="Entité créée",
+            subject=name,
+            field=entity_type,
+            added=fmt_props(clean, skip_reserved=False),
+            entity_id=entity_id,
+        )
     )
     ctx.deps.write_log.append(
         f"création de {entity_id} (type {entity_type}) : {fmt_props(clean, skip_reserved=False)}"
@@ -438,7 +465,7 @@ async def add_entity(
 
 
 def plan_property_update(
-    existing: dict, props: dict[str, str], *, is_correction: bool
+    existing: dict[str, Any], props: dict[str, str], *, is_correction: bool
 ) -> tuple[dict[str, str], list[str]]:
     """Partitionne les props d'un update_entity : ce qu'on APPLIQUE vs ce qu'on BLOQUE.
 
@@ -460,7 +487,7 @@ def plan_property_update(
     return to_set, blocked
 
 
-def check_update_target(node: dict | None, name: str) -> str | None:
+def check_update_target(node: dict[str, Any] | None, name: str) -> str | None:
     """Vérifie que le nœud cible d'update_entity est une vraie entité (non-événement).
 
     Retourne None si la mise à jour peut se faire, ou un message guidant
@@ -472,14 +499,18 @@ def check_update_target(node: dict | None, name: str) -> str | None:
     if node is None:
         return f"« {name} » n'existe pas — utilise add_entity pour la créer."
     if node.get("entity_type") == "evenement":
-        return (f"« {name} » est un événement, pas une entité — "
-                f"crée d'abord l'entité avec add_entity.")
+        return (
+            f"« {name} » est un événement, pas une entité — "
+            f"crée d'abord l'entité avec add_entity."
+        )
     return None
 
 
 @tool_label("Mise à jour de la fiche {name}")
 async def update_entity(
-    ctx: RunContext[GenericDeps], name: str, props: dict[str, str],
+    ctx: RunContext[GenericDeps],
+    name: str,
+    props: dict[str, str],
     is_correction: bool = False,
 ) -> str:
     """Ajoute ou met à jour des propriétés d'une entité existante.
@@ -519,7 +550,8 @@ async def update_entity(
         old = node.get(key)
         if old is not None and str(old) != "" and str(old) != str(value):
             ctx.deps.write_log.append(
-                f"{node['id']}.{key} : {old!r} REMPLACÉ PAR {value!r} (correction)")
+                f"{node['id']}.{key} : {old!r} REMPLACÉ PAR {value!r} (correction)"
+            )
             replaced.append(f"{key} (remplaçait : {old!r})")
             changes.append(PropChange(field=key, before=str(old), after=str(value)))
         else:
@@ -530,13 +562,19 @@ async def update_entity(
         async with ctx.deps.driver.session() as session:
             await session.run(
                 "MATCH (e:GenEntity {id: $id, project: $project}) SET e += $props",
-                id=node["id"], props=to_set, project=ctx.deps.project_id,
+                id=node["id"],
+                props=to_set,
+                project=ctx.deps.project_id,
             )
         ctx.deps.ui_events.append(
-            ToolCard(title="Entité mise à jour", subject=node["name"],
-                     field=node.get("entity_type", "?"),
-                     added=fmt_props(added_only, skip_reserved=False) if added_only else "",
-                     changes=changes or None, entity_id=node["id"])
+            ToolCard(
+                title="Entité mise à jour",
+                subject=node["name"],
+                field=node.get("entity_type", "?"),
+                added=fmt_props(added_only, skip_reserved=False) if added_only else "",
+                changes=changes or None,
+                entity_id=node["id"],
+            )
         )
         ctx.deps.touched_ids.add(node["id"])
         await touch_entities(ctx.deps.driver, [node["id"]], project=ctx.deps.project_id)
@@ -559,7 +597,9 @@ async def update_entity(
         return guide
 
     suffix = f" — valeurs corrigées : {', '.join(replaced)}" if replaced else ""
-    return f"{node['name']} mis à jour : {fmt_props(to_set, skip_reserved=False)}.{suffix}"
+    return (
+        f"{node['name']} mis à jour : {fmt_props(to_set, skip_reserved=False)}.{suffix}"
+    )
 
 
 @tool_label("Renommage de {current_name} en {new_name}")
@@ -593,26 +633,40 @@ async def rename_entity(
 
     if out.status == "refreshed":
         ctx.deps.touched_ids.add(out.final_id)
-        await touch_entities(ctx.deps.driver, [out.final_id], project=ctx.deps.project_id)
+        await touch_entities(
+            ctx.deps.driver, [out.final_id], project=ctx.deps.project_id
+        )
         return f"« {out.old_name} » est désormais « {new_name} »."
 
     if out.status == "merged":
         ctx.deps.ui_events.append(
-            ToolCard(title="Fiches fusionnées", subject=out.old_name,
-                     field=out.new_name, added="relations et événements conservés",
-                     entity_id=out.final_id)
+            ToolCard(
+                title="Fiches fusionnées",
+                subject=out.old_name,
+                field=out.new_name,
+                added="relations et événements conservés",
+                entity_id=out.final_id,
+            )
         )
         ctx.deps.write_log.append(f"fusion {node['id']} → {out.final_id}")
         ctx.deps.touched_ids.add(out.final_id)
-        await touch_entities(ctx.deps.driver, [out.final_id], project=ctx.deps.project_id)
+        await touch_entities(
+            ctx.deps.driver, [out.final_id], project=ctx.deps.project_id
+        )
         ctx.deps.check_candidates.add(out.final_id)
-        return (f"« {out.old_name} » et « {out.new_name} » étaient la même entité — "
-                f"fusionnées dans « {out.new_name} » (relations et événements conservés).")
+        return (
+            f"« {out.old_name} » et « {out.new_name} » étaient la même entité — "
+            f"fusionnées dans « {out.new_name} » (relations et événements conservés)."
+        )
 
     ctx.deps.ui_events.append(
-        ToolCard(title="Entité renommée", subject=out.old_name,
-                 field=node.get("entity_type", "?"), added=f"→ {new_name}",
-                 entity_id=out.final_id)
+        ToolCard(
+            title="Entité renommée",
+            subject=out.old_name,
+            field=node.get("entity_type", "?"),
+            added=f"→ {new_name}",
+            entity_id=out.final_id,
+        )
     )
     ctx.deps.write_log.append(f"renommage {node['id']} → {out.final_id} ({new_name})")
     ctx.deps.touched_ids.add(out.final_id)
@@ -648,9 +702,7 @@ async def retype_entity(
     # `evenement` ou un état (#64) serait le même contournement qu'une création.
     # On n'inscrit PAS le nom dans refused_names : l'entité existe et reste
     # légitime sous son type actuel — seul le retypage est refusé.
-    refusal, _ = check_add_entity_guards(
-        node["name"], nouveau, set(), ctx.deps.profile
-    )
+    refusal, _ = check_add_entity_guards(node["name"], nouveau, set(), ctx.deps.profile)
     if refusal:
         return refusal
 
@@ -658,7 +710,9 @@ async def retype_entity(
         await session.run(
             "MATCH (e:GenEntity {id: $id, project: $project})"
             " SET e.entity_type = $type",
-            id=node["id"], type=nouveau, project=ctx.deps.project_id,
+            id=node["id"],
+            type=nouveau,
+            project=ctx.deps.project_id,
         )
         # Re-valider les arêtes STRUCTURELLES sous le nouveau type : celles que
         # le retypage rend invalides (domaine/portée) sont SIGNALÉES, jamais
@@ -671,7 +725,8 @@ async def retype_entity(
             RETURN r.rel_type AS t, startNode(r) = e AS outgoing,
                    o.entity_type AS otype, o.name AS oname
             """,
-            id=node["id"], project=ctx.deps.project_id,
+            id=node["id"],
+            project=ctx.deps.project_id,
         )
         edges = [r.data() async for r in result]
 
@@ -681,18 +736,32 @@ async def retype_entity(
             from_t = nouveau if e["outgoing"] else str(e["otype"] or "")
             to_t = str(e["otype"] or "") if e["outgoing"] else nouveau
             problem = ctx.deps.profile.validate_relation(
-                e["t"], from_t, to_t, same_node=False, verbe="",
+                e["t"],
+                from_t,
+                to_t,
+                same_node=False,
+                verbe="",
             )
             if problem:
-                arrow = f"{node['name']} —[{e['t']}]→ {e['oname']}" if e["outgoing"] \
+                arrow = (
+                    f"{node['name']} —[{e['t']}]→ {e['oname']}"
+                    if e["outgoing"]
                     else f"{e['oname']} —[{e['t']}]→ {node['name']}"
+                )
                 doubtful.append(arrow)
 
     ctx.deps.ui_events.append(
-        ToolCard(title="Type corrigé", subject=node["name"],
-                 field=ancien, added=f"→ {nouveau}", entity_id=node["id"])
+        ToolCard(
+            title="Type corrigé",
+            subject=node["name"],
+            field=ancien,
+            added=f"→ {nouveau}",
+            entity_id=node["id"],
+        )
     )
-    ctx.deps.write_log.append(f"retypage {node['id']} : {ancien} → {nouveau} (correction)")
+    ctx.deps.write_log.append(
+        f"retypage {node['id']} : {ancien} → {nouveau} (correction)"
+    )
     ctx.deps.touched_ids.add(node["id"])
     await touch_entities(ctx.deps.driver, [node["id"]], project=ctx.deps.project_id)
     # Le checker doit revoir l'entité : c'est lui qui alertait tant que le type
@@ -709,7 +778,9 @@ async def retype_entity(
     return msg
 
 
-_MIN_HEAD_PREFIX_LEN = 4  # sous ce seuil un préfixe partagé est trop court pour être significatif
+_MIN_HEAD_PREFIX_LEN = (
+    4  # sous ce seuil un préfixe partagé est trop court pour être significatif
+)
 
 
 def _same_head_or_prefix(a: str, b: str) -> bool:
@@ -793,10 +864,11 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
     # document, #Étape 2) : refusée AVANT toute résolution d'entité — le modèle
     # n'a pas à savoir si les extrémités existent pour comprendre que ce type
     # ne lui appartient pas.
-    if ctx.deps.profile is not None and rel_type in ctx.deps.profile.code_only_relations:
-        return (
-            f"« {rel_type} » est posée automatiquement par le code, n'y touche pas."
-        )
+    if (
+        ctx.deps.profile is not None
+        and rel_type in ctx.deps.profile.code_only_relations
+    ):
+        return f"« {rel_type} » est posée automatiquement par le code, n'y touche pas."
 
     a = await find_non_event(ctx.deps.driver, from_name, project=ctx.deps.project_id)
     b = await find_non_event(ctx.deps.driver, to_name, project=ctx.deps.project_id)
@@ -840,14 +912,20 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
                       (b:GenEntity {id: $b, project: $project})
                 RETURN DISTINCT r.verbe AS verbe, r.verbe_slug AS verbe_slug
                 """,
-                a=a["id"], b=b["id"], t=rel_type, project=ctx.deps.project_id,
+                a=a["id"],
+                b=b["id"],
+                t=rel_type,
+                project=ctx.deps.project_id,
             )
             existing_rows = [dict(r) for r in await existing_result.data()]
         new_slug = slugify(verbe)
-        other_verbs = sorted({
-            str(row["verbe"]) for row in existing_rows
-            if row["verbe_slug"] != new_slug and row["verbe"]
-        })
+        other_verbs = sorted(
+            {
+                str(row["verbe"])
+                for row in existing_rows
+                if row["verbe_slug"] != new_slug and row["verbe"]
+            }
+        )
         if other_verbs and same_narrative_link(verbe, other_verbs):
             listed = ", ".join(f"« {v} »" for v in other_verbs)
             return (
@@ -873,8 +951,13 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
                 SET r.verbe = $verbe, r += $props
                 RETURN existed
                 """,
-                a=a["id"], b=b["id"], t=rel_type, vs=slugify(verbe),
-                verbe=verbe, props=props, project=ctx.deps.project_id,
+                a=a["id"],
+                b=b["id"],
+                t=rel_type,
+                vs=slugify(verbe),
+                verbe=verbe,
+                props=props,
+                project=ctx.deps.project_id,
             )
         else:
             result = await session.run(
@@ -887,7 +970,10 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
                 SET r += $props
                 RETURN existed
                 """,
-                a=a["id"], b=b["id"], t=rel_type, props=props,
+                a=a["id"],
+                b=b["id"],
+                t=rel_type,
+                props=props,
                 project=ctx.deps.project_id,
             )
         record = await result.single()
@@ -900,22 +986,35 @@ async def add_relation(  # noqa: PLR0913 — `verbe` est un param EXPLICITE, pas
     # 3 moteurs, doublons intra-tour compris). On garde le tampon de récence :
     # re-mentionner un lien maintient ses extrémités dans le working set.
     if existed:
-        await touch_entities(ctx.deps.driver, [a["id"], b["id"]], project=ctx.deps.project_id)
+        await touch_entities(
+            ctx.deps.driver, [a["id"], b["id"]], project=ctx.deps.project_id
+        )
         return f"Relation déjà connue : {a['name']} —[{label}]→ {b['name']} (rien à ajouter)."
 
     # La carte et le log portent les MOTS de l'auteur pour une arête narrative
     # (thème papier, pas de jargon graphe) ; le type canonique sinon.
     ctx.deps.ui_events.append(
-        ToolCard(tool="people", title="Relation ajoutée", subject=a["name"],
-                 field=label, added=b["name"],
-                 relation=RelationRef(from_id=a["id"], to_id=b["id"], rel_type=rel_type,
-                                      verbe_slug=slugify(verbe) if narrative else None))
+        ToolCard(
+            tool="people",
+            title="Relation ajoutée",
+            subject=a["name"],
+            field=label,
+            added=b["name"],
+            relation=RelationRef(
+                from_id=a["id"],
+                to_id=b["id"],
+                rel_type=rel_type,
+                verbe_slug=slugify(verbe) if narrative else None,
+            ),
+        )
     )
     extra = f" ({fmt_props(props, skip_reserved=False)})" if props else ""
     ctx.deps.write_log.append(f"relation {a['id']} —[{label}]→ {b['id']}{extra}")
     ctx.deps.touched_ids.add(a["id"])
     ctx.deps.touched_ids.add(b["id"])
-    await touch_entities(ctx.deps.driver, [a["id"], b["id"]], project=ctx.deps.project_id)
+    await touch_entities(
+        ctx.deps.driver, [a["id"], b["id"]], project=ctx.deps.project_id
+    )
     # Les deux extrémités d'une nouvelle relation sont candidates au check
     # (relation = là où vivent les contradictions spatiales/relationnelles).
     ctx.deps.check_candidates.add(a["id"])
@@ -968,7 +1067,8 @@ async def add_event(
             dup = await session.run(
                 "MATCH (e:GenEntity {entity_type: 'evenement', project: $project})"
                 " WHERE toLower(e.resume) = toLower($r) RETURN e.id LIMIT 1",
-                r=text, project=proj,
+                r=text,
+                project=proj,
             )
             if await dup.single():
                 return f"Événement déjà enregistré (ignoré) : {text}."
@@ -996,13 +1096,19 @@ async def add_event(
             await session.run(
                 "CREATE (e:GenEntity {id: $id, name: $name, entity_type: 'evenement',"
                 " resume: $resume, ordre: $ordre, project: $project})",
-                id=event_id, name=text, resume=text, ordre=max_ordre + 1, project=proj,
+                id=event_id,
+                name=text,
+                resume=text,
+                ordre=max_ordre + 1,
+                project=proj,
             )
 
         ordered_ids = [e["id"] for e in existing_events]
         if ref_event is not None:
             # Insertion AVANT la référence : rebuild complet (ordres + chaîne NEXT)
-            new_ordered_ids = compute_insert_before(ordered_ids, event_id, ref_event["id"])
+            new_ordered_ids = compute_insert_before(
+                ordered_ids, event_id, ref_event["id"]
+            )
             await _rebuild_event_sequence(ctx.deps.driver, proj, new_ordered_ids)
             ordre = new_ordered_ids.index(event_id) + 1
         else:
@@ -1014,7 +1120,9 @@ async def add_event(
                         "MATCH (p:GenEntity {id: $pid, project: $project}),"
                         " (e:GenEntity {id: $id, project: $project})"
                         " MERGE (p)-[:REL {rel_type: 'NEXT'}]->(e)",
-                        pid=last_id, id=event_id, project=proj,
+                        pid=last_id,
+                        id=event_id,
+                        project=proj,
                     )
             ordre = max_ordre + 1
 
@@ -1037,7 +1145,10 @@ async def add_event(
                 "MATCH (e:GenEntity {id: $e, project: $project}),"
                 " (t:GenEntity {id: $t, project: $project})"
                 " MERGE (e)-[r:REL {rel_type: $rel}]->(t)",
-                e=event_id, t=node["id"], rel=rel, project=proj,
+                e=event_id,
+                t=node["id"],
+                rel=rel,
+                project=proj,
             )
         linked.append(node["name"])
         ctx.deps.touched_ids.add(node["id"])
@@ -1053,8 +1164,14 @@ async def add_event(
         f" (avant « {ref_event['resume'][:_RESUME_PREVIEW]} »)" if ref_event else ""
     )
     ctx.deps.ui_events.append(
-        ToolCard(tool="people", title="Événement", subject=text,
-                 field=f"#{ordre}", added=", ".join(linked) or "—", entity_id=event_id)
+        ToolCard(
+            tool="people",
+            title="Événement",
+            subject=text,
+            field=f"#{ordre}",
+            added=", ".join(linked) or "—",
+            entity_id=event_id,
+        )
     )
     ctx.deps.write_log.append(
         f"événement #{ordre} : {text}{avant_suffix} (participants : {', '.join(linked) or '—'})"
@@ -1137,7 +1254,8 @@ async def move_event(
             "MATCH (e:GenEntity {id: $eid, project: $project})"
             "-[:REL {rel_type: 'INVOLVES'}]->(p:GenEntity {project: $project})"
             " RETURN p.id AS pid",
-            eid=event_to_move["id"], project=proj,
+            eid=event_to_move["id"],
+            project=proj,
         )
         participant_ids = [r["pid"] for r in await result.data()]
 

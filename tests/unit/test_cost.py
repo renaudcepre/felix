@@ -13,6 +13,7 @@ Trois familles de tests :
 Noms univers isolé pour les entités de test : Zorvun, Kelphi (inédits — pas de
 recoupement avec les autres suites, même si l'anti-leakage n'y est vérifié que
 dans src/felix, pas entre suites de tests)."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated
@@ -45,6 +46,7 @@ cost_suite = ProTestSuite("Cost")
 
 
 # ─────────────────────── CostLedger : calcul pur ────────────────────────
+
 
 @cost_suite.test()
 def test_single_known_model_computes_cost() -> None:
@@ -130,18 +132,25 @@ def test_add_usage_reads_input_output_tokens() -> None:
 
 # ─────────────────────── pricing : table + surcharge ────────────────────
 
+
 @cost_suite.test()
 def test_default_pricing_has_all_required_models() -> None:
     for name in (
-        "devstral-2512", "devstral-small-2512", "mistral-small-latest",
-        "mistral-small-2506", "mistral-large-latest", "mistral-medium-latest",
+        "devstral-2512",
+        "devstral-small-2512",
+        "mistral-small-latest",
+        "mistral-small-2506",
+        "mistral-large-latest",
+        "mistral-medium-latest",
     ):
         assert name in DEFAULT_PRICING, f"prix par défaut manquant pour {name}"
 
 
 @cost_suite.test()
 def test_pricing_override_replaces_a_default_entirely() -> None:
-    table = build_pricing_table('{"mistral-small-latest": {"input": 9.0, "output": 9.0}}')
+    table = build_pricing_table(
+        '{"mistral-small-latest": {"input": 9.0, "output": 9.0}}'
+    )
     assert table["mistral-small-latest"].input_per_million == 9.0
     assert table["mistral-small-latest"].output_per_million == 9.0
     # Les autres défauts restent actifs (pas une table qui remplace tout).
@@ -172,7 +181,9 @@ def test_pricing_reads_settings_env_override_when_no_explicit_arg() -> None:
     explicite doit la reprendre."""
     original = settings.pricing_json
     try:
-        settings.pricing_json = '{"mistral-small-latest": {"input": 1.23, "output": 4.56}}'
+        settings.pricing_json = (
+            '{"mistral-small-latest": {"input": 1.23, "output": 4.56}}'
+        )
         table = build_pricing_table()
         assert table["mistral-small-latest"].input_per_million == 1.23
         assert table["mistral-small-latest"].output_per_million == 4.56
@@ -182,7 +193,9 @@ def test_pricing_reads_settings_env_override_when_no_explicit_arg() -> None:
 
 @cost_suite.test()
 def test_parse_pricing_overrides_skips_invalid_entry_keeps_valid() -> None:
-    out = parse_pricing_overrides('{"bon": {"input": 1, "output": 2}, "mauvais": {"input": "x"}}')
+    out = parse_pricing_overrides(
+        '{"bon": {"input": 1, "output": 2}, "mauvais": {"input": "x"}}'
+    )
     assert "bon" in out
     assert "mauvais" not in out
 
@@ -199,6 +212,7 @@ def test_price_for_model_unknown_returns_none() -> None:
 
 # ─────────────────────── Fixture driver réel (Neo4j) ────────────────────
 
+
 @fixture(max_concurrency=1)
 async def _cost_driver() -> AsyncGenerator[AsyncDriver]:
     driver = get_driver()
@@ -210,6 +224,7 @@ async def _cost_driver() -> AsyncGenerator[AsyncDriver]:
 
 
 # ─────────── câblage consistency_check → cost_ledger (TestModel) ────────
+
 
 @cost_suite.test()
 async def test_consistency_check_records_usage_in_ledger(
@@ -227,8 +242,13 @@ async def test_consistency_check_records_usage_in_ledger(
         ledger = CostLedger()
         judge = Agent(TestModel(), output_type=CheckVerdict)
         verdict = await consistency_check(
-            driver, "zorvun", None, None,
-            project=proj, cost_ledger=ledger, judge=judge,
+            driver,
+            "zorvun",
+            None,
+            None,
+            project=proj,
+            cost_ledger=ledger,
+            judge=judge,
         )
         assert isinstance(verdict, CheckVerdict)
         summary = ledger.summary()
@@ -239,7 +259,9 @@ async def test_consistency_check_records_usage_in_ledger(
         assert summary.cost_usd is None
     finally:
         async with driver.session() as session:
-            await session.run("MATCH (e:GenEntity {project: $p}) DETACH DELETE e", p=proj)
+            await session.run(
+                "MATCH (e:GenEntity {project: $p}) DETACH DELETE e", p=proj
+            )
 
 
 @cost_suite.test()
@@ -255,12 +277,19 @@ async def test_consistency_check_without_ledger_still_works(
         await create_entity(driver, "kelphi", "Kelphi", "personnage", {}, project=proj)
         judge = Agent(TestModel(), output_type=CheckVerdict)
         verdict = await consistency_check(
-            driver, "kelphi", None, None, project=proj, judge=judge,
+            driver,
+            "kelphi",
+            None,
+            None,
+            project=proj,
+            judge=judge,
         )
         assert isinstance(verdict, CheckVerdict)
     finally:
         async with driver.session() as session:
-            await session.run("MATCH (e:GenEntity {project: $p}) DETACH DELETE e", p=proj)
+            await session.run(
+                "MATCH (e:GenEntity {project: $p}) DETACH DELETE e", p=proj
+            )
 
 
 @cost_suite.test()
@@ -272,13 +301,19 @@ async def test_consistency_check_missing_entity_never_calls_judge(
     proj = "test-cost-check-missing-v1"
     ledger = CostLedger()
     verdict = await consistency_check(
-        driver, "entite-zzz-inexistante", None, None, project=proj, cost_ledger=ledger,
+        driver,
+        "entite-zzz-inexistante",
+        None,
+        None,
+        project=proj,
+        cost_ledger=ledger,
     )
     assert verdict.contradiction is False
     assert ledger.summary().total_tokens == 0
 
 
 # ─────────── persistance :CostEntry + agrégation (/api/costs) ───────────
+
 
 @cost_suite.test()
 async def test_record_cost_entry_then_totals_aggregates_by_kind(
@@ -289,12 +324,18 @@ async def test_record_cost_entry_then_totals_aggregates_by_kind(
         await session.run("MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj)
     try:
         chat = CostSummary(
-            request_tokens=100, response_tokens=50, total_tokens=150,
-            cost_usd=0.01, by_model=[],
+            request_tokens=100,
+            response_tokens=50,
+            total_tokens=150,
+            cost_usd=0.01,
+            by_model=[],
         )
         ingest = CostSummary(
-            request_tokens=200, response_tokens=100, total_tokens=300,
-            cost_usd=0.02, by_model=[],
+            request_tokens=200,
+            response_tokens=100,
+            total_tokens=300,
+            cost_usd=0.02,
+            by_model=[],
         )
         await record_cost_entry(driver, chat, project=proj, kind="chat")
         await record_cost_entry(driver, ingest, project=proj, kind="ingest")
@@ -306,7 +347,9 @@ async def test_record_cost_entry_then_totals_aggregates_by_kind(
         assert totals["count_by_kind"] == {"chat": 1, "ingest": 1}
     finally:
         async with driver.session() as session:
-            await session.run("MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj)
+            await session.run(
+                "MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj
+            )
 
 
 @cost_suite.test()
@@ -318,12 +361,18 @@ async def test_project_totals_null_when_one_entry_has_unknown_price(
         await session.run("MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj)
     try:
         known = CostSummary(
-            request_tokens=100, response_tokens=50, total_tokens=150,
-            cost_usd=0.01, by_model=[],
+            request_tokens=100,
+            response_tokens=50,
+            total_tokens=150,
+            cost_usd=0.01,
+            by_model=[],
         )
         unknown = CostSummary(
-            request_tokens=10, response_tokens=5, total_tokens=15,
-            cost_usd=None, by_model=[],
+            request_tokens=10,
+            response_tokens=5,
+            total_tokens=15,
+            cost_usd=None,
+            by_model=[],
         )
         await record_cost_entry(driver, known, project=proj, kind="chat")
         await record_cost_entry(driver, unknown, project=proj, kind="chat")
@@ -332,7 +381,9 @@ async def test_project_totals_null_when_one_entry_has_unknown_price(
         assert totals["total_tokens"] == 165
     finally:
         async with driver.session() as session:
-            await session.run("MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj)
+            await session.run(
+                "MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj
+            )
 
 
 @cost_suite.test()
@@ -346,8 +397,11 @@ async def test_record_cost_entry_noop_when_zero_tokens(
         await session.run("MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj)
     try:
         empty = CostSummary(
-            request_tokens=0, response_tokens=0, total_tokens=0,
-            cost_usd=0.0, by_model=[],
+            request_tokens=0,
+            response_tokens=0,
+            total_tokens=0,
+            cost_usd=0.0,
+            by_model=[],
         )
         await record_cost_entry(driver, empty, project=proj, kind="chat")
         totals = await project_cost_totals(driver, project=proj)
@@ -355,7 +409,9 @@ async def test_record_cost_entry_noop_when_zero_tokens(
         assert totals["count_by_kind"] == {}
     finally:
         async with driver.session() as session:
-            await session.run("MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj)
+            await session.run(
+                "MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=proj
+            )
 
 
 @cost_suite.test()
@@ -371,15 +427,22 @@ async def test_project_cost_isolation(
             await session.run("MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=p)
     try:
         s = CostSummary(
-            request_tokens=1000, response_tokens=500, total_tokens=1500,
-            cost_usd=0.1, by_model=[],
+            request_tokens=1000,
+            response_tokens=500,
+            total_tokens=1500,
+            cost_usd=0.1,
+            by_model=[],
         )
         await record_cost_entry(driver, s, project=proj_a, kind="chat")
         totals_b = await project_cost_totals(driver, project=proj_b)
-        assert totals_b["total_tokens"] == 0, f"coût de {proj_a} visible dans {proj_b} : contamination"
+        assert totals_b["total_tokens"] == 0, (
+            f"coût de {proj_a} visible dans {proj_b} : contamination"
+        )
         totals_a = await project_cost_totals(driver, project=proj_a)
         assert totals_a["total_tokens"] == 1500
     finally:
         for p in (proj_a, proj_b):
             async with driver.session() as session:
-                await session.run("MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=p)
+                await session.run(
+                    "MATCH (e:CostEntry {project: $p}) DETACH DELETE e", p=p
+                )

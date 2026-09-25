@@ -10,6 +10,7 @@ revit au tour suivant via l'historique threadé.
 Ici on teste les parties PURES : le rendu du bloc, le contrat des cartes (id de
 la cible embarqué — sans lui, aucun bouton 🗑 possible), et les bornes config.
 """
+
 from __future__ import annotations
 
 from protest import ProTestSuite
@@ -32,7 +33,10 @@ def test_empty_edits_render_nothing() -> None:
 def test_renders_details_in_order() -> None:
     """Le bloc liste les actions (détail) dans l'ordre reçu."""
     rows = [
-        {"kind": "suppression", "detail": "l'entité « Maximilien » (personnage) a été supprimée"},
+        {
+            "kind": "suppression",
+            "detail": "l'entité « Maximilien » (personnage) a été supprimée",
+        },
         {"kind": "correction", "detail": "« Vels » renommée « Velsgarde »"},
     ]
     block = render_user_edits_block(rows)
@@ -78,7 +82,10 @@ def test_tool_card_carries_relation_ref() -> None:
     """Une carte « Relation ajoutée » porte la référence complète (from, to, type) :
     c'est la clé de suppression d'une relation orientée."""
     card = ToolCard(
-        title="Relation ajoutée", subject="Nora", field="KNOWS", added="Castan",
+        title="Relation ajoutée",
+        subject="Nora",
+        field="KNOWS",
+        added="Castan",
         relation={"from_id": "nora", "to_id": "castan", "rel_type": "KNOWS"},
     )
     assert card.relation is not None

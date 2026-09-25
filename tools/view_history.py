@@ -18,7 +18,12 @@ DEFAULT_HISTORY = ".protest/history.jsonl"
 
 def get_panel_color(role: str) -> str:
     """Retourne la couleur de bordure pour un message chat selon son rôle."""
-    colors = {"user": "blue", "assistant": "green", "system": "yellow", "tool": "magenta"}
+    colors = {
+        "user": "blue",
+        "assistant": "green",
+        "system": "yellow",
+        "tool": "magenta",
+    }
     return colors.get(role, "white")
 
 
@@ -86,19 +91,21 @@ def _records_from_entry(entry: dict) -> list[dict]:
 
             # Modèle : priorité suite, fallback evals.model
             suite_model = suite.get("model") or evals_model
-            records.append({
-                "ts": ts,
-                "suite": suite_name,
-                "model": _model_or_dash(suite_model),
-                "passed": suite.get("passed", 0),
-                "total": suite.get("total_cases", 0),
-                "duration": suite.get("duration"),
-                "cases_pass": cases_pass,
-                "case_labels": case_labels,
-                "git_commit": commit,
-                "git_branch": branch,
-                "format": "protest",
-            })
+            records.append(
+                {
+                    "ts": ts,
+                    "suite": suite_name,
+                    "model": _model_or_dash(suite_model),
+                    "passed": suite.get("passed", 0),
+                    "total": suite.get("total_cases", 0),
+                    "duration": suite.get("duration"),
+                    "cases_pass": cases_pass,
+                    "case_labels": case_labels,
+                    "git_commit": commit,
+                    "git_branch": branch,
+                    "format": "protest",
+                }
+            )
         return records
 
     if "cases" in entry:
@@ -106,19 +113,21 @@ def _records_from_entry(entry: dict) -> list[dict]:
         cases = entry.get("cases") or {}
         if not isinstance(cases, dict):
             return []
-        return [{
-            "ts": entry.get("ts", "—"),
-            "suite": entry.get("suite", "—"),
-            "model": _model_or_dash(entry.get("model")),
-            "passed": entry.get("passed", 0),
-            "total": entry.get("total", 0),
-            "duration": entry.get("duration_s"),
-            "cases_pass": {name: bool(result) for name, result in cases.items()},
-            "case_labels": {},
-            "git_commit": entry.get("commit"),
-            "git_branch": entry.get("branch"),
-            "format": "legacy",
-        }]
+        return [
+            {
+                "ts": entry.get("ts", "—"),
+                "suite": entry.get("suite", "—"),
+                "model": _model_or_dash(entry.get("model")),
+                "passed": entry.get("passed", 0),
+                "total": entry.get("total", 0),
+                "duration": entry.get("duration_s"),
+                "cases_pass": {name: bool(result) for name, result in cases.items()},
+                "case_labels": {},
+                "git_commit": entry.get("commit"),
+                "git_branch": entry.get("branch"),
+                "format": "legacy",
+            }
+        ]
 
     # Format chat ou inconnu : ignoré par les filtres eval
     return []
@@ -134,7 +143,7 @@ def _load_records(file_path: Path) -> list[dict]:
                 continue
             try:
                 records.extend(_records_from_entry(json.loads(stripped)))
-            except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+            except json.JSONDecodeError, KeyError, TypeError, AttributeError:
                 continue
     return records
 
@@ -178,23 +187,33 @@ def _render_eval_record(rec: dict, entry_num: int) -> None:
         summary.append(f"\n\nOK ({len(passed_cases)}):", style="green")
         for c in passed_cases:
             labels = case_labels.get(c) or {}
-            extra = f"  [{labels['majority_detail']}]" if "majority_detail" in labels else ""
+            extra = (
+                f"  [{labels['majority_detail']}]"
+                if "majority_detail" in labels
+                else ""
+            )
             summary.append(f"\n  • {c}{extra}", style="green")
 
     if failed_cases:
         summary.append(f"\n\nKO ({len(failed_cases)}):", style="red")
         for c in failed_cases:
             labels = case_labels.get(c) or {}
-            extra = f"  [{labels['majority_detail']}]" if "majority_detail" in labels else ""
+            extra = (
+                f"  [{labels['majority_detail']}]"
+                if "majority_detail" in labels
+                else ""
+            )
             summary.append(f"\n  • {c}{extra}", style="red")
 
-    console.print(Panel(
-        summary,
-        title="Evaluation Result",
-        subtitle=f"Entry {entry_num} — {suite}",
-        border_style="cyan",
-        expand=True,
-    ))
+    console.print(
+        Panel(
+            summary,
+            title="Evaluation Result",
+            subtitle=f"Entry {entry_num} — {suite}",
+            border_style="cyan",
+            expand=True,
+        )
+    )
 
 
 # ── Sous-commandes d'affichage (extraites pour limiter la complexité de main) ─
@@ -247,21 +266,27 @@ def _cmd_display_chat(all_lines: list[str], tail: int | None) -> None:
                 and "tool_code" in content[0]
             ):
                 renderable = Syntax(
-                    json.dumps(content, indent=2), "json",
-                    theme="monokai", line_numbers=True,
+                    json.dumps(content, indent=2),
+                    "json",
+                    theme="monokai",
+                    line_numbers=True,
                 )
-            elif isinstance(content, str) and content.strip().startswith(("```", "{\n", "[\n")):
+            elif isinstance(content, str) and content.strip().startswith(
+                ("```", "{\n", "[\n")
+            ):
                 lang = "json" if content.strip().startswith(("{", "[")) else ""
                 renderable = Syntax(content, lang, theme="monokai", line_numbers=True)
             else:
                 renderable = Markdown(str(content))
-            console.print(Panel(
-                renderable,
-                title=f"Role: {role}",
-                subtitle=f"Entry {i + 1}",
-                border_style=get_panel_color(role),
-                expand=True,
-            ))
+            console.print(
+                Panel(
+                    renderable,
+                    title=f"Role: {role}",
+                    subtitle=f"Entry {i + 1}",
+                    border_style=get_panel_color(role),
+                    expand=True,
+                )
+            )
         except Exception as exc:
             console.print(f"[red]Erreur ligne {i + 1} : {exc}[/red]")
 
@@ -277,7 +302,7 @@ def _cmd_display_evals(
     for raw in all_lines:
         try:
             records.extend(_records_from_entry(json.loads(raw)))
-        except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        except json.JSONDecodeError, KeyError, TypeError, AttributeError:
             continue
 
     if model:
@@ -311,23 +336,32 @@ def main(  # noqa: PLR0913
         help=f"Fichier .jsonl à lire (défaut : {DEFAULT_HISTORY}).",
     ),
     tail: int | None = typer.Option(
-        None, "--tail", "-n",
+        None,
+        "--tail",
+        "-n",
         help="Affiche uniquement les N derniers records (après filtrage).",
     ),
     model: str | None = typer.Option(
-        None, "--model", "-m",
+        None,
+        "--model",
+        "-m",
         help="Filtre par nom de modèle.",
     ),
     list_models: bool = typer.Option(
-        False, "--list-models", "-l",
+        False,
+        "--list-models",
+        "-l",
         help="Liste tous les modèles présents dans le fichier.",
     ),
     eval_name: str | None = typer.Option(
-        None, "--eval", "-e",
+        None,
+        "--eval",
+        "-e",
         help="Filtre les runs contenant un cas d'eval précis.",
     ),
     list_evals: bool = typer.Option(
-        False, "--list-evals",
+        False,
+        "--list-evals",
         help="Liste tous les cas d'eval présents dans le fichier.",
     ),
 ) -> None:
