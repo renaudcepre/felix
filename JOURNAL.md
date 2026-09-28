@@ -1,6 +1,22 @@
 # Journal de developpement — Felix
 
-## ▶ HANDOFF (reprendre ici) — relations TYPÉES (vocab dur + domaine/portée) FAIT ; reste quick-wins (1)(2) + qualité de modélisation — 2026-06-09
+## ▶ HANDOFF (reprendre ici) — pause après la démo au taf, oracle synthétique en place — 2026-09-28
+
+**État** : main propre, 434 tests verts (`just test`), mypy --strict à zéro sur `src/`, hooks ruff. Le pivot « scénario → document → graphe » est fait : prompts partagés neutres de domaine (2026-09-25), la fiction reste dans le profil scénario. Modèle : devstral-2512 sur tous les rôles (Mistral API). Démo faite au chef le 2026-09-25 : très intéressé, objection = peur de l'incohérence du graphe. Réponse à construire en chiffres, pas en opinion.
+
+**L'oracle** : `just gen-parc` génère un parc industriel synthétique déterministe (`data/parc/<nom>/`, gitignoré) avec vérité terrain et pièges connus. Première ingestion mesurée (entrée « mesure(parc) » du 2026-09-25) : 15 fiches, 16 min, 1,66 $, 2 pièges sur 4, 45 alertes dont ~3 vraies. Le bruit dominant n'est pas le checker mais la **résolution d'entités par nom seul** (homonymes « mandrin », « vitesse de bande » fusionnés entre machines de même famille).
+
+**Reprendre dans cet ordre** :
+1. #92 (petit, sûr) : `is_document_duplicate` avale des fiches sœurs par titre flou.
+2. #91 : un helper `execute_write` avec retry des transients, à la place de `session.run` en auto-commit.
+3. Comparateur automatique graphe / `ground_truth.json` (fait à la main cette fois, matcher par libellé + machine voisine, pas par id).
+4. Résolution d'entités contextuelle (nom + machine voisine), puis re-mesurer sur le parc.
+
+**Ne pas faire** : #87 (OCR) reste ouvert volontairement. Jamais d'e2e atelier/conductor sur le Neo4j de dev (ils vident tout).
+
+**Pointeurs** : générateur `src/felix/synthetic/`, ingestion `tools/ingest_doc.py --profile emergent --project <p>`, checker `core/check.py` (`render_check_prompt`), profils `core/profile.py` (`non_contradiction_examples`, pas encore re-mesuré), tests de neutralité `tests/unit/test_prompt_domain_neutrality.py`.
+
+## HANDOFF précédent (2026-06-09, partiellement périmé) — relations TYPÉES FAIT ; quick-wins (1)(2) + qualité de modélisation
 
 **État (2026-06-09)** : **le front est passé 100 % schemaless ET 100 % papier** (deux sections ci-dessous). `/atelier → /chat`, nouvelles pages `/entities` (liste par type + fiche générique props/relations/chronologie), **tout le legacy `:Character` supprimé** (front + API + repos + ingest + agent + cli, ~85 fichiers), puis **redesign papier** des pages d'entités (`felix-fiche.css`, design system) + retrait du shell cyan résiduel (layout/navbar/settings) → toutes pages `layout:false`. Surface vérifiée end-to-end (imports, ruff sans import mort, curl entities, route SSE atelier vivante, typecheck/lint/build front verts). Moteur `core/`/`atelier/` **non touché**. **⚠ Bug visible révélé** : le bot B **invente des entités à partir de rien** (un simple « salur » a fait écrire détective/assistant/indice/bibliothèque dans le graphe) — pas un exemple recopié (rien de tel dans le code), vraie hallucination ; viole ses règles « n'écris rien si salutation / n'invente aucun fait ». **C'est le chantier `project_modeling_quality`, désormais visible grâce aux pages d'entités — prioritaire.** Les **quick-wins moteur (1)(2)(3) ci-dessous restent aussi en attente**.
 
