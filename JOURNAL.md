@@ -1,6 +1,22 @@
 # Journal de developpement — Felix
 
-## ▶ HANDOFF (reprendre ici) — relations TYPÉES (vocab dur + domaine/portée) FAIT ; reste quick-wins (1)(2) + qualité de modélisation — 2026-06-09
+## ▶ HANDOFF (reprendre ici) — pause après la démo au taf, oracle synthétique en place — 2026-09-28
+
+**État** : main propre, 434 tests verts (`just test`), mypy --strict à zéro sur `src/`, hooks ruff. Le pivot « scénario → document → graphe » est fait : prompts partagés neutres de domaine (2026-09-25), la fiction reste dans le profil scénario. Modèle : devstral-2512 sur tous les rôles (Mistral API). Démo faite au chef le 2026-09-25 : très intéressé, objection = peur de l'incohérence du graphe. Réponse à construire en chiffres, pas en opinion.
+
+**L'oracle** : `just gen-parc` génère un parc industriel synthétique déterministe (`data/parc/<nom>/`, gitignoré) avec vérité terrain et pièges connus. Première ingestion mesurée (entrée « mesure(parc) » du 2026-09-25) : 15 fiches, 16 min, 1,66 $, 2 pièges sur 4, 45 alertes dont ~3 vraies. Le bruit dominant n'est pas le checker mais la **résolution d'entités par nom seul** (homonymes « mandrin », « vitesse de bande » fusionnés entre machines de même famille).
+
+**Reprendre dans cet ordre** :
+1. #92 (petit, sûr) : `is_document_duplicate` avale des fiches sœurs par titre flou.
+2. #91 : un helper `execute_write` avec retry des transients, à la place de `session.run` en auto-commit.
+3. Comparateur automatique graphe / `ground_truth.json` (fait à la main cette fois, matcher par libellé + machine voisine, pas par id).
+4. Résolution d'entités contextuelle (nom + machine voisine), puis re-mesurer sur le parc.
+
+**Ne pas faire** : #87 (OCR) reste ouvert volontairement. Jamais d'e2e atelier/conductor sur le Neo4j de dev (ils vident tout).
+
+**Pointeurs** : générateur `src/felix/synthetic/`, ingestion `tools/ingest_doc.py --profile emergent --project <p>`, checker `core/check.py` (`render_check_prompt`), profils `core/profile.py` (`non_contradiction_examples`, pas encore re-mesuré), tests de neutralité `tests/unit/test_prompt_domain_neutrality.py`.
+
+## HANDOFF précédent (2026-06-09, partiellement périmé) — relations TYPÉES FAIT ; quick-wins (1)(2) + qualité de modélisation
 
 **État (2026-06-09)** : **le front est passé 100 % schemaless ET 100 % papier** (deux sections ci-dessous). `/atelier → /chat`, nouvelles pages `/entities` (liste par type + fiche générique props/relations/chronologie), **tout le legacy `:Character` supprimé** (front + API + repos + ingest + agent + cli, ~85 fichiers), puis **redesign papier** des pages d'entités (`felix-fiche.css`, design system) + retrait du shell cyan résiduel (layout/navbar/settings) → toutes pages `layout:false`. Surface vérifiée end-to-end (imports, ruff sans import mort, curl entities, route SSE atelier vivante, typecheck/lint/build front verts). Moteur `core/`/`atelier/` **non touché**. **⚠ Bug visible révélé** : le bot B **invente des entités à partir de rien** (un simple « salur » a fait écrire détective/assistant/indice/bibliothèque dans le graphe) — pas un exemple recopié (rien de tel dans le code), vraie hallucination ; viole ses règles « n'écris rien si salutation / n'invente aucun fait ». **C'est le chantier `project_modeling_quality`, désormais visible grâce aux pages d'entités — prioritaire.** Les **quick-wins moteur (1)(2)(3) ci-dessous restent aussi en attente**.
 
@@ -35,6 +51,18 @@
 - **Choix** : noms de marques, villes et personnes en listes écrites à la main plutôt que générées par syllabes, pour pouvoir les relire. Lettres des codes machine limitées à un pool sans voyelles ni P/T/M, ce qui écarte par construction toute collision avec les codes des prompts et des fiches client. Les lignes piégées (plage, contrainte, réglage de référence) sortent des mêmes fonctions pour le rendu et pour `evidence` : impossible qu'elles divergent.
 - **Tests** (protest, 11, purs) : même seed → octet-identique, seeds différents → parcs différents, ids uniques = slugify(name), relations sur ids existants, chaque entité décrite apparaît dans sa fiche, chaque piège présent et réel, tailles demandées = obtenues, tailles impossibles refusées, pied de page présent puis retiré par `clean_pages`. Vérifié par mutation : variante de code = code canonique → `test_traps_are_real` casse. 418 → 429.
 - **Accrocs** : premier jet refusé par le hook lint (S311 sur `random.Random`, trop d'arguments) ; `just test -t`/`-k SyntheticParc` ne filtre pas par nom de suite (0 test lancé, « ALL PASSED » quand même), il faut `-k` sur le nom du test. Piège à retenir pour une vérif par mutation.
+
+## 2026-09-25 — mesure(parc): première ingestion du parc synthétique, 2 pièges sur 4, 45 alertes dont ~3 vraies
+
+**Protocole** : base vidée (archive `data/archives/neo4j-20260925-091704.txt`), `just gen-parc` (seed 42 : 3 usines, 12 machines, 24 personnes, 15 fiches, 4 pièges), ingestion en série par `tools/ingest_doc.py --profile emergent --project parc-demo`, devstral-2512. **16 min, 1,66 $ (0,11 $/fiche), 0 échec**, 6 deadlocks Neo4j rattrapés par re-tentative du modèle (#91 : appels d'outils concurrents + `session.run` auto-commit sans retry).
+
+**Pièges** : 2/4. Attrapés : la valeur usuelle hors contrainte (BV-9883, 3 alertes la nomment) et le code variant « GB 1058 » (fusionné par `slugify`, une seule machine). Ratés : les deux contradictions de plage inter-fiches (42,5 bar, 53,0 m/min n'apparaissent dans aucune alerte).
+
+**Alertes (45)** : ~3 vraies sur le piège BV ; ~6 erreurs d'extraction correctement relevées (« la fiche fait partie du parc de la machine », « la machine est le créateur de B. Falcourdin ») ; ~12 « la plage dépasse la contrainte » (le générateur pose la limite DANS la plage, le checker y voit une contradiction — à trancher côté générateur ou règle de profil) ; **~20 fantômes** : les paramètres et organes homonymes de machines de même famille (« pression de serrage du mandrin » × 3 tours CN, « vitesse de bande » × 3 convoyeurs, « moteur principal » × 2 compresseurs) ont fusionné en une entité, d'où « ne peut pas être à la fois 15,5–53 et 0,5–48 ». C'est la résolution d'entités par nom seul qui casse, pas le checker.
+
+**Entités** : 12/12 machines, 3/3 usines, 4/4 marques, 24/24 personnes retrouvées par nom. Mais 31 personnes (7 doublons initiale/prénom : « B. Falcourdin » et « Benoît Falcourdin », l'en-tête Créateur/Valideur abrège) ; 13/15 documents (#92 : `merge_document_duplicates` avale une fiche sœur de même famille, titre à 91 % de similarité) ; le profil émergent éclate en entités ce qui devrait être des props (`valeur` 26, `plage` 26, `modèle` 12, `année` 9). Relations : 429 LIE_A + 318 DESCRIBED_IN, zéro relation typée (aucune proposition validée, attendu en HITL).
+
+**Ce que ça dit** : la peur « incohérence du graphe » (démo au taf ce matin) se mesure maintenant. Le bruit dominant n'est pas le juge mais la fusion d'homonymes ; sans elle, ~20 alertes disparaissent. Prochaines briques : le comparateur automatique graphe/vérité (fait à la main ici, scripts `/tmp/q3.py`…), la résolution d'entités contextuelle (nom + machine voisine), #92, #91.
 
 ## 2026-09-25 — refactor(prompts): prompts génériques neutres de domaine, la fiction reste au profil scénario
 
